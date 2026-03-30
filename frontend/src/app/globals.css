@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode: add .dark to <html> */
+@custom-variant dark (&:is(.dark, .dark *));
+
+@theme {
+  /* Arena Monochrome — Color Tokens (light defaults) */
+  --color-primary: #000000;
+  --color-primary-container: #3b3b3b;
+  --color-on-primary: #e2e2e2;
+  --color-surface: #f9f9f9;
+  --color-surface-low: #f3f3f4;
+  --color-surface-lowest: #ffffff;
+  --color-surface-dim: #c6c6c6;
+  --color-surface-high: #ebebec;
+  --color-on-surface: #1a1c1c;
+  --color-outline-variant: rgba(26, 28, 28, 0.2);
+  --color-error: #ba1a1a;
+
+  /* Typography */
+  --font-display: var(--font-space-grotesk), "Space Grotesk", sans-serif;
+  --font-body: var(--font-inter), "Inter", sans-serif;
+
+  /* Border Radius */
+  --radius-none: 0px;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.5rem;
+}
+
+/* Dark mode — override CSS custom properties */
+.dark {
+  --color-primary: #e8e8e8;
+  --color-primary-container: #b0b0b0;
+  --color-on-primary: #111111;
+  --color-surface: #111213;
+  --color-surface-low: #191b1b;
+  --color-surface-lowest: #0c0d0e;
+  --color-surface-dim: #2a2c2c;
+  --color-surface-high: #222425;
+  --color-on-surface: #e2e2e2;
+  --color-outline-variant: rgba(226, 226, 226, 0.12);
+  --color-error: #ff7070;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100%;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}

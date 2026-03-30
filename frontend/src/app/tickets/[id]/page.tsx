@@ -1,0 +1,201 @@
+"use client";
+
+import { use } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import MainLayout from "@/components/features/MainLayout";
+import Button from "@/components/ui/Button";
+import Badge from "@/components/ui/Badge";
+import { mockTickets, formatCurrency, formatDate } from "@/lib/mock-data";
+import { toast } from "sonner";
+
+interface Props {
+  params: Promise<{ id: string }>;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  VALID: "Válido",
+  USED: "Utilizado",
+  CANCELLED: "Cancelado",
+};
+
+const STATUS_VARIANTS: Record<string, "vibe" | "status" | "outline"> = {
+  VALID: "vibe",
+  USED: "status",
+  CANCELLED: "outline",
+};
+
+export default function TicketDetailPage({ params }: Props) {
+  const { id } = use(params);
+  const ticket = mockTickets.find((t) => t.id === id) ?? mockTickets[0];
+
+  function handleDownloadPdf() {
+    toast.success("Baixando ingresso em PDF…");
+  }
+
+  function handleTransfer() {
+    toast.info("Funcionalidade de transferência em breve.");
+  }
+
+  function handleShare() {
+    if (navigator.share) {
+      navigator.share({
+        title: `Ingresso — ${ticket.event.homeTeam} vs ${ticket.event.awayTeam}`,
+        text: `Meu ingresso para ${ticket.event.homeTeam} vs ${ticket.event.awayTeam}`,
+        url: window.location.href,
+      });
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copiado!");
+    }
+  }
+
+  return (
+    <MainLayout>
+      <div className="max-w-2xl mx-auto px-6 py-10">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 mb-8 text-on-surface/40 text-xs font-body">
+          <Link href="/tickets" className="hover:text-on-surface transition-colors">
+            Meus ingressos
+          </Link>
+          <span>/</span>
+          <span className="text-on-surface/60 truncate">{ticket.event.title}</span>
+        </div>
+
+        {/* Ticket card */}
+        <div className="bg-surface-lowest rounded-md overflow-hidden shadow-sm">
+          {/* Event image header */}
+          <div className="relative h-48 bg-surface-dim">
+            <Image
+              src={ticket.event.imageUrl}
+              alt={`${ticket.event.homeTeam} vs ${ticket.event.awayTeam}`}
+              fill
+              className="object-cover"
+              sizes="768px"
+              priority
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/30 to-primary/80" />
+            <div className="absolute bottom-5 left-5 right-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge label={ticket.event.league} variant="vibe" />
+                <Badge
+                  label={STATUS_LABELS[ticket.status]}
+                  variant={STATUS_VARIANTS[ticket.status]}
+                />
+              </div>
+              <h1 className="font-display font-black text-xl text-on-primary tracking-tight">
+                {ticket.event.homeTeam}{" "}
+                <span className="opacity-50 font-normal">vs</span>{" "}
+                {ticket.event.awayTeam}
+              </h1>
+            </div>
+          </div>
+
+          {/* Ticket body */}
+          <div className="p-6">
+            {/* QR Code */}
+            {ticket.status === "VALID" && (
+              <div className="flex flex-col items-center gap-3 mb-8 py-6 border-b border-dashed border-outline-variant">
+                <div className="w-44 h-44 bg-surface-low rounded-sm overflow-hidden flex items-center justify-center p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ticket.qrCode}
+                    alt="QR Code do ingresso"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <p className="text-xs font-body uppercase tracking-widest text-on-surface/30 text-center">
+                  Apresente na entrada
+                </p>
+                <p className="text-[10px] font-body text-on-surface/20 font-mono">
+                  CATRACA-{ticket.id.toUpperCase()}
+                </p>
+              </div>
+            )}
+
+            {/* Event details */}
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 mb-1">
+                  Data
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  {formatDate(ticket.event.startsAt)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 mb-1">
+                  Local
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  {ticket.event.venue.name}
+                </p>
+                <p className="text-xs text-on-surface/40 font-body">
+                  {ticket.event.venue.city}, {ticket.event.venue.state}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 mb-1">
+                  Setor
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  {ticket.seat.section}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 mb-1">
+                  Assento
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  Fileira {ticket.seat.row} · Nº {ticket.seat.number}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 mb-1">
+                  Valor pago
+                </p>
+                <p className="text-sm font-display font-bold text-on-surface tracking-tight">
+                  {formatCurrency(ticket.seat.priceCents)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 mb-1">
+                  Comprado em
+                </p>
+                <p className="text-sm font-body text-on-surface">
+                  {formatDate(ticket.purchasedAt)}
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-3">
+              {ticket.status === "VALID" && (
+                <>
+                  <Button fullWidth onClick={handleDownloadPdf}>
+                    Baixar PDF
+                  </Button>
+                  <Button fullWidth variant="secondary" onClick={handleTransfer}>
+                    Transferir ingresso
+                  </Button>
+                </>
+              )}
+              <Button fullWidth variant="secondary" onClick={handleShare}>
+                Compartilhar
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 text-center">
+          <Link
+            href="/tickets"
+            className="text-sm font-body text-on-surface/40 hover:text-on-surface transition-colors underline underline-offset-2"
+          >
+            ← Voltar para meus ingressos
+          </Link>
+        </div>
+      </div>
+    </MainLayout>
+  );
+}
