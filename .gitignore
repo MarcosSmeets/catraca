@@ -1,2 +1,7 @@
-CLAUDE.MD
-stitch*
+# Secrets — never commit these
+.env
+.env.local
+.env.*.local
+
+# Keep examples
+!.env.example

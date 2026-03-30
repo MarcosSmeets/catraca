@@ -85,7 +85,10 @@ func createVenues() []*entity.Venue {
 }
 
 func createEvents(venues []*entity.Venue) []*entity.Event {
-	loc, _ := time.LoadLocation("America/Sao_Paulo")
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		loc = time.UTC
+	}
 
 	return []*entity.Event{
 		{

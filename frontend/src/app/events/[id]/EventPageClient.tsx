@@ -146,25 +146,100 @@ function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEv
       <div className="max-w-7xl mx-auto px-6 py-10">
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="flex-1 min-w-0 flex flex-col gap-8">
-            {/* Venue overview */}
-            <div className="bg-surface-lowest rounded-md overflow-hidden">
-              <div className="relative h-40 bg-surface-dim">
+            {/* Venue gallery */}
+            <div className="bg-surface-lowest rounded-md overflow-hidden border border-outline-variant">
+              {/* Photo slider */}
+              <div className="relative h-52 bg-surface-dim">
                 <Image
-                  src={event.imageUrl}
-                  alt={`Vista do ${event.venue.name}`}
+                  src={gallery[galleryIndex]}
+                  alt={`${event.venue.name} — foto ${galleryIndex + 1}`}
                   fill
-                  className="object-cover opacity-50"
+                  className="object-cover transition-opacity duration-300"
                   sizes="800px"
+                  priority={galleryIndex === 0}
                 />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <p className="font-display font-black text-on-surface text-xl uppercase tracking-tight drop-shadow">
-                      {event.venue.name}
-                    </p>
-                    <p className="text-xs font-body text-on-surface/60 mt-1">
-                      {event.venue.city}, {event.venue.state} · {event.venue.capacity.toLocaleString("pt-BR")} lugares
-                    </p>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                {/* Prev / Next arrows */}
+                {gallery.length > 1 && (
+                  <>
+                    <button
+                      onClick={() =>
+                        setGalleryIndex((i) => (i - 1 + gallery.length) % gallery.length)
+                      }
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors duration-150"
+                      aria-label="Foto anterior"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() =>
+                        setGalleryIndex((i) => (i + 1) % gallery.length)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors duration-150"
+                      aria-label="Próxima foto"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+
+                {/* Dot indicators */}
+                {gallery.length > 1 && (
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                    {gallery.map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setGalleryIndex(idx)}
+                        className={`w-1.5 h-1.5 rounded-full transition-all duration-150 ${
+                          idx === galleryIndex ? "bg-white w-4" : "bg-white/40 hover:bg-white/70"
+                        }`}
+                        aria-label={`Ir para foto ${idx + 1}`}
+                      />
+                    ))}
                   </div>
+                )}
+
+                {/* Venue name overlay */}
+                <div className="absolute bottom-5 left-4">
+                  <p className="font-display font-black text-white text-lg uppercase tracking-tight drop-shadow leading-none">
+                    {event.venue.name}
+                  </p>
+                  <p className="text-white/60 text-xs font-body mt-0.5">
+                    {event.venue.city}, {event.venue.state}
+                  </p>
+                </div>
+              </div>
+
+              {/* Venue stats */}
+              <div className="flex items-center divide-x divide-outline-variant">
+                <div className="flex-1 px-4 py-3 text-center">
+                  <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
+                    Capacidade
+                  </p>
+                  <p className="font-display font-bold text-sm text-on-surface">
+                    {event.venue.capacity.toLocaleString("pt-BR")}
+                  </p>
+                </div>
+                <div className="flex-1 px-4 py-3 text-center">
+                  <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
+                    Cidade
+                  </p>
+                  <p className="font-display font-bold text-sm text-on-surface">
+                    {event.venue.city}
+                  </p>
+                </div>
+                <div className="flex-1 px-4 py-3 text-center">
+                  <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
+                    Fotos
+                  </p>
+                  <p className="font-display font-bold text-sm text-on-surface">
+                    {gallery.length}
+                  </p>
                 </div>
               </div>
             </div>
@@ -238,8 +313,9 @@ function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEv
                   )}
                 </div>
               ) : (
-                <SeatMap
+                <StadiumMap
                   seats={seats}
+                  venue={event.venue}
                   onSelectionChange={setSelectedSeats}
                   maxSelectable={6}
                 />

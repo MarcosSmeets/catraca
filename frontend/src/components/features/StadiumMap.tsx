@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Image from "next/image";
 import { Seat, Venue, formatCurrency } from "@/lib/mock-data";
 
@@ -13,10 +13,10 @@ interface SectionInfo {
   totalSeats: number;
 }
 
-interface TooltipState {
+interface HoverCardState {
   section: string;
-  x: number;
-  y: number;
+  clientX: number;
+  clientY: number;
 }
 
 interface StadiumMapProps {
@@ -50,44 +50,53 @@ const TIER_LABEL: Record<string, string> = {
   premium: "Premium",
 };
 
-// ─── SVG layout — 5 sections around a central pitch ───────────────────────────
-// ViewBox: 0 0 560 460
-// Pitch: x=140 y=120 w=280 h=220
-// Each section is a polygon around the pitch
+// ─── SVG layout — realistic stadium sections ───────────────────────────────────
+// ViewBox: 0 0 560 480
+// Outer ring (Cadeiras Superiores): 0,0→560,480 with inner hole 28,28→532,452
+// Norte: y=28..132, x=28..532
+// Sul:   y=348..452, x=28..532
+// Leste Premium: x=432..532, y=132..348
+// Oeste Premium: x=28..128,  y=132..348
+// Pitch: x=128..432, y=132..348
 
 const SVG_SECTIONS: Record<
   string,
-  { path: string; labelX: number; labelY: number }
+  {
+    path: string;
+    labelX: number;
+    labelY: number;
+    labelRotate?: number;
+    fillRule?: "evenodd" | "nonzero";
+  }
 > = {
-  Norte: {
-    // Top arc above the pitch
-    path: "M 60,20 L 500,20 L 500,118 L 140,118 L 140,80 L 420,80 L 420,118 L 500,118 L 500,20 Z",
+  "Cadeiras Superiores": {
+    // Outer ring using even-odd fill rule: outer rect minus inner rect
+    path: "M 0,0 L 560,0 L 560,480 L 0,480 Z M 28,28 L 532,28 L 532,452 L 28,452 Z",
     labelX: 280,
-    labelY: 68,
+    labelY: 14,
+    fillRule: "evenodd",
+  },
+  Norte: {
+    path: "M 28,28 L 532,28 L 532,132 L 28,132 Z",
+    labelX: 280,
+    labelY: 80,
   },
   Sul: {
-    // Bottom arc below the pitch
-    path: "M 60,440 L 500,440 L 500,342 L 420,342 L 420,380 L 140,380 L 140,342 L 60,342 Z",
+    path: "M 28,348 L 532,348 L 532,452 L 28,452 Z",
     labelX: 280,
-    labelY: 392,
+    labelY: 400,
   },
   "Leste Premium": {
-    // Right side
-    path: "M 422,118 L 500,118 L 500,342 L 422,342 L 422,380 L 540,380 L 540,80 L 422,80 Z",
-    labelX: 492,
-    labelY: 230,
+    path: "M 432,132 L 532,132 L 532,348 L 432,348 Z",
+    labelX: 482,
+    labelY: 240,
+    labelRotate: 90,
   },
   "Oeste Premium": {
-    // Left side
-    path: "M 138,118 L 60,118 L 60,342 L 138,342 L 138,380 L 20,380 L 20,80 L 138,80 Z",
-    labelX: 68,
-    labelY: 230,
-  },
-  "Cadeiras Superiores": {
-    // Outer ring — rendered as 4 thin strips
-    path: "M 0,0 L 560,0 L 560,20 L 0,20 Z M 0,440 L 560,440 L 560,460 L 0,460 Z M 0,0 L 20,0 L 20,460 L 0,460 Z M 540,0 L 560,0 L 560,460 L 540,460 Z",
-    labelX: 280,
-    labelY: 10,
+    path: "M 28,132 L 128,132 L 128,348 L 28,348 Z",
+    labelX: 78,
+    labelY: 240,
+    labelRotate: -90,
   },
 };
 
@@ -100,8 +109,7 @@ export default function StadiumMap({
   maxSelectable = 6,
 }: StadiumMapProps) {
   const [activeSection, setActiveSection] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverCard, setHoverCard] = useState<HoverCardState | null>(null);
 
   // Build per-section summary
   const sectionInfo = useMemo<Record<string, SectionInfo>>(() => {
@@ -123,14 +131,12 @@ export default function StadiumMap({
         }
       }
     });
-    // Fallback price if all sold out
     Object.values(map).forEach((s) => {
       if (s.minPriceCents === Infinity) s.minPriceCents = 0;
     });
     return map;
   }, [seats]);
 
-  // Average price for "amazing deal" badge
   const avgPrice = useMemo(() => {
     const prices = Object.values(sectionInfo)
       .filter((s) => s.minPriceCents > 0)
@@ -139,22 +145,19 @@ export default function StadiumMap({
     return prices.reduce((a, b) => a + b, 0) / prices.length;
   }, [sectionInfo]);
 
-  const handleSectionClick = useCallback((sectionName: string) => {
-    const info = sectionInfo[sectionName];
-    if (!info || info.availableCount === 0) return;
-    setActiveSection(sectionName);
-    setTooltip(null);
-  }, [sectionInfo]);
+  const handleSectionClick = useCallback(
+    (sectionName: string) => {
+      const info = sectionInfo[sectionName];
+      if (!info || info.availableCount === 0) return;
+      setActiveSection(sectionName);
+      setHoverCard(null);
+    },
+    [sectionInfo]
+  );
 
   const handleMouseMove = useCallback(
-    (e: React.MouseEvent<SVGElement>, sectionName: string) => {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setTooltip({
-        section: sectionName,
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      });
+    (e: React.MouseEvent<SVGPathElement>, sectionName: string) => {
+      setHoverCard({ section: sectionName, clientX: e.clientX, clientY: e.clientY });
     },
     []
   );
@@ -178,7 +181,7 @@ export default function StadiumMap({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         {(["budget", "mid", "premium"] as const).map((tier) => (
@@ -200,138 +203,176 @@ export default function StadiumMap({
         </div>
       </div>
 
-      {/* SVG Map */}
-      <div className="relative w-full select-none" style={{ aspectRatio: "560/460" }}>
-        <svg
-          ref={svgRef}
-          viewBox="0 0 560 460"
-          className="w-full h-full"
-          aria-label="Mapa interativo do estádio. Clique em um setor para ver os assentos."
-          role="img"
-          onMouseLeave={() => setTooltip(null)}
+      {/* 3D perspective wrapper */}
+      <div
+        style={{ perspective: "700px", perspectiveOrigin: "50% 40%" }}
+        className="w-full select-none"
+      >
+        <div
+          style={{
+            transform: "rotateX(22deg)",
+            transformOrigin: "center 55%",
+          }}
         >
-          {/* Background */}
-          <rect width="560" height="460" fill="var(--color-surface-lowest, #f9f9f9)" rx="8" />
+          <svg
+            viewBox="0 0 560 480"
+            className="w-full h-auto"
+            aria-label="Mapa interativo do estádio. Clique em um setor para ver os assentos."
+            role="img"
+            onMouseLeave={() => setHoverCard(null)}
+          >
+            {/* Background */}
+            <rect width="560" height="480" fill="var(--color-surface-lowest, #f9f9f9)" rx="6" />
 
-          {/* Sections */}
-          {Object.entries(SVG_SECTIONS).map(([name, shape]) => {
-            const info = sectionInfo[name];
-            const available = info?.availableCount ?? 0;
-            const price = info?.minPriceCents ?? 0;
-            const tier = price > 0 ? priceTier(price) : "budget";
-            const isSoldOut = available === 0;
-            const fill = isSoldOut ? "#d1d5db" : TIER_FILL[tier];
-            const hoverFill = isSoldOut ? "#d1d5db" : TIER_FILL_HOVER[tier];
+            {/* Sections */}
+            {Object.entries(SVG_SECTIONS).map(([name, shape]) => {
+              const info = sectionInfo[name];
+              const available = info?.availableCount ?? 0;
+              const price = info?.minPriceCents ?? 0;
+              const tier = price > 0 ? priceTier(price) : "budget";
+              const isSoldOut = available === 0;
+              const fill = isSoldOut ? "#d1d5db" : TIER_FILL[tier];
+              const hoverFill = isSoldOut ? "#d1d5db" : TIER_FILL_HOVER[tier];
+              const isHovered = hoverCard?.section === name;
 
-            return (
-              <g key={name}>
-                <path
-                  d={shape.path}
-                  fill={fill}
-                  stroke="var(--color-surface-lowest, #f9f9f9)"
-                  strokeWidth="2"
-                  className="transition-colors duration-150"
-                  style={{ cursor: isSoldOut ? "not-allowed" : "pointer" }}
-                  opacity={isSoldOut ? 0.45 : 1}
-                  onClick={() => handleSectionClick(name)}
-                  onMouseMove={(e) => handleMouseMove(e, name)}
-                  onMouseEnter={(e) => {
-                    if (!isSoldOut) {
-                      (e.currentTarget as SVGPathElement).style.fill = hoverFill;
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as SVGPathElement).style.fill = fill;
-                  }}
-                  aria-label={`Setor ${name}${isSoldOut ? " — esgotado" : `, a partir de ${formatCurrency(price)}, ${available} disponíveis`}`}
-                  role="button"
-                  tabIndex={isSoldOut ? -1 : 0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") handleSectionClick(name);
-                  }}
-                />
-                {/* Price badge — skip for "Cadeiras Superiores" outer strips */}
-                {name !== "Cadeiras Superiores" && (
-                  <>
-                    <rect
-                      x={shape.labelX - 26}
-                      y={shape.labelY - 11}
-                      width={52}
-                      height={22}
-                      rx={11}
-                      fill="rgba(0,0,0,0.55)"
-                      className="pointer-events-none"
-                    />
+              return (
+                <g key={name}>
+                  <path
+                    d={shape.path}
+                    fillRule={shape.fillRule ?? "nonzero"}
+                    fill={isHovered && !isSoldOut ? hoverFill : fill}
+                    stroke="var(--color-surface-lowest, #f9f9f9)"
+                    strokeWidth="2"
+                    style={{ cursor: isSoldOut ? "not-allowed" : "pointer" }}
+                    opacity={isSoldOut ? 0.45 : 1}
+                    onClick={() => handleSectionClick(name)}
+                    onMouseMove={(e) => handleMouseMove(e, name)}
+                    onMouseLeave={() => setHoverCard(null)}
+                    aria-label={`Setor ${name}${isSoldOut ? " — esgotado" : `, a partir de ${formatCurrency(price)}, ${available} disponíveis`}`}
+                    role="button"
+                    tabIndex={isSoldOut ? -1 : 0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") handleSectionClick(name);
+                    }}
+                  />
+                  {/* Section name label */}
+                  {name !== "Cadeiras Superiores" && (
                     <text
                       x={shape.labelX}
                       y={shape.labelY + 4}
                       textAnchor="middle"
-                      fill="white"
-                      fontSize="9"
+                      fill="rgba(0,0,0,0.55)"
+                      fontSize={name === "Leste Premium" || name === "Oeste Premium" ? "9" : "10"}
                       fontWeight="700"
                       fontFamily="inherit"
-                      className="pointer-events-none"
+                      letterSpacing="0.5"
+                      className="pointer-events-none uppercase"
+                      transform={
+                        shape.labelRotate
+                          ? `rotate(${shape.labelRotate}, ${shape.labelX}, ${shape.labelY})`
+                          : undefined
+                      }
                     >
-                      {isSoldOut ? "Esgotado" : formatCurrency(price)}
+                      {name === "Leste Premium" || name === "Oeste Premium"
+                        ? name.replace(" ", "\n")
+                        : name}
                     </text>
-                  </>
-                )}
-                {/* Availability pulse dot */}
-                {!isSoldOut && name !== "Cadeiras Superiores" && (
-                  <circle
-                    cx={shape.labelX + 30}
-                    cy={shape.labelY}
-                    r={4}
-                    fill="#4ade80"
-                    className="pointer-events-none"
-                    opacity={0.9}
-                  />
-                )}
-              </g>
-            );
-          })}
+                  )}
+                  {/* Price badge */}
+                  {name !== "Cadeiras Superiores" && !isSoldOut && (
+                    <>
+                      <rect
+                        x={shape.labelX - 28}
+                        y={shape.labelY - 22}
+                        width={56}
+                        height={20}
+                        rx={10}
+                        fill="rgba(0,0,0,0.6)"
+                        className="pointer-events-none"
+                        transform={
+                          shape.labelRotate
+                            ? `rotate(${shape.labelRotate}, ${shape.labelX}, ${shape.labelY})`
+                            : undefined
+                        }
+                      />
+                      <text
+                        x={shape.labelX}
+                        y={shape.labelY - 8}
+                        textAnchor="middle"
+                        fill="white"
+                        fontSize="8.5"
+                        fontWeight="700"
+                        fontFamily="inherit"
+                        className="pointer-events-none"
+                        transform={
+                          shape.labelRotate
+                            ? `rotate(${shape.labelRotate}, ${shape.labelX}, ${shape.labelY})`
+                            : undefined
+                        }
+                      >
+                        {formatCurrency(price)}
+                      </text>
+                    </>
+                  )}
+                  {/* Availability dot */}
+                  {!isSoldOut && name !== "Cadeiras Superiores" && (
+                    <circle
+                      cx={shape.labelX + 32}
+                      cy={shape.labelY - 12}
+                      r={4}
+                      fill="#4ade80"
+                      className="pointer-events-none"
+                      opacity={0.9}
+                      transform={
+                        shape.labelRotate
+                          ? `rotate(${shape.labelRotate}, ${shape.labelX}, ${shape.labelY})`
+                          : undefined
+                      }
+                    />
+                  )}
+                </g>
+              );
+            })}
 
-          {/* Pitch */}
-          <rect x="140" y="120" width="280" height="220" fill="#166534" rx="4" />
-          {/* Pitch markings */}
-          <rect x="140" y="120" width="280" height="220" fill="none" stroke="#15803d" strokeWidth="1.5" rx="4" />
-          {/* Center circle */}
-          <circle cx="280" cy="230" r="35" fill="none" stroke="#15803d" strokeWidth="1.5" />
-          {/* Center spot */}
-          <circle cx="280" cy="230" r="3" fill="#15803d" />
-          {/* Halfway line */}
-          <line x1="140" y1="230" x2="420" y2="230" stroke="#15803d" strokeWidth="1.5" />
-          {/* Penalty areas */}
-          <rect x="195" y="120" width="170" height="45" fill="none" stroke="#15803d" strokeWidth="1.5" />
-          <rect x="195" y="295" width="170" height="45" fill="none" stroke="#15803d" strokeWidth="1.5" />
-          {/* Goal areas */}
-          <rect x="235" y="120" width="90" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
-          <rect x="235" y="300" width="90" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
-
-          {/* Field label */}
-          <text
-            x="280"
-            y="236"
-            textAnchor="middle"
-            fill="rgba(255,255,255,0.3)"
-            fontSize="9"
-            fontWeight="600"
-            letterSpacing="2"
-            fontFamily="inherit"
-          >
-            CAMPO
-          </text>
-        </svg>
-
-        {/* Hover Tooltip */}
-        {tooltip && sectionInfo[tooltip.section] && (
-          <SectionTooltip
-            info={sectionInfo[tooltip.section]}
-            x={tooltip.x}
-            y={tooltip.y}
-          />
-        )}
+            {/* Pitch */}
+            <rect x="128" y="132" width="304" height="216" fill="#166534" rx="3" />
+            <rect x="128" y="132" width="304" height="216" fill="none" stroke="#15803d" strokeWidth="1.5" rx="3" />
+            {/* Halfway line */}
+            <line x1="128" y1="240" x2="432" y2="240" stroke="#15803d" strokeWidth="1.5" />
+            {/* Center circle */}
+            <circle cx="280" cy="240" r="34" fill="none" stroke="#15803d" strokeWidth="1.5" />
+            <circle cx="280" cy="240" r="3" fill="#15803d" />
+            {/* Penalty areas */}
+            <rect x="182" y="132" width="196" height="46" fill="none" stroke="#15803d" strokeWidth="1.5" />
+            <rect x="182" y="302" width="196" height="46" fill="none" stroke="#15803d" strokeWidth="1.5" />
+            {/* Goal areas */}
+            <rect x="230" y="132" width="100" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
+            <rect x="230" y="328" width="100" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
+            {/* Field label */}
+            <text
+              x="280" y="244"
+              textAnchor="middle"
+              fill="rgba(255,255,255,0.25)"
+              fontSize="9"
+              fontWeight="700"
+              letterSpacing="3"
+              fontFamily="inherit"
+            >
+              CAMPO
+            </text>
+          </svg>
+        </div>
       </div>
+
+      {/* Hover card — rendered OUTSIDE the 3D transform so position:fixed works correctly */}
+      {hoverCard && sectionInfo[hoverCard.section] && (
+        <SectionHoverCard
+          info={sectionInfo[hoverCard.section]}
+          venue={venue}
+          clientX={hoverCard.clientX}
+          clientY={hoverCard.clientY}
+        />
+      )}
 
       <p className="text-[11px] font-body text-on-surface/30 text-center">
         Clique em um setor para ver os assentos disponíveis
@@ -340,49 +381,91 @@ export default function StadiumMap({
   );
 }
 
-// ─── Tooltip ───────────────────────────────────────────────────────────────────
+// ─── Section Hover Card ────────────────────────────────────────────────────────
 
-function SectionTooltip({
+function SectionHoverCard({
   info,
-  x,
-  y,
+  venue,
+  clientX,
+  clientY,
 }: {
   info: SectionInfo;
-  x: number;
-  y: number;
+  venue: Venue;
+  clientX: number;
+  clientY: number;
 }) {
   const isSoldOut = info.availableCount === 0;
   const tier = info.minPriceCents > 0 ? priceTier(info.minPriceCents) : "budget";
+  const photoUrl =
+    venue.sectionPhotos?.[info.name] ??
+    venue.imageUrl ??
+    "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400&q=80";
+
+  // Clamp to viewport edges
+  const cardW = 200;
+  const cardH = 210;
+  const margin = 12;
+  const left = Math.min(
+    Math.max(clientX + 14, margin),
+    (typeof window !== "undefined" ? window.innerWidth : 1200) - cardW - margin
+  );
+  const top = Math.min(
+    Math.max(clientY - 90, margin),
+    (typeof window !== "undefined" ? window.innerHeight : 800) - cardH - margin
+  );
 
   return (
     <div
-      className="pointer-events-none absolute z-20 w-44 bg-surface-lowest border border-outline-variant rounded-md shadow-lg p-3"
-      style={{ left: Math.min(x + 12, 999), top: Math.max(y - 60, 4) }}
+      className="pointer-events-none z-50 w-48 rounded-md overflow-hidden bg-surface-lowest border border-outline-variant shadow-xl"
+      style={{ position: "fixed", left, top }}
     >
-      <p className="font-display font-bold text-sm text-on-surface tracking-tight mb-1">
-        {info.name}
-      </p>
-      {isSoldOut ? (
-        <p className="text-xs font-body text-error">Esgotado</p>
-      ) : (
-        <>
-          <p className="text-xs font-body text-on-surface/60 mb-1">
-            A partir de{" "}
-            <span className="font-semibold text-on-surface">
-              {formatCurrency(info.minPriceCents)}
-            </span>
-          </p>
-          <div className="flex items-center gap-1.5">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ background: TIER_FILL[tier] }}
-            />
-            <span className="text-[10px] font-body text-on-surface/50">
-              {info.availableCount} disponíveis
-            </span>
-          </div>
-        </>
-      )}
+      {/* Photo */}
+      <div className="relative h-24">
+        <Image
+          src={photoUrl}
+          alt={`Vista — ${info.name}`}
+          fill
+          className="object-cover"
+          sizes="200px"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+        {/* Tier badge */}
+        <span
+          className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-body font-bold text-white"
+          style={{ background: TIER_FILL[tier] }}
+        >
+          {TIER_LABEL[tier]}
+        </span>
+      </div>
+
+      {/* Info */}
+      <div className="p-3 flex flex-col gap-1.5">
+        <p className="font-display font-black text-sm text-on-surface tracking-tight uppercase leading-none">
+          {info.name}
+        </p>
+
+        {isSoldOut ? (
+          <p className="text-[11px] font-body text-error font-semibold">Esgotado</p>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#4ade80] shrink-0" />
+              <span className="text-[11px] font-body text-on-surface/60">
+                {info.availableCount} disponíveis
+              </span>
+            </div>
+            <p className="text-[11px] font-body text-on-surface/50">
+              A partir de{" "}
+              <span className="font-bold text-on-surface">
+                {formatCurrency(info.minPriceCents)}
+              </span>
+            </p>
+            <p className="text-[10px] font-body text-primary font-semibold mt-0.5">
+              Clique para ver assentos →
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -440,88 +523,92 @@ function SectionDetailView({
         Todos os setores
       </button>
 
-      {/* Section photo card */}
-      <div className="bg-surface-lowest rounded-md overflow-hidden border border-outline-variant">
-        {/* Photo */}
-        <div className="relative h-44">
-          <Image
-            src={photoUrl}
-            alt={`Vista do setor ${section}`}
-            fill
-            className="object-cover"
-            sizes="700px"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+      {/* Split layout: photo card left, seat grid right (desktop) */}
+      <div className="flex flex-col lg:flex-row lg:items-start gap-5">
 
-          {/* Badges */}
-          <div className="absolute top-3 left-3 flex gap-2">
-            <span
-              className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold text-white"
-              style={{ background: TIER_FILL[tier] }}
-            >
-              {TIER_LABEL[tier]}
-            </span>
-            {isAmazingDeal && (
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold bg-primary text-on-primary">
-                Ótimo negócio
+        {/* ── Photo + info card (sticky on desktop) ── */}
+        <div className="lg:w-64 shrink-0 lg:sticky lg:top-24 flex flex-col gap-0 bg-surface-lowest rounded-md overflow-hidden border border-outline-variant">
+          {/* Photo */}
+          <div className="relative h-44 lg:h-52">
+            <Image
+              src={photoUrl}
+              alt={`Vista do setor ${section}`}
+              fill
+              className="object-cover"
+              sizes="300px"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+
+            {/* Badges */}
+            <div className="absolute top-3 left-3 flex gap-2 flex-wrap">
+              <span
+                className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold text-white"
+                style={{ background: TIER_FILL[tier] }}
+              >
+                {TIER_LABEL[tier]}
               </span>
-            )}
-          </div>
+              {isAmazingDeal && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold bg-primary text-on-primary">
+                  Ótimo negócio
+                </span>
+              )}
+            </div>
 
-          {/* Section name + price overlay */}
-          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
-            <div>
+            {/* Section name + price overlay */}
+            <div className="absolute bottom-3 left-3 right-3">
               <p className="font-display font-black text-white text-lg tracking-tight leading-none uppercase drop-shadow">
                 {section}
               </p>
-              <p className="text-white/70 text-xs font-body mt-0.5">
+              <p className="text-white/60 text-xs font-body mt-0.5 mb-2">
                 Vista do setor
               </p>
+              <div className="flex items-end justify-between">
+                <span className="text-white/60 text-[10px] font-body">A partir de</span>
+                <span className="font-display font-black text-white text-xl tracking-tight">
+                  {formatCurrency(info.minPriceCents)}
+                </span>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-white/60 text-[10px] font-body">A partir de</p>
-              <p className="font-display font-black text-white text-xl tracking-tight">
-                {formatCurrency(info.minPriceCents)}
+          </div>
+
+          {/* Stats bar */}
+          <div className="flex items-center divide-x divide-outline-variant">
+            <div className="flex-1 px-3 py-3 text-center">
+              <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
+                Dispon.
+              </p>
+              <p className="font-display font-bold text-sm text-on-surface">
+                {info.availableCount}
+              </p>
+            </div>
+            <div className="flex-1 px-3 py-3 text-center">
+              <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
+                Total
+              </p>
+              <p className="font-display font-bold text-sm text-on-surface">
+                {info.totalSeats}
+              </p>
+            </div>
+            <div className="flex-1 px-3 py-3 text-center">
+              <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
+                Máx.
+              </p>
+              <p className="font-display font-bold text-sm text-on-surface">
+                {maxSelectable}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Stats bar */}
-        <div className="flex items-center divide-x divide-outline-variant">
-          <div className="flex-1 px-4 py-3 text-center">
-            <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
-              Disponíveis
-            </p>
-            <p className="font-display font-bold text-sm text-on-surface">
-              {info.availableCount}
-            </p>
-          </div>
-          <div className="flex-1 px-4 py-3 text-center">
-            <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
-              Total
-            </p>
-            <p className="font-display font-bold text-sm text-on-surface">
-              {info.totalSeats}
-            </p>
-          </div>
-          <div className="flex-1 px-4 py-3 text-center">
-            <p className="text-[10px] font-body text-on-surface/40 uppercase tracking-wider mb-0.5">
-              Máx. por pedido
-            </p>
-            <p className="font-display font-bold text-sm text-on-surface">
-              {maxSelectable}
-            </p>
-          </div>
+        {/* ── Seat grid (scrollable) ── */}
+        <div className="flex-1 min-w-0">
+          <SeatGrid
+            seats={seats}
+            onSelectionChange={onSelectionChange}
+            maxSelectable={maxSelectable}
+          />
         </div>
       </div>
-
-      {/* Seat grid */}
-      <SeatGrid
-        seats={seats}
-        onSelectionChange={onSelectionChange}
-        maxSelectable={maxSelectable}
-      />
     </div>
   );
 }
@@ -573,65 +660,89 @@ function SeatGrid({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Stage indicator */}
-      <div className="flex flex-col items-center gap-1" aria-hidden="true">
-        <div className="w-full max-w-xs h-1.5 bg-primary/20 rounded-none" />
-        <span className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
-          Campo / Palco
-        </span>
+      {/* Campo / Palco indicator */}
+      <div className="relative flex flex-col items-center gap-1.5" aria-hidden="true">
+        <div className="w-full h-6 rounded-sm overflow-hidden" style={{
+          background: "linear-gradient(to bottom, #166534 0%, #15803d 60%, transparent 100%)",
+          opacity: 0.35,
+        }} />
+        <div className="absolute inset-0 flex items-center justify-center gap-2">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+            <path d="M5 9L5 1M5 1L2 4M5 1L8 4" stroke="#166534" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span className="text-[10px] font-body uppercase tracking-widest text-on-surface/50 font-semibold">
+            Campo / Palco
+          </span>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+            <path d="M5 9L5 1M5 1L2 4M5 1L8 4" stroke="#166534" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
       </div>
 
       {/* Grid */}
       <div
-        className="overflow-x-auto"
+        className="overflow-x-auto pb-1"
         role="grid"
         aria-label={`Grade de assentos. ${availableCount} disponíveis. Máximo ${maxSelectable} por pedido.`}
       >
-        <div className="flex flex-col gap-1.5 min-w-fit mx-auto w-fit">
-          {seatRows.map((row, rIdx) => (
-            <div key={rIdx} className="flex gap-1.5 items-center" role="row">
-              <span
-                className="text-[10px] font-body text-on-surface/30 w-4 shrink-0 text-right"
-                role="rowheader"
-                aria-label={`Fileira ${row[0]?.row ?? rIdx + 1}`}
+        <div className="flex flex-col gap-1 min-w-fit mx-auto w-fit">
+          {seatRows.map((row, rIdx) => {
+            const rowPrice = row.find((s) => s?.status === "AVAILABLE")?.priceCents;
+            const hasAvailable = row.some((s) => s?.status === "AVAILABLE");
+            return (
+              <div
+                key={rIdx}
+                className="flex gap-1 items-center"
+                role="row"
+                style={{ marginLeft: rIdx % 2 === 1 ? "6px" : "0" }}
               >
-                {row[0]?.row ?? ""}
-              </span>
-              {row.map((seat, cIdx) =>
-                seat ? (
-                  <SeatButton
-                    key={seat.id}
-                    seat={seat}
-                    isSelected={selected.has(seat.id)}
-                    onToggle={toggleSeat}
-                  />
-                ) : (
-                  <div
-                    key={cIdx}
-                    className="w-6 h-6"
-                    role="gridcell"
-                    aria-hidden="true"
-                  />
-                )
-              )}
-            </div>
-          ))}
+                <span
+                  className="text-[10px] font-body text-on-surface/30 w-4 shrink-0 text-right"
+                  role="rowheader"
+                  aria-label={`Fileira ${row[0]?.row ?? rIdx + 1}`}
+                >
+                  {row[0]?.row ?? ""}
+                </span>
+                {row.map((seat, cIdx) =>
+                  seat ? (
+                    <SeatButton
+                      key={seat.id}
+                      seat={seat}
+                      isSelected={selected.has(seat.id)}
+                      onToggle={toggleSeat}
+                    />
+                  ) : (
+                    <div
+                      key={cIdx}
+                      className="w-4 h-4"
+                      role="gridcell"
+                      aria-hidden="true"
+                    />
+                  )
+                )}
+                {/* Price pill per row */}
+                {hasAvailable && rowPrice && (
+                  <span className="ml-2 text-[10px] font-body font-semibold text-on-surface/60 bg-surface-lowest border border-outline-variant rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap">
+                    {formatCurrency(rowPrice)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4" role="list" aria-label="Legenda">
         {[
-          {
-            color: "bg-surface-high border border-outline-variant",
-            label: "Disponível",
-          },
-          { color: "bg-primary", label: "Selecionado" },
-          { color: "bg-surface-dim", label: "Indisponível" },
+          { color: "#22c55e", label: "Disponível" },
+          { isPrimary: true, label: "Selecionado" },
+          { color: "#9ca3af", label: "Indisponível" },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2" role="listitem">
             <div
-              className={`w-4 h-4 rounded-none ${item.color}`}
+              className={`w-3.5 h-3.5 rounded-full shrink-0${item.isPrimary ? " bg-primary" : ""}`}
+              style={item.color ? { background: item.color } : undefined}
               aria-hidden="true"
             />
             <span className="text-xs font-body text-on-surface/50">
@@ -673,7 +784,7 @@ function SeatGrid({
   );
 }
 
-// ─── SeatButton ────────────────────────────────────────────────────────────────
+// ─── SeatButton — dot circular estilo SeatGeek ─────────────────────────────────
 
 function SeatButton({
   seat,
@@ -692,24 +803,41 @@ function SeatButton({
     : `Fileira ${seat.row}, assento ${seat.number} — ${isReserved ? "reservado" : "indisponível"}`;
 
   return (
-    <button
-      role="gridcell"
-      onClick={() => onToggle(seat)}
-      disabled={!isAvailable}
-      aria-label={label}
-      aria-pressed={isSelected}
-      className={[
-        "w-6 h-6 rounded-none transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
-        isSelected
-          ? "bg-primary scale-110"
-          : isAvailable
-          ? "bg-surface-high border border-outline-variant hover:bg-primary/20 cursor-pointer"
-          : isReserved
-          ? "bg-surface-dim cursor-not-allowed opacity-60"
-          : "bg-surface-dim cursor-not-allowed opacity-40",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    />
+    <div className="relative group" role="gridcell">
+      <button
+        onClick={() => onToggle(seat)}
+        disabled={!isAvailable}
+        aria-label={label}
+        aria-pressed={isSelected}
+        style={
+          isSelected
+            ? undefined
+            : isAvailable
+            ? { background: "#22c55e" }
+            : { background: "#d1d5db", opacity: isReserved ? 0.6 : 0.4 }
+        }
+        className={[
+          "w-4 h-4 rounded-full transition-all duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 block",
+          isSelected
+            ? "bg-primary scale-125 shadow-sm shadow-primary/40"
+            : isAvailable
+            ? "hover:brightness-75 cursor-pointer active:scale-95"
+            : "cursor-not-allowed",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      />
+      {/* Per-seat price tooltip on hover */}
+      {isAvailable && !isSelected && (
+        <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-100">
+          <div className="bg-surface-lowest border border-outline-variant rounded-full px-2 py-0.5 shadow-md whitespace-nowrap">
+            <span className="text-[10px] font-body font-semibold text-on-surface">
+              {formatCurrency(seat.priceCents)}
+            </span>
+          </div>
+          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-outline-variant" />
+        </div>
+      )}
+    </div>
   );
 }
