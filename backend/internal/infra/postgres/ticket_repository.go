@@ -12,6 +12,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
 	pgdb "github.com/marcos-smeets/catraca/backend/internal/infra/postgres/db"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var _ repository.TicketRepository = (*TicketRepository)(nil)
@@ -136,6 +137,58 @@ func (r *TicketRepository) ListByOrderID(ctx context.Context, orderID uuid.UUID)
 		tickets = append(tickets, dbTicketToEntity(row))
 	}
 	return tickets, nil
+}
+
+const getTicketByQRCode = `
+SELECT id, order_id, event_id, seat_id, qr_code, status, used_at, purchased_at, created_at, updated_at
+FROM tickets
+WHERE LOWER(qr_code) = LOWER($1)
+`
+
+func (r *TicketRepository) GetByQRCode(ctx context.Context, qrCode string) (*entity.Ticket, error) {
+	row := r.pool.QueryRow(ctx, getTicketByQRCode, qrCode)
+	var (
+		t      entity.Ticket
+		usedAt pgtype.Timestamptz
+	)
+	err := row.Scan(
+		&t.ID,
+		&t.OrderID,
+		&t.EventID,
+		&t.SeatID,
+		&t.QRCode,
+		&t.Status,
+		&usedAt,
+		&t.PurchasedAt,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, repository.ErrNotFound
+		}
+		return nil, fmt.Errorf("TicketRepository.GetByQRCode: %w", err)
+	}
+	if usedAt.Valid {
+		ts := usedAt.Time
+		t.UsedAt = &ts
+	}
+	return &t, nil
+}
+
+func (r *TicketRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.TicketStatus, usedAt *time.Time) error {
+	var pgUsedAt pgtype.Timestamptz
+	if usedAt != nil {
+		pgUsedAt = pgtype.Timestamptz{Time: *usedAt, Valid: true}
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE tickets SET status = $2, used_at = $3, updated_at = NOW() WHERE id = $1`,
+		id, status.String(), pgUsedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("TicketRepository.UpdateStatus: %w", err)
+	}
+	return nil
 }
 
 // scanner is implemented by both pgx.Row and pgx.Rows

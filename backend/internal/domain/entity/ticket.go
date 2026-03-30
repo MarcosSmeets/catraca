@@ -14,6 +14,7 @@ type Ticket struct {
 	SeatID      uuid.UUID
 	QRCode      string
 	Status      TicketStatus
+	UsedAt      *time.Time
 	PurchasedAt time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -55,8 +56,10 @@ func (t *Ticket) Use() error {
 	if t.Status != TicketStatusValid {
 		return errors.New("only valid tickets can be used")
 	}
+	now := time.Now()
 	t.Status = TicketStatusUsed
-	t.UpdatedAt = time.Now()
+	t.UsedAt = &now
+	t.UpdatedAt = now
 	return nil
 }
 

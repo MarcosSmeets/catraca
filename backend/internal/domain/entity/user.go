@@ -22,6 +22,7 @@ const (
 	UserRoleUser      UserRole = "user"
 	UserRoleAdmin     UserRole = "admin"
 	UserRoleOrganizer UserRole = "organizer"
+	UserRoleStaff     UserRole = "staff"
 )
 
 type User struct {

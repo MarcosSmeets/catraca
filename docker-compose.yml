@@ -41,6 +41,18 @@ services:
       ]
     restart: on-failure
 
+  scraper:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.scraper
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://catraca:catraca@postgres:5432/catraca?sslmode=disable
+      APP_ENV: ${APP_ENV:-development}
+    restart: on-failure
+
   api:
     build:
       context: ./backend
@@ -50,7 +62,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
+      scraper:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://catraca:catraca@postgres:5432/catraca?sslmode=disable

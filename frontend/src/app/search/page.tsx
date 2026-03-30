@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import MainLayout from "@/components/features/MainLayout";
@@ -61,6 +61,8 @@ function SearchPageContent() {
   const [minPrice, setMinPrice] = useState(PRICE_STEPS[0]);
   const [maxPrice, setMaxPrice] = useState(PRICE_STEPS[PRICE_STEPS.length - 1]);
 
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const { data, isLoading } = useEvents({
     q: query || undefined,
     sport: selectedSport || undefined,
@@ -104,22 +106,69 @@ function SearchPageContent() {
     maxPrice < PRICE_STEPS[PRICE_STEPS.length - 1]
   );
 
+  const activeFilterCount = [
+    query,
+    selectedSport,
+    selectedLeague,
+    selectedCity,
+    dateFrom !== defaultDateFrom,
+    dateTo !== defaultDateTo,
+    minPrice > 0,
+    maxPrice < PRICE_STEPS[PRICE_STEPS.length - 1],
+  ].filter(Boolean).length;
+
+  function clearAllFilters() {
+    setQuery("");
+    setSelectedSport("");
+    setSelectedLeague("");
+    setSelectedCity("");
+    setDateFrom(todayStr());
+    setDateTo(endOfMonthStr());
+    setMinPrice(PRICE_STEPS[0]);
+    setMaxPrice(PRICE_STEPS[PRICE_STEPS.length - 1]);
+    setPage(1);
+  }
+
   return (
     <MainLayout>
       <div className="max-w-7xl mx-auto px-6 py-10">
         {/* Header */}
-        <div className="mb-8">
-          <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">
-            Marketplace
-          </p>
-          <h1 className="font-display font-black text-3xl md:text-4xl text-on-surface tracking-tight uppercase">
-            Explorar eventos
-          </h1>
+        <div className="mb-8 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">
+              Marketplace
+            </p>
+            <h1 className="font-display font-black text-3xl md:text-4xl text-on-surface tracking-tight uppercase">
+              Explorar eventos
+            </h1>
+          </div>
+
+          {/* Mobile filter toggle */}
+          <button
+            className="lg:hidden flex items-center gap-2 px-4 py-2 rounded-sm border border-outline-variant bg-surface-lowest text-sm font-display font-semibold text-on-surface shrink-0"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-controls="search-filters"
+          >
+            <FilterIcon />
+            Filtros
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 w-5 h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
           {/* ── Sidebar Filters ─────────────────────────────────────────── */}
-          <aside className="w-full lg:w-64 shrink-0">
+          <aside
+            id="search-filters"
+            className={[
+              "w-full lg:w-64 shrink-0",
+              filtersOpen ? "block" : "hidden lg:block",
+            ].join(" ")}
+          >
             <div className="bg-surface-lowest rounded-md p-6 flex flex-col gap-6">
               {/* Text search */}
               <div>
@@ -211,22 +260,20 @@ function SearchPageContent() {
 
               {hasActiveFilters && (
                 <button
-                  onClick={() => {
-                    setQuery("");
-                    setSelectedSport("");
-                    setSelectedLeague("");
-                    setSelectedCity("");
-                    setDateFrom(todayStr());
-                    setDateTo(endOfMonthStr());
-                    setMinPrice(PRICE_STEPS[0]);
-                    setMaxPrice(PRICE_STEPS[PRICE_STEPS.length - 1]);
-                    setPage(1);
-                  }}
+                  onClick={clearAllFilters}
                   className="text-xs font-body text-on-surface/40 hover:text-error underline underline-offset-2 transition-colors duration-150 text-left"
                 >
                   Limpar filtros
                 </button>
               )}
+
+              {/* Mobile close */}
+              <button
+                className="lg:hidden w-full py-2.5 text-sm font-display font-semibold text-on-surface border border-outline-variant rounded-sm hover:bg-surface-low transition-colors duration-150"
+                onClick={() => setFiltersOpen(false)}
+              >
+                Aplicar filtros
+              </button>
             </div>
           </aside>
 
@@ -691,5 +738,25 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
         {picking === "from" ? "Clique para escolher a data inicial" : "Clique para escolher a data final"}
       </p>
     </div>
+  );
+}
+
+function FilterIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="11" y1="18" x2="13" y2="18" />
+    </svg>
   );
 }

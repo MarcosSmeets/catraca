@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAdminAuthStore } from "@/store/admin-auth";
 import { adminAuthLogout } from "@/lib/admin-auth-api";
@@ -9,12 +10,19 @@ const navItems = [
   { href: "/admin", label: "Dashboard", icon: "⬛" },
   { href: "/admin/venues", label: "Estádios", icon: "🏟" },
   { href: "/admin/events", label: "Eventos", icon: "📅" },
+  { href: "/admin/tickets/scan", label: "Validar Ingresso", icon: "✓" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { adminUser, clear } = useAdminAuthStore();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close sidebar on navigation
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
 
   async function handleLogout() {
     try {
@@ -26,10 +34,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="min-h-screen flex bg-surface-lowest">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-surface-lowest">
+      {/* Mobile top bar */}
+      <header className="lg:hidden flex items-center justify-between px-4 h-14 bg-surface-low border-b border-outline-variant shrink-0">
+        <Link href="/" className="flex items-center gap-2 group">
+          <span className="font-display font-black text-lg tracking-tight text-primary uppercase">
+            Catraca
+          </span>
+          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+        </Link>
+        <button
+          onClick={() => setSidebarOpen((v) => !v)}
+          className="p-2 text-on-surface/60 hover:text-on-surface transition-colors duration-150 rounded-sm"
+          aria-label={sidebarOpen ? "Fechar menu" : "Abrir menu"}
+          aria-expanded={sidebarOpen}
+        >
+          {sidebarOpen ? <CloseIcon /> : <HamburgerIcon />}
+        </button>
+      </header>
+
+      {/* Backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-60 shrink-0 bg-surface-low border-r border-outline-variant flex flex-col">
-        <div className="px-6 py-5 border-b border-outline-variant">
+      <aside
+        className={[
+          "fixed lg:static inset-y-0 left-0 z-40 w-60 shrink-0",
+          "bg-surface-low border-r border-outline-variant flex flex-col",
+          "transition-transform duration-300 ease-in-out",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+        ].join(" ")}
+      >
+        {/* Sidebar header — desktop */}
+        <div className="hidden lg:flex px-6 py-5 border-b border-outline-variant flex-col">
           <Link href="/" className="flex items-center gap-2 group">
             <span className="font-display font-black text-xl tracking-tight text-primary uppercase">
               Catraca
@@ -37,6 +80,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:scale-125 transition-transform duration-150" />
           </Link>
           <p className="text-xs font-body text-on-surface/40 mt-1">Painel Administrativo</p>
+        </div>
+
+        {/* Mobile sidebar header */}
+        <div className="lg:hidden px-6 py-4 border-b border-outline-variant">
+          <p className="text-xs font-body text-on-surface/40 uppercase tracking-wider">Painel Administrativo</p>
         </div>
 
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
@@ -83,9 +131,48 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-5xl mx-auto px-8 py-8">{children}</div>
+      <main className="flex-1 overflow-auto min-w-0">
+        <div className="max-w-5xl mx-auto px-4 md:px-8 py-6 md:py-8">{children}</div>
       </main>
     </div>
+  );
+}
+
+function HamburgerIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
   );
 }

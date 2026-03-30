@@ -43,7 +43,7 @@ export default function CartPage() {
   const { items, event, removeSeat, clearCart, secondsRemaining } = useCartStore();
 
   const initial = secondsRemaining();
-  const countdown = useCountdown(initial > 0 ? initial : RESERVATION_SECONDS);
+  const countdown = useCountdown(initial);
 
   const cartSeats = items.map((i) => i.seat);
   const subtotal = cartSeats.reduce((sum, s) => sum + s.priceCents, 0);

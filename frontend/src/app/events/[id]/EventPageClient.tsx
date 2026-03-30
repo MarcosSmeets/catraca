@@ -194,7 +194,7 @@ function EventPageInner({
       </div>
 
       {/* ── Content ───────────────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-6 py-10">
+      <div className="max-w-7xl mx-auto px-6 py-10 pb-28 lg:pb-10">
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="flex-1 min-w-0 flex flex-col gap-8">
             {/* Venue gallery */}
@@ -385,7 +385,7 @@ function EventPageInner({
           </div>
 
           {/* ── Order Panel ───────────────────────────────────────────────── */}
-          <aside className="w-full lg:w-80 shrink-0">
+          <aside className="hidden lg:block w-full lg:w-80 shrink-0">
             <div className="bg-surface-lowest rounded-md p-6 sticky top-20">
               <h3 className="font-display font-bold text-base uppercase tracking-tight text-on-surface mb-5">
                 Resumo do pedido
@@ -462,6 +462,26 @@ function EventPageInner({
           </aside>
         </div>
       </div>
+
+      {/* ── Mobile sticky CTA ─────────────────────────────────────────────── */}
+      {selectedSeats.length > 0 && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-surface-lowest border-t border-outline-variant px-4 py-3 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-body text-on-surface/50">
+              {selectedSeats.length} assento{selectedSeats.length > 1 ? "s" : ""}
+            </p>
+            <p className="font-display font-black text-base tracking-tight text-on-surface">
+              {formatCurrency(totalCents)}
+            </p>
+          </div>
+          <button
+            onClick={handleAddToCart}
+            className="shrink-0 px-5 py-3 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-display font-bold tracking-tight rounded-sm hover:opacity-90 transition-opacity duration-150"
+          >
+            Adicionar ao carrinho
+          </button>
+        </div>
+      )}
     </MainLayout>
   );
 }

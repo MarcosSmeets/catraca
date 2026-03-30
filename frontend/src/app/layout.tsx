@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
@@ -19,6 +19,12 @@ export const metadata: Metadata = {
   title: "Catraca — Ingressos Esportivos",
   description:
     "O marketplace de ingressos esportivos do torcedor brasileiro. Futebol, Basquete, Vôlei e mais.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({

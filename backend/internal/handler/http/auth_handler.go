@@ -210,8 +210,8 @@ func (h *AuthHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if output.User.Role != entity.UserRoleAdmin && output.User.Role != entity.UserRoleOrganizer {
-		writeError(w, http.StatusForbidden, "access restricted to admin and organizer accounts")
+	if output.User.Role != entity.UserRoleAdmin && output.User.Role != entity.UserRoleOrganizer && output.User.Role != entity.UserRoleStaff {
+		writeError(w, http.StatusForbidden, "access restricted to admin, organizer and staff accounts")
 		return
 	}
 

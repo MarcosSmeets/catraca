@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import Image from "next/image";
 import { Seat, Venue, formatCurrency } from "@/lib/mock-data";
 
@@ -117,6 +117,13 @@ export default function StadiumMap({
 }: StadiumMapProps) {
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [hoverCard, setHoverCard] = useState<HoverCardState | null>(null);
+  // On touch devices, tapping a section shows a preview card before drilling in
+  const [tapPreview, setTapPreview] = useState<string | null>(null);
+  const [isTouch, setIsTouch] = useState(false);
+
+  useEffect(() => {
+    setIsTouch(window.matchMedia("(hover: none)").matches);
+  }, []);
 
   // Build per-section summary
   const sectionInfo = useMemo<Record<string, SectionInfo>>(() => {
@@ -156,10 +163,21 @@ export default function StadiumMap({
     (sectionName: string) => {
       const info = sectionInfo[sectionName];
       if (!info || info.availableCount === 0) return;
-      setActiveSection(sectionName);
-      setHoverCard(null);
+      if (isTouch) {
+        // On touch: first tap shows preview card, second tap drills in
+        if (tapPreview === sectionName) {
+          setTapPreview(null);
+          setActiveSection(sectionName);
+        } else {
+          setTapPreview(sectionName);
+        }
+        setHoverCard(null);
+      } else {
+        setActiveSection(sectionName);
+        setHoverCard(null);
+      }
     },
-    [sectionInfo]
+    [sectionInfo, isTouch, tapPreview]
   );
 
   const handleMouseMove = useCallback(
@@ -180,6 +198,7 @@ export default function StadiumMap({
         sport={sport}
         onBack={() => {
           setActiveSection(null);
+          setTapPreview(null);
           onSelectionChange([]);
         }}
         onSelectionChange={onSelectionChange}
@@ -227,7 +246,7 @@ export default function StadiumMap({
             className="w-full h-auto"
             aria-label="Mapa interativo do estádio. Clique em um setor para ver os assentos."
             role="img"
-            onMouseLeave={() => setHoverCard(null)}
+            onMouseLeave={!isTouch ? () => setHoverCard(null) : undefined}
           >
             {/* Background */}
             <rect width="560" height="480" fill="var(--color-surface-lowest, #f9f9f9)" rx="6" />
@@ -254,8 +273,8 @@ export default function StadiumMap({
                     style={{ cursor: isSoldOut ? "not-allowed" : "pointer" }}
                     opacity={isSoldOut ? 0.45 : 1}
                     onClick={() => handleSectionClick(name)}
-                    onMouseMove={(e) => handleMouseMove(e, name)}
-                    onMouseLeave={() => setHoverCard(null)}
+                    onMouseMove={!isTouch ? (e) => handleMouseMove(e, name) : undefined}
+                    onMouseLeave={!isTouch ? () => setHoverCard(null) : undefined}
                     aria-label={`Setor ${name}${isSoldOut ? " — esgotado" : `, a partir de ${formatCurrency(price)}, ${available} disponíveis`}`}
                     role="button"
                     tabIndex={isSoldOut ? -1 : 0}
@@ -353,7 +372,7 @@ export default function StadiumMap({
       </div>
 
       {/* Hover card — rendered OUTSIDE the 3D transform so position:fixed works correctly */}
-      {hoverCard && sectionInfo[hoverCard.section] && (
+      {!isTouch && hoverCard && sectionInfo[hoverCard.section] && (
         <SectionHoverCard
           info={sectionInfo[hoverCard.section]}
           venue={venue}
@@ -362,8 +381,23 @@ export default function StadiumMap({
         />
       )}
 
+      {/* Tap preview — shown on touch devices after first tap on a section */}
+      {isTouch && tapPreview && sectionInfo[tapPreview] && (
+        <TapPreviewCard
+          info={sectionInfo[tapPreview]}
+          venue={venue}
+          onConfirm={() => {
+            setTapPreview(null);
+            setActiveSection(tapPreview);
+          }}
+          onDismiss={() => setTapPreview(null)}
+        />
+      )}
+
       <p className="text-[11px] font-body text-on-surface/30 text-center">
-        Clique em um setor para ver os assentos disponíveis
+        {isTouch
+          ? "Toque em um setor para ver os assentos disponíveis"
+          : "Clique em um setor para ver os assentos disponíveis"}
       </p>
     </div>
   );
@@ -529,6 +563,86 @@ function SectionHoverCard({
             <p className="text-[10px] font-body text-primary font-semibold mt-0.5">
               Clique para ver assentos →
             </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tap Preview Card (touch-device alternative to hover card) ─────────────────
+
+function TapPreviewCard({
+  info,
+  venue,
+  onConfirm,
+  onDismiss,
+}: {
+  info: SectionInfo;
+  venue: Venue;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  const isSoldOut = info.availableCount === 0;
+  const tier = info.minPriceCents > 0 ? priceTier(info.minPriceCents) : "budget";
+  const photoUrl =
+    (venue as { sectionPhotos?: Record<string, string>; imageUrl?: string }).sectionPhotos?.[info.name] ??
+    (venue as { imageUrl?: string }).imageUrl ??
+    "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400&q=80";
+
+  return (
+    <div className="rounded-md overflow-hidden bg-surface-lowest border border-outline-variant shadow-xl">
+      {/* Photo */}
+      <div className="relative h-28">
+        <Image
+          src={photoUrl}
+          alt={`Vista — ${info.name}`}
+          fill
+          className="object-cover"
+          sizes="(max-width: 640px) 100vw, 400px"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+        <span
+          className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-body font-bold text-white"
+          style={{ background: TIER_FILL[tier] }}
+        >
+          {TIER_LABEL[tier]}
+        </span>
+        <button
+          onClick={onDismiss}
+          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center"
+          aria-label="Fechar"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="p-3 flex flex-col gap-2">
+        <p className="font-display font-black text-sm text-on-surface tracking-tight uppercase leading-none">
+          {info.name}
+        </p>
+
+        {isSoldOut ? (
+          <p className="text-[11px] font-body text-error font-semibold">Esgotado</p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-xs font-body text-on-surface/60">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#4ade80]" />
+                {info.availableCount} disponíveis
+              </span>
+              <span className="font-bold text-on-surface">
+                a partir de {formatCurrency(info.minPriceCents)}
+              </span>
+            </div>
+            <button
+              onClick={onConfirm}
+              className="w-full py-2.5 bg-primary text-on-primary text-xs font-display font-bold uppercase tracking-tight rounded-sm"
+            >
+              Ver assentos →
+            </button>
           </>
         )}
       </div>
@@ -890,16 +1004,32 @@ function SeatButton({
             : { background: "#d1d5db", opacity: isReserved ? 0.6 : 0.4 }
         }
         className={[
-          "w-4 h-4 rounded-full transition-all duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 block",
-          isSelected
-            ? "bg-primary scale-125 shadow-sm shadow-primary/40"
-            : isAvailable
-            ? "hover:brightness-75 cursor-pointer active:scale-95"
-            : "cursor-not-allowed",
+          // Larger invisible tap area for touch accessibility
+          "w-7 h-7 flex items-center justify-center",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+          "touch-manipulation",
+          isAvailable ? "cursor-pointer active:scale-95" : "cursor-not-allowed",
         ]
           .filter(Boolean)
           .join(" ")}
-      />
+      >
+        {/* Visual dot */}
+        <span
+          style={
+            isSelected
+              ? undefined
+              : isAvailable
+              ? { background: "#22c55e" }
+              : { background: "#d1d5db", opacity: isReserved ? 0.6 : 0.4 }
+          }
+          className={[
+            "block w-4 h-4 rounded-full transition-all duration-100",
+            isSelected ? "bg-primary scale-125 shadow-sm shadow-primary/40" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        />
+      </button>
       {/* Per-seat price tooltip on hover */}
       {isAvailable && !isSelected && (
         <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-100">

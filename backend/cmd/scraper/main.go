@@ -51,6 +51,18 @@ func main() {
 	venueRepo := pginfra.NewVenueRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 
+	// --- Skip if NBB events already exist (run-once guard) ---
+	var nbbCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM events WHERE league = 'NBB' AND deleted_at IS NULL`,
+	).Scan(&nbbCount); err != nil {
+		log.Fatal().Err(err).Msg("failed to check existing NBB events")
+	}
+	if nbbCount > 0 {
+		log.Info().Int("events", nbbCount).Msg("NBB events already present, skipping scrape")
+		return
+	}
+
 	// --- Backfill existing basketball events (image + seats) ---
 	if err := backfillExistingEvents(ctx, pool, seatRepo); err != nil {
 		log.Warn().Err(err).Msg("backfill had errors (continuing)")
@@ -108,8 +120,8 @@ func main() {
 		}
 
 		status := entity.EventStatusOnSale
-		if g.Played {
-			status = entity.EventStatusDraft
+		if g.Played || g.Date.Before(time.Now()) {
+			status = entity.EventStatusExpired
 		}
 
 		title := fmt.Sprintf("%s vs %s", g.HomeTeam, g.AwayTeam)
@@ -265,11 +277,11 @@ type basketballSectionDef struct {
 func generateBasketballSeats(eventID uuid.UUID, played bool) []*entity.Seat {
 	sections := []basketballSectionDef{
 		// Sideline (most expensive — courtside experience)
-		{name: "Leste Premium", rows: 4, cols: 10, startPrice: 100000, endPrice: 35000},
-		{name: "Oeste Premium", rows: 4, cols: 10, startPrice: 100000, endPrice: 35000},
+		{name: "Leste Premium", rows: 4, cols: 10, startPrice: 50000, endPrice: 30000},
+		{name: "Oeste Premium", rows: 4, cols: 10, startPrice: 50000, endPrice: 30000},
 		// Behind baskets
-		{name: "Norte", rows: 6, cols: 12, startPrice: 30000, endPrice: 8000},
-		{name: "Sul", rows: 6, cols: 12, startPrice: 30000, endPrice: 8000},
+		{name: "Norte", rows: 6, cols: 12, startPrice: 20000, endPrice: 8000},
+		{name: "Sul", rows: 6, cols: 12, startPrice: 20000, endPrice: 8000},
 		// Upper tier (cheapest)
 		{name: "Cadeiras Superiores", rows: 5, cols: 14, startPrice: 6000, endPrice: 2000},
 	}

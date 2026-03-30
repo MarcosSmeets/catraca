@@ -129,3 +129,43 @@ export async function adminBatchCreateSeats(
   });
   return res.seats;
 }
+
+// Ticket scan
+export interface ScanTicketResult {
+  id: string;
+  qrCode: string;
+  status: "VALID" | "USED" | "CANCELLED";
+  usedAt?: string;
+  purchasedAt: string;
+  event?: {
+    id: string;
+    homeTeam: string;
+    awayTeam: string;
+    league: string;
+    sport: string;
+    startsAt: string;
+    imageUrl: string;
+    venueName: string;
+    venueCity: string;
+  };
+  seat?: {
+    id: string;
+    section: string;
+    row: string;
+    number: string;
+    priceCents: number;
+  };
+}
+
+export interface ScanTicketConflict {
+  error: string;
+  ticket: ScanTicketResult;
+}
+
+export async function adminScanTicket(qrCode: string): Promise<ScanTicketResult> {
+  return apiFetch<ScanTicketResult>("/admin/tickets/scan", {
+    method: "POST",
+    body: JSON.stringify({ qr_code: qrCode }),
+    accessToken: token(),
+  });
+}

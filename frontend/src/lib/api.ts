@@ -6,7 +6,8 @@ const API_BASE_URL =
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    public readonly data?: unknown
   ) {
     super(message);
     this.name = "ApiError";
@@ -19,15 +20,17 @@ interface RequestOptions extends RequestInit {
   _retry?: boolean;
 }
 
-async function parseError(res: Response): Promise<string> {
+async function parseError(res: Response): Promise<{ message: string; data?: unknown }> {
   let message = res.statusText;
+  let data: unknown;
   try {
     const body = await res.json();
     message = body.message ?? body.error ?? message;
+    data = body;
   } catch {
     // use statusText fallback
   }
-  return message;
+  return { message, data };
 }
 
 export async function apiFetch<T>(
@@ -83,8 +86,8 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    const message = await parseError(res);
-    throw new ApiError(res.status, message);
+    const { message, data } = await parseError(res);
+    throw new ApiError(res.status, message, data);
   }
 
   if (res.status === 204) return undefined as T;

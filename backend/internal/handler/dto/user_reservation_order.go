@@ -92,3 +92,17 @@ type ResetPasswordRequest struct {
 	Password string `json:"password"`
 }
 
+type ScanTicketRequest struct {
+	QRCode string `json:"qr_code"`
+}
+
+type ScanTicketResponse struct {
+	ID          string           `json:"id"`
+	QRCode      string           `json:"qrCode"`
+	Status      string           `json:"status"`
+	UsedAt      *string          `json:"usedAt,omitempty"`
+	PurchasedAt string           `json:"purchasedAt"`
+	Event       *TicketEventInfo `json:"event,omitempty"`
+	Seat        *TicketSeatInfo  `json:"seat,omitempty"`
+}
+

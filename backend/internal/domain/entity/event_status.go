@@ -7,6 +7,7 @@ const (
 	EventStatusOnSale    EventStatus = "ON_SALE"
 	EventStatusSoldOut   EventStatus = "SOLD_OUT"
 	EventStatusCancelled EventStatus = "CANCELLED"
+	EventStatusExpired   EventStatus = "EXPIRED"
 )
 
 var validEventStatuses = map[EventStatus]bool{
@@ -14,6 +15,7 @@ var validEventStatuses = map[EventStatus]bool{
 	EventStatusOnSale:    true,
 	EventStatusSoldOut:   true,
 	EventStatusCancelled: true,
+	EventStatusExpired:   true,
 }
 
 func (s EventStatus) IsValid() bool {

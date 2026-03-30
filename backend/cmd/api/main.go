@@ -109,6 +109,7 @@ func main() {
 
 	listTicketsUC := ticketuc.NewListTicketsUseCase(ticketRepo)
 	getTicketUC := ticketuc.NewGetTicketUseCase(ticketRepo, orderRepo)
+	scanTicketUC := ticketuc.NewScanTicketUseCase(ticketRepo)
 
 	// --- Workers ---
 	webhookWorker := worker.NewPaymentWebhookWorker(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub)
@@ -120,6 +121,7 @@ func main() {
 	sseHandler := httphandler.NewSSEHandler(sseHub)
 	webhookHandler := httphandler.NewWebhookHandler(paymentGateway, webhookWorker)
 	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo)
+	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
 		UserRepo:      userRepo,
 		SSEHub:        sseHub,
@@ -237,6 +239,14 @@ func main() {
 		r.Post("/admin/events/{id}/sections", adminHandler.CreateSection)
 
 		r.Post("/admin/events/{id}/seats/batch", adminHandler.BatchCreateSeats)
+	})
+
+	// Ticket scan — accessible to admin, organizer and staff
+	r.Group(func(r chi.Router) {
+		r.Use(authmw.Auth(tokenService))
+		r.Use(authmw.RequireRole("admin", "organizer", "staff"))
+
+		r.Post("/admin/tickets/scan", adminTicketHandler.ScanTicket)
 	})
 
 	srv := &http.Server{

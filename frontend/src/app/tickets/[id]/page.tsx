@@ -144,8 +144,8 @@ export default function TicketDetailPage({ params }: Props) {
 
           {/* Ticket body */}
           <div className="p-6">
-            {/* QR Code — only shown for upcoming valid tickets */}
-            {effStatus === "VALID" && (
+            {/* QR Code — shown for all VALID tickets regardless of event date */}
+            {ticket.status === "VALID" && (
               <div className="flex flex-col items-center gap-3 mb-8 py-6 border-b border-dashed border-outline-variant">
                 <div className="w-44 h-44 bg-surface-low rounded-sm overflow-hidden flex items-center justify-center p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -164,11 +164,26 @@ export default function TicketDetailPage({ params }: Props) {
               </div>
             )}
 
-            {/* Expired notice */}
+            {/* Used — show when/where it was used */}
+            {ticket.status === "USED" && (
+              <div className="mb-8 py-4 px-5 bg-surface-low rounded-sm text-center flex flex-col gap-1">
+                <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
+                  Ingresso utilizado
+                </p>
+                <p className="text-[10px] font-body text-on-surface/30 font-mono mt-1">
+                  {ticket.qrCode}
+                </p>
+              </div>
+            )}
+
+            {/* Expired notice — event passed but ticket was never used */}
             {effStatus === "EXPIRED" && (
-              <div className="mb-8 py-4 px-5 bg-surface-low rounded-sm border border-outline-variant text-center">
+              <div className="mb-8 py-4 px-5 bg-surface-low rounded-sm border border-outline-variant text-center flex flex-col gap-1">
                 <p className="text-sm font-body text-on-surface/50">
                   Este ingresso não foi utilizado — o evento já aconteceu.
+                </p>
+                <p className="text-[10px] font-body text-on-surface/20 font-mono mt-1">
+                  {ticket.qrCode}
                 </p>
               </div>
             )}
@@ -238,7 +253,7 @@ export default function TicketDetailPage({ params }: Props) {
 
             {/* Actions — PDF and transfer only for upcoming valid tickets */}
             <div className="flex flex-col gap-3">
-              {effStatus === "VALID" && (
+              {ticket.status === "VALID" && (
                 <>
                   <Button fullWidth onClick={handleDownloadPdf}>
                     Baixar PDF
