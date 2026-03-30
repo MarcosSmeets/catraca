@@ -213,6 +213,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
       );
       setConfirmedOrderId(orderRes.orderId);
 
+      // #region agent log
+      fetch('http://127.0.0.1:7815/ingest/facabb2b-07af-42da-84ca-7814c8ff6602',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3871ad'},body:JSON.stringify({sessionId:'3871ad',location:'checkout/page.tsx:214',message:'order created',data:{orderId:orderRes.orderId,clientSecret:orderRes.clientSecret?.slice(0,20),isDev:orderRes.clientSecret?.startsWith('pi_dev_'),method},hypothesisId:'C',timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+
       // 2. Confirm payment with Stripe (card) or wait for PIX webhook
       if (method === "card" && stripe && elements) {
         const cardElement = elements.getElement(CardElement);
@@ -230,7 +234,22 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
           }
         }
       }
-      // PIX: webhook will confirm asynchronously — we show success and let user check tickets
+
+      // In dev mode (no Stripe key), auto-confirm via dev endpoint
+      const isDevPayment = orderRes.clientSecret?.startsWith("pi_dev_");
+      if (isDevPayment) {
+        try {
+          await apiFetch(`/dev/orders/${orderRes.orderId}/pay`, {
+            method: "POST",
+            accessToken,
+          });
+          // #region agent log
+          fetch('http://127.0.0.1:7815/ingest/facabb2b-07af-42da-84ca-7814c8ff6602',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3871ad'},body:JSON.stringify({sessionId:'3871ad',location:'checkout/page.tsx:dev-pay',message:'dev payment simulated',data:{orderId:orderRes.orderId},hypothesisId:'C',timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        } catch {
+          // dev endpoint failure is non-fatal; order will stay PENDING but we still show success
+        }
+      }
 
       clearCart();
       setStep("success");

@@ -1,21 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { useAuthStore } from "@/store/auth";
-import { mockOrders, type Order } from "./mock-data";
+import type { Order } from "./mock-data";
 
 export interface CreateOrderRequest {
   reservationIds: string[];
   paymentIntentId: string;
 }
 
+// List orders for the authenticated user — backend: GET /me/orders
 async function fetchOrders(): Promise<Order[]> {
   const token = useAuthStore.getState().accessToken;
-  return apiFetch<Order[]>("/orders", { accessToken: token });
+  return apiFetch<Order[]>("/me/orders", { accessToken: token });
 }
 
+// Get a single order — backend: GET /me/orders/{id}
 async function fetchOrder(id: string): Promise<Order> {
   const token = useAuthStore.getState().accessToken;
-  return apiFetch<Order>(`/orders/${id}`, { accessToken: token });
+  return apiFetch<Order>(`/me/orders/${id}`, { accessToken: token });
 }
 
 async function createOrder(data: CreateOrderRequest): Promise<Order> {
@@ -31,7 +33,6 @@ export function useOrders() {
   return useQuery({
     queryKey: ["orders"],
     queryFn: fetchOrders,
-    placeholderData: mockOrders,
   });
 }
 
@@ -39,7 +40,6 @@ export function useOrder(id: string) {
   return useQuery({
     queryKey: ["order", id],
     queryFn: () => fetchOrder(id),
-    placeholderData: mockOrders.find((o) => o.id === id),
     enabled: !!id,
   });
 }

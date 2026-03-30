@@ -4,19 +4,27 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"io"
 )
 
-// Encrypt encrypts plaintext using AES-256-GCM with the given 32-byte key.
+// deriveKey returns a 32-byte AES-256 key by hashing the passphrase with SHA-256.
+// This allows any-length passphrases to work without configuration errors.
+func deriveKey(passphrase string) []byte {
+	h := sha256.Sum256([]byte(passphrase))
+	return h[:]
+}
+
+// Encrypt encrypts plaintext using AES-256-GCM with the given passphrase.
 // Returns a base64url-encoded string with the random nonce prepended to the ciphertext.
 // Empty plaintext is passed through unchanged so optional fields remain empty in the DB.
-func Encrypt(plaintext, key string) (string, error) {
+func Encrypt(plaintext, passphrase string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
-	block, err := aes.NewCipher([]byte(key))
+	block, err := aes.NewCipher(deriveKey(passphrase))
 	if err != nil {
 		return "", err
 	}
@@ -36,7 +44,7 @@ func Encrypt(plaintext, key string) (string, error) {
 // Decrypt reverses Encrypt. Returns an error if the key is wrong or the
 // ciphertext has been tampered with (GCM authentication failure).
 // Empty ciphertext is passed through unchanged.
-func Decrypt(ciphertext, key string) (string, error) {
+func Decrypt(ciphertext, passphrase string) (string, error) {
 	if ciphertext == "" {
 		return "", nil
 	}
@@ -44,7 +52,7 @@ func Decrypt(ciphertext, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	block, err := aes.NewCipher([]byte(key))
+	block, err := aes.NewCipher(deriveKey(passphrase))
 	if err != nil {
 		return "", err
 	}

@@ -1,4 +1,4 @@
-.PHONY: run test test/unit test/int mock migrate/up migrate/down sqlc lint build seed
+.PHONY: run test test/unit test/int mock migrate/up migrate/down sqlc lint build seed scrape-nbb
 
 DATABASE_URL ?= postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable
 
@@ -10,6 +10,9 @@ build:
 
 seed:
 	go run cmd/seed/main.go
+
+scrape-nbb:
+	go run cmd/scraper/main.go
 
 test:
 	go test ./... -race -count=1

@@ -24,11 +24,17 @@ interface StadiumMapProps {
   venue: Venue;
   onSelectionChange: (selected: Seat[]) => void;
   maxSelectable?: number;
+  sport?: string;
 }
 
 // ─── Price tier helpers ─────────────────────────────────────────────────────────
 
-function priceTier(cents: number): "budget" | "mid" | "premium" {
+function priceTier(cents: number, sport?: string): "budget" | "mid" | "premium" {
+  if (sport === "BASKETBALL") {
+    if (cents < 15000) return "budget";
+    if (cents < 65000) return "mid";
+    return "premium";
+  }
   if (cents < 7000) return "budget";
   if (cents < 15000) return "mid";
   return "premium";
@@ -107,6 +113,7 @@ export default function StadiumMap({
   venue,
   onSelectionChange,
   maxSelectable = 6,
+  sport,
 }: StadiumMapProps) {
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [hoverCard, setHoverCard] = useState<HoverCardState | null>(null);
@@ -170,6 +177,7 @@ export default function StadiumMap({
         seats={seats.filter((s) => s.section === activeSection)}
         venue={venue}
         avgPrice={avgPrice}
+        sport={sport}
         onBack={() => {
           setActiveSection(null);
           onSelectionChange([]);
@@ -229,7 +237,7 @@ export default function StadiumMap({
               const info = sectionInfo[name];
               const available = info?.availableCount ?? 0;
               const price = info?.minPriceCents ?? 0;
-              const tier = price > 0 ? priceTier(price) : "budget";
+              const tier = price > 0 ? priceTier(price, sport) : "budget";
               const isSoldOut = available === 0;
               const fill = isSoldOut ? "#d1d5db" : TIER_FILL[tier];
               const hoverFill = isSoldOut ? "#d1d5db" : TIER_FILL_HOVER[tier];
@@ -334,32 +342,12 @@ export default function StadiumMap({
               );
             })}
 
-            {/* Pitch */}
-            <rect x="128" y="132" width="304" height="216" fill="#166534" rx="3" />
-            <rect x="128" y="132" width="304" height="216" fill="none" stroke="#15803d" strokeWidth="1.5" rx="3" />
-            {/* Halfway line */}
-            <line x1="128" y1="240" x2="432" y2="240" stroke="#15803d" strokeWidth="1.5" />
-            {/* Center circle */}
-            <circle cx="280" cy="240" r="34" fill="none" stroke="#15803d" strokeWidth="1.5" />
-            <circle cx="280" cy="240" r="3" fill="#15803d" />
-            {/* Penalty areas */}
-            <rect x="182" y="132" width="196" height="46" fill="none" stroke="#15803d" strokeWidth="1.5" />
-            <rect x="182" y="302" width="196" height="46" fill="none" stroke="#15803d" strokeWidth="1.5" />
-            {/* Goal areas */}
-            <rect x="230" y="132" width="100" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
-            <rect x="230" y="328" width="100" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
-            {/* Field label */}
-            <text
-              x="280" y="244"
-              textAnchor="middle"
-              fill="rgba(255,255,255,0.25)"
-              fontSize="9"
-              fontWeight="700"
-              letterSpacing="3"
-              fontFamily="inherit"
-            >
-              CAMPO
-            </text>
+            {/* Playing surface — basketball court or football pitch */}
+            {sport === "BASKETBALL" ? (
+              <BasketballCourtSVG />
+            ) : (
+              <FootballPitchSVG />
+            )}
           </svg>
         </div>
       </div>
@@ -381,6 +369,84 @@ export default function StadiumMap({
   );
 }
 
+// ─── Football Pitch SVG ────────────────────────────────────────────────────────
+
+function FootballPitchSVG() {
+  return (
+    <>
+      <rect x="128" y="132" width="304" height="216" fill="#166534" rx="3" />
+      <rect x="128" y="132" width="304" height="216" fill="none" stroke="#15803d" strokeWidth="1.5" rx="3" />
+      <line x1="128" y1="240" x2="432" y2="240" stroke="#15803d" strokeWidth="1.5" />
+      <circle cx="280" cy="240" r="34" fill="none" stroke="#15803d" strokeWidth="1.5" />
+      <circle cx="280" cy="240" r="3" fill="#15803d" />
+      <rect x="182" y="132" width="196" height="46" fill="none" stroke="#15803d" strokeWidth="1.5" />
+      <rect x="182" y="302" width="196" height="46" fill="none" stroke="#15803d" strokeWidth="1.5" />
+      <rect x="230" y="132" width="100" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
+      <rect x="230" y="328" width="100" height="20" fill="none" stroke="#15803d" strokeWidth="1.5" />
+      <text x="280" y="244" textAnchor="middle" fill="rgba(255,255,255,0.25)" fontSize="9" fontWeight="700" letterSpacing="3" fontFamily="inherit">
+        CAMPO
+      </text>
+    </>
+  );
+}
+
+// ─── Basketball Court SVG ──────────────────────────────────────────────────────
+// Court occupies x=128..432, y=132..348 (304×216px) — same area as the football pitch.
+// Layout (horizontal court, baskets on left and right):
+//   Center: (280, 240), half-court line at x=280
+//   Left basket at x=146, y=240; right basket at x=414, y=240
+//   Paint (key): 74px wide × 80px tall, centred on y=240
+//   Three-point arc: r≈80, corner lines at y=164 and y=316
+
+function BasketballCourtSVG() {
+  const lnStroke = "#8b5218";
+  const lnW = 1.5;
+  const court = "#c8733a";
+
+  return (
+    <>
+      {/* Court floor */}
+      <rect x="128" y="132" width="304" height="216" fill={court} rx="3" />
+
+      {/* Half-court line */}
+      <line x1="280" y1="132" x2="280" y2="348" stroke={lnStroke} strokeWidth={lnW} />
+
+      {/* Center circle */}
+      <circle cx="280" cy="240" r="26" fill="none" stroke={lnStroke} strokeWidth={lnW} />
+      <circle cx="280" cy="240" r="3" fill={lnStroke} />
+
+      {/* ── Left side ── */}
+      {/* Paint / key */}
+      <rect x="128" y="200" width="74" height="80" fill="rgba(0,0,0,0.08)" stroke={lnStroke} strokeWidth={lnW} />
+      {/* Free-throw lane (dashed arc) */}
+      <path d="M 202 200 A 40 40 0 0 1 202 280" fill="none" stroke={lnStroke} strokeWidth={lnW} strokeDasharray="4 3" />
+      {/* Corner three-point lines */}
+      <line x1="128" y1="164" x2="170" y2="164" stroke={lnStroke} strokeWidth={lnW} />
+      <line x1="128" y1="316" x2="170" y2="316" stroke={lnStroke} strokeWidth={lnW} />
+      {/* Three-point arc (center≈(146,240), r≈80) */}
+      <path d="M 170 164 A 82 82 0 0 1 170 316" fill="none" stroke={lnStroke} strokeWidth={lnW} />
+      {/* Backboard */}
+      <rect x="128" y="227" width="4" height="26" fill={lnStroke} />
+      {/* Hoop */}
+      <circle cx="142" cy="240" r="7" fill="none" stroke="#e87722" strokeWidth="2.5" />
+
+      {/* ── Right side (mirrored) ── */}
+      <rect x="358" y="200" width="74" height="80" fill="rgba(0,0,0,0.08)" stroke={lnStroke} strokeWidth={lnW} />
+      <path d="M 358 200 A 40 40 0 0 0 358 280" fill="none" stroke={lnStroke} strokeWidth={lnW} strokeDasharray="4 3" />
+      <line x1="432" y1="164" x2="390" y2="164" stroke={lnStroke} strokeWidth={lnW} />
+      <line x1="432" y1="316" x2="390" y2="316" stroke={lnStroke} strokeWidth={lnW} />
+      <path d="M 390 164 A 82 82 0 0 0 390 316" fill="none" stroke={lnStroke} strokeWidth={lnW} />
+      <rect x="428" y="227" width="4" height="26" fill={lnStroke} />
+      <circle cx="418" cy="240" r="7" fill="none" stroke="#e87722" strokeWidth="2.5" />
+
+      {/* Court label */}
+      <text x="280" y="244" textAnchor="middle" fill="rgba(0,0,0,0.18)" fontSize="9" fontWeight="700" letterSpacing="3" fontFamily="inherit">
+        QUADRA
+      </text>
+    </>
+  );
+}
+
 // ─── Section Hover Card ────────────────────────────────────────────────────────
 
 function SectionHoverCard({
@@ -397,8 +463,8 @@ function SectionHoverCard({
   const isSoldOut = info.availableCount === 0;
   const tier = info.minPriceCents > 0 ? priceTier(info.minPriceCents) : "budget";
   const photoUrl =
-    venue.sectionPhotos?.[info.name] ??
-    venue.imageUrl ??
+    (venue as { sectionPhotos?: Record<string, string>; imageUrl?: string }).sectionPhotos?.[info.name] ??
+    (venue as { imageUrl?: string }).imageUrl ??
     "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=400&q=80";
 
   // Clamp to viewport edges
@@ -478,6 +544,7 @@ function SectionDetailView({
   seats,
   venue,
   avgPrice,
+  sport,
   onBack,
   onSelectionChange,
   maxSelectable,
@@ -487,17 +554,18 @@ function SectionDetailView({
   seats: Seat[];
   venue: Venue;
   avgPrice: number;
+  sport?: string;
   onBack: () => void;
   onSelectionChange: (selected: Seat[]) => void;
   maxSelectable: number;
 }) {
   const photoUrl =
-    venue.sectionPhotos?.[section] ??
-    venue.imageUrl ??
+    (venue as { sectionPhotos?: Record<string, string>; imageUrl?: string }).sectionPhotos?.[section] ??
+    (venue as { imageUrl?: string }).imageUrl ??
     "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600&q=80";
 
   const isAmazingDeal = avgPrice > 0 && info.minPriceCents < avgPrice * 0.85;
-  const tier = priceTier(info.minPriceCents);
+  const tier = priceTier(info.minPriceCents, sport);
 
   return (
     <div className="flex flex-col gap-5">
@@ -606,6 +674,7 @@ function SectionDetailView({
             seats={seats}
             onSelectionChange={onSelectionChange}
             maxSelectable={maxSelectable}
+            sport={sport}
           />
         </div>
       </div>
@@ -619,10 +688,12 @@ function SeatGrid({
   seats,
   onSelectionChange,
   maxSelectable,
+  sport,
 }: {
   seats: Seat[];
   onSelectionChange: (selected: Seat[]) => void;
   maxSelectable: number;
+  sport?: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -660,21 +731,23 @@ function SeatGrid({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Campo / Palco indicator */}
+      {/* Court / Field indicator */}
       <div className="relative flex flex-col items-center gap-1.5" aria-hidden="true">
         <div className="w-full h-6 rounded-sm overflow-hidden" style={{
-          background: "linear-gradient(to bottom, #166534 0%, #15803d 60%, transparent 100%)",
+          background: sport === "BASKETBALL"
+            ? "linear-gradient(to bottom, #c8733a 0%, #d4883e 60%, transparent 100%)"
+            : "linear-gradient(to bottom, #166534 0%, #15803d 60%, transparent 100%)",
           opacity: 0.35,
         }} />
         <div className="absolute inset-0 flex items-center justify-center gap-2">
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M5 9L5 1M5 1L2 4M5 1L8 4" stroke="#166534" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M5 9L5 1M5 1L2 4M5 1L8 4" stroke={sport === "BASKETBALL" ? "#c8733a" : "#166534"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           <span className="text-[10px] font-body uppercase tracking-widest text-on-surface/50 font-semibold">
-            Campo / Palco
+            {sport === "BASKETBALL" ? "Quadra" : "Campo / Palco"}
           </span>
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M5 9L5 1M5 1L2 4M5 1L8 4" stroke="#166534" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M5 9L5 1M5 1L2 4M5 1L8 4" stroke={sport === "BASKETBALL" ? "#c8733a" : "#166534"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
       </div>

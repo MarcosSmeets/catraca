@@ -1,13 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { useAuthStore } from "@/store/auth";
-import {
-  mockEvents,
-  mockSeats,
-  type Event,
-  type Seat,
-  type SportType,
-} from "./mock-data";
+import type { Event, Seat, SportType } from "./mock-data";
 
 export interface SearchEventsParams {
   q?: string;
@@ -62,12 +56,6 @@ export function useEvents(params: SearchEventsParams = {}) {
   return useQuery({
     queryKey: ["events", params],
     queryFn: () => fetchEvents(params),
-    placeholderData: {
-      events: mockEvents,
-      total: mockEvents.length,
-      page: 1,
-      limit: 20,
-    },
   });
 }
 
@@ -75,7 +63,6 @@ export function useEvent(id: string) {
   return useQuery({
     queryKey: ["event", id],
     queryFn: () => fetchEvent(id),
-    placeholderData: mockEvents.find((e) => e.id === id),
     enabled: !!id,
   });
 }
@@ -84,7 +71,6 @@ export function useEventSeats(eventId: string) {
   return useQuery({
     queryKey: ["event-seats", eventId],
     queryFn: () => fetchEventSeats(eventId),
-    placeholderData: mockSeats[eventId] ?? [],
     enabled: !!eventId,
     refetchInterval: 15_000,
   });

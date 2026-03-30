@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import MainLayout from "@/components/features/MainLayout";
@@ -26,25 +26,41 @@ const CITIES = ["", "São Paulo", "Rio de Janeiro", "Belo Horizonte", "Curitiba"
 const PRICE_STEPS = [0, 2000, 5000, 10000, 20000, 50000];
 const PAGE_SIZE = 6;
 
+const SPORT_DEFAULT_LEAGUE: Partial<Record<SportType, string>> = {
+  BASKETBALL: "NBB",
+  VOLLEYBALL: "Superliga",
+};
+
+function todayStr(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function endOfMonthStr(): string {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split("T")[0];
+}
+
 function SearchPageContent() {
   const searchParams = useSearchParams();
 
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [selectedSport, setSelectedSport] = useState<SportType | "">((searchParams.get("sport") as SportType) ?? "");
-  const [selectedLeague, setSelectedLeague] = useState(searchParams.get("league") ?? "");
+  const [selectedLeague, setSelectedLeague] = useState(() => {
+    const leagueParam = searchParams.get("league");
+    if (leagueParam) return leagueParam;
+    const sportParam = searchParams.get("sport") as SportType;
+    return SPORT_DEFAULT_LEAGUE[sportParam] ?? "";
+  });
   const [selectedCity, setSelectedCity] = useState(searchParams.get("city") ?? "");
   const [sort, setSort] = useState<SortOption>("date");
   const [page, setPage] = useState(1);
 
-  // Date filters
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(todayStr);
+  const [dateTo, setDateTo] = useState(endOfMonthStr);
 
-  // Price range
   const [minPrice, setMinPrice] = useState(PRICE_STEPS[0]);
   const [maxPrice, setMaxPrice] = useState(PRICE_STEPS[PRICE_STEPS.length - 1]);
 
-  // Use real API — placeholderData with mocks keeps UI responsive during first load
   const { data, isLoading } = useEvents({
     q: query || undefined,
     sport: selectedSport || undefined,
@@ -67,7 +83,26 @@ function SearchPageContent() {
     setPage(1);
   }
 
-  const hasActiveFilters = !!(query || selectedSport || selectedLeague || selectedCity || dateFrom || dateTo || minPrice > 0 || maxPrice < PRICE_STEPS[PRICE_STEPS.length - 1]);
+  function handleSportChange(sport: SportType | "") {
+    handleFilterChange(() => {
+      setSelectedSport(sport);
+      setSelectedLeague(SPORT_DEFAULT_LEAGUE[sport as SportType] ?? "");
+    });
+  }
+
+  const defaultDateFrom = todayStr();
+  const defaultDateTo = endOfMonthStr();
+
+  const hasActiveFilters = !!(
+    query ||
+    selectedSport ||
+    selectedLeague ||
+    selectedCity ||
+    dateFrom !== defaultDateFrom ||
+    dateTo !== defaultDateTo ||
+    minPrice > 0 ||
+    maxPrice < PRICE_STEPS[PRICE_STEPS.length - 1]
+  );
 
   return (
     <MainLayout>
@@ -107,7 +142,7 @@ function SearchPageContent() {
               <FilterSelect
                 label="Esporte"
                 value={selectedSport}
-                onChange={(v) => handleFilterChange(() => setSelectedSport(v as SportType | ""))}
+                onChange={(v) => handleSportChange(v as SportType | "")}
                 options={SPORTS.map((s) => ({ value: s.value, label: s.label }))}
               />
 
@@ -126,32 +161,12 @@ function SearchPageContent() {
               />
 
               {/* Date range */}
-              <div>
-                <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
-                  Período
-                </label>
-                <div className="flex flex-col gap-2">
-                  <div>
-                    <label className="block text-[10px] font-body text-on-surface/40 mb-1">De</label>
-                    <input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => handleFilterChange(() => setDateFrom(e.target.value))}
-                      className="w-full bg-surface px-3 py-2 text-sm text-on-surface font-body rounded-sm border border-outline-variant focus:outline-none focus:border-primary transition-colors duration-150"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-body text-on-surface/40 mb-1">Até</label>
-                    <input
-                      type="date"
-                      value={dateTo}
-                      min={dateFrom}
-                      onChange={(e) => handleFilterChange(() => setDateTo(e.target.value))}
-                      className="w-full bg-surface px-3 py-2 text-sm text-on-surface font-body rounded-sm border border-outline-variant focus:outline-none focus:border-primary transition-colors duration-150"
-                    />
-                  </div>
-                </div>
-              </div>
+              <DateRangePicker
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                onChangeFrom={(d) => handleFilterChange(() => setDateFrom(d))}
+                onChangeTo={(d) => handleFilterChange(() => setDateTo(d))}
+              />
 
               {/* Price range */}
               <div>
@@ -201,8 +216,8 @@ function SearchPageContent() {
                     setSelectedSport("");
                     setSelectedLeague("");
                     setSelectedCity("");
-                    setDateFrom("");
-                    setDateTo("");
+                    setDateFrom(todayStr());
+                    setDateTo(endOfMonthStr());
                     setMinPrice(PRICE_STEPS[0]);
                     setMaxPrice(PRICE_STEPS[PRICE_STEPS.length - 1]);
                     setPage(1);
@@ -306,6 +321,8 @@ export default function SearchPage() {
   );
 }
 
+// ─── FilterSelect ────────────────────────────────────────────────────────────
+
 function FilterSelect({
   label,
   value,
@@ -402,6 +419,277 @@ function FilterSelect({
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ─── DateRangePicker ─────────────────────────────────────────────────────────
+
+const MONTH_NAMES_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+const DAY_NAMES_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+interface DateRangePickerProps {
+  dateFrom: string;
+  dateTo: string;
+  onChangeFrom: (d: string) => void;
+  onChangeTo: (d: string) => void;
+}
+
+function parseLocalDate(str: string): Date | null {
+  if (!str) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatDisplayDate(str: string): string {
+  if (!str) return "—";
+  const [y, m, d] = str.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+}
+
+function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRangePickerProps) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const initialMonth = parseLocalDate(dateFrom) ?? today;
+  const [viewYear, setViewYear] = useState(initialMonth.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialMonth.getMonth());
+  // picking state: "from" = next click sets start, "to" = next click sets end
+  const [picking, setPicking] = useState<"from" | "to">("from");
+  const [hovered, setHovered] = useState<Date | null>(null);
+
+  const fromDate = parseLocalDate(dateFrom);
+  const toDate = parseLocalDate(dateTo);
+
+  function goToPrevMonth() {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  }
+
+  function goToNextMonth() {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+  }
+
+  function handleDayClick(day: Date) {
+    const dayStr = formatLocalDate(day);
+    if (picking === "from") {
+      onChangeFrom(dayStr);
+      if (toDate && day > toDate) {
+        onChangeTo(dayStr);
+      }
+      setPicking("to");
+    } else {
+      if (fromDate && day < fromDate) {
+        onChangeFrom(dayStr);
+        onChangeTo(dateFrom);
+      } else {
+        onChangeTo(dayStr);
+      }
+      setPicking("from");
+    }
+  }
+
+  // Build calendar grid
+  const firstDayOfMonth = new Date(viewYear, viewMonth, 1);
+  const startOffset = firstDayOfMonth.getDay(); // 0=Sun
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+  // Effective "to" for range preview while picking
+  const effectiveTo = picking === "to" && hovered && fromDate
+    ? (hovered >= fromDate ? hovered : fromDate)
+    : toDate;
+  const effectiveFrom = picking === "to" && hovered && fromDate
+    ? (hovered < fromDate ? hovered : fromDate)
+    : fromDate;
+
+  const cells: (Date | null)[] = [
+    ...Array(startOffset).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(viewYear, viewMonth, i + 1)),
+  ];
+  // Pad to full weeks
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <div>
+      <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
+        Período
+      </label>
+
+      {/* Selected range display */}
+      <div className="flex items-center gap-2 mb-3 text-[11px] font-body">
+        <div
+          className={[
+            "flex-1 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors duration-150",
+            picking === "from"
+              ? "border-primary bg-surface text-on-surface"
+              : "border-outline-variant bg-surface text-on-surface/60",
+          ].join(" ")}
+          onClick={() => setPicking("from")}
+        >
+          <span className="text-[9px] uppercase tracking-wider text-on-surface/40 block leading-none mb-0.5">De</span>
+          <span className={picking === "from" ? "font-semibold" : ""}>{formatDisplayDate(dateFrom)}</span>
+        </div>
+        <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0 text-on-surface/30" aria-hidden="true">
+          <path d="M2 5h6M6 3l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <div
+          className={[
+            "flex-1 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors duration-150",
+            picking === "to"
+              ? "border-primary bg-surface text-on-surface"
+              : "border-outline-variant bg-surface text-on-surface/60",
+          ].join(" ")}
+          onClick={() => setPicking("to")}
+        >
+          <span className="text-[9px] uppercase tracking-wider text-on-surface/40 block leading-none mb-0.5">Até</span>
+          <span className={picking === "to" ? "font-semibold" : ""}>{formatDisplayDate(dateTo)}</span>
+        </div>
+      </div>
+
+      {/* Calendar */}
+      <div className="border border-outline-variant rounded-sm overflow-hidden">
+        {/* Month header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-outline-variant bg-surface">
+          <button
+            type="button"
+            onClick={goToPrevMonth}
+            className="p-1 text-on-surface/40 hover:text-on-surface transition-colors duration-150 rounded-sm hover:bg-surface-high"
+            aria-label="Mês anterior"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <span className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface">
+            {MONTH_NAMES_PT[viewMonth]} {viewYear}
+          </span>
+          <button
+            type="button"
+            onClick={goToNextMonth}
+            className="p-1 text-on-surface/40 hover:text-on-surface transition-colors duration-150 rounded-sm hover:bg-surface-high"
+            aria-label="Próximo mês"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Day-of-week headers */}
+        <div className="grid grid-cols-7 bg-surface-lowest">
+          {DAY_NAMES_PT.map((name) => (
+            <div
+              key={name}
+              className="text-center text-[9px] font-display font-semibold uppercase tracking-wider text-on-surface/30 py-1.5"
+            >
+              {name[0]}
+            </div>
+          ))}
+        </div>
+
+        {/* Day grid */}
+        <div
+          className="grid grid-cols-7 bg-surface-lowest pb-1"
+          onMouseLeave={() => setHovered(null)}
+        >
+          {cells.map((day, idx) => {
+            if (!day) {
+              return <div key={`empty-${idx}`} />;
+            }
+
+            const dayStr = formatLocalDate(day);
+            const isFrom = fromDate ? isSameDay(day, fromDate) : false;
+            const isTo = toDate ? isSameDay(day, toDate) : false;
+            const isToday = isSameDay(day, today);
+
+            const inRange =
+              effectiveFrom && effectiveTo &&
+              day > effectiveFrom && day < effectiveTo;
+
+            const isEdge = isFrom || isTo ||
+              (effectiveFrom && isSameDay(day, effectiveFrom)) ||
+              (effectiveTo && isSameDay(day, effectiveTo));
+
+            const isRangeStart = effectiveFrom ? isSameDay(day, effectiveFrom) : false;
+            const isRangeEnd = effectiveTo ? isSameDay(day, effectiveTo) : false;
+
+            // Determine left/right rounding for range band
+            const dayOfWeek = day.getDay();
+            const isFirstInRow = dayOfWeek === 0 || day.getDate() === 1;
+            const isLastInRow = dayOfWeek === 6 || day.getDate() === daysInMonth;
+
+            const showRangeBand = (inRange || isEdge) && effectiveFrom && effectiveTo &&
+              !isSameDay(effectiveFrom, effectiveTo);
+
+            const bandRoundLeft = showRangeBand && (isRangeStart || isFirstInRow);
+            const bandRoundRight = showRangeBand && (isRangeEnd || isLastInRow);
+
+            return (
+              <div
+                key={dayStr}
+                className="relative flex items-center justify-center py-0.5"
+                onMouseEnter={() => picking === "to" && setHovered(day)}
+              >
+                {/* Range band background */}
+                {showRangeBand && (
+                  <div
+                    className={[
+                      "absolute inset-y-0 bg-primary/10",
+                      "left-0 right-0",
+                      bandRoundLeft ? "rounded-l-full ml-1" : "",
+                      bandRoundRight ? "rounded-r-full mr-1" : "",
+                    ].join(" ")}
+                    aria-hidden="true"
+                  />
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleDayClick(day)}
+                  className={[
+                    "relative z-10 w-7 h-7 flex items-center justify-center rounded-full",
+                    "text-[11px] font-body transition-colors duration-100",
+                    isFrom || isTo || isRangeStart || isRangeEnd
+                      ? "bg-primary text-on-primary font-semibold"
+                      : inRange
+                        ? "text-on-surface hover:bg-primary/20"
+                        : "text-on-surface/60 hover:bg-surface-high hover:text-on-surface",
+                    isToday && !isFrom && !isTo && !isRangeStart && !isRangeEnd
+                      ? "ring-1 ring-primary/40"
+                      : "",
+                  ].join(" ")}
+                  aria-label={`${day.getDate()} de ${MONTH_NAMES_PT[day.getMonth()]} de ${day.getFullYear()}`}
+                  aria-pressed={isFrom || isTo}
+                >
+                  {day.getDate()}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Picking hint */}
+      <p className="mt-1.5 text-[10px] font-body text-on-surface/30 text-center">
+        {picking === "from" ? "Clique para escolher a data inicial" : "Clique para escolher a data final"}
+      </p>
     </div>
   );
 }

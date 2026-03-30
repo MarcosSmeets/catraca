@@ -5,3 +5,6 @@
 
 # Keep examples
 !.env.example
+
+stitch*
+CLAUDE.MD

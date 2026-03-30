@@ -15,20 +15,23 @@ import (
 
 // AdminHandler handles venue and event management for admin/organizer users.
 type AdminHandler struct {
-	venueRepo  repository.VenueRepository
-	eventRepo  repository.EventRepository
-	seatRepo   repository.SeatRepository
+	venueRepo   repository.VenueRepository
+	eventRepo   repository.EventRepository
+	seatRepo    repository.SeatRepository
+	sectionRepo repository.SectionRepository
 }
 
 func NewAdminHandler(
 	venueRepo repository.VenueRepository,
 	eventRepo repository.EventRepository,
 	seatRepo repository.SeatRepository,
+	sectionRepo repository.SectionRepository,
 ) *AdminHandler {
 	return &AdminHandler{
-		venueRepo: venueRepo,
-		eventRepo: eventRepo,
-		seatRepo:  seatRepo,
+		venueRepo:   venueRepo,
+		eventRepo:   eventRepo,
+		seatRepo:    seatRepo,
+		sectionRepo: sectionRepo,
 	}
 }
 
@@ -39,6 +42,25 @@ type CreateVenueRequest struct {
 	City     string `json:"city"`
 	State    string `json:"state"`
 	Capacity int    `json:"capacity"`
+}
+
+func (h *AdminHandler) ListVenues(w http.ResponseWriter, r *http.Request) {
+	venues, err := h.venueRepo.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list venues")
+		return
+	}
+	resp := make([]dto.VenueResponse, 0, len(venues))
+	for _, v := range venues {
+		resp = append(resp, dto.VenueResponse{
+			ID:       v.ID.String(),
+			Name:     v.Name,
+			City:     v.City,
+			State:    v.State,
+			Capacity: v.Capacity,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"venues": resp})
 }
 
 func (h *AdminHandler) CreateVenue(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +109,19 @@ type CreateEventRequest struct {
 	ImageURL          string   `json:"imageUrl"`
 	ServiceFeePercent float64  `json:"serviceFeePercent"`
 	VibeChips         []string `json:"vibeChips"`
+}
+
+func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
+	events, err := h.eventRepo.List(r.Context(), repository.EventFilter{Limit: 100})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list events")
+		return
+	}
+	resp := make([]dto.EventResponse, 0, len(events))
+	for _, e := range events {
+		resp = append(resp, toEventResponse(e))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": resp})
 }
 
 func (h *AdminHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
@@ -203,4 +238,156 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toEventResponse(event))
+}
+
+// ----- Sections -----
+
+type CreateSectionRequest struct {
+	Name     string `json:"name"`
+	ImageURL string `json:"imageUrl"`
+}
+
+type SectionResponse struct {
+	ID       string `json:"id"`
+	EventID  string `json:"eventId"`
+	Name     string `json:"name"`
+	ImageURL string `json:"imageUrl"`
+}
+
+func (h *AdminHandler) ListSections(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	eventID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	sections, err := h.sectionRepo.ListByEventID(r.Context(), eventID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list sections")
+		return
+	}
+
+	resp := make([]SectionResponse, 0, len(sections))
+	for _, s := range sections {
+		resp = append(resp, SectionResponse{
+			ID:       s.ID.String(),
+			EventID:  s.EventID.String(),
+			Name:     s.Name,
+			ImageURL: s.ImageURL,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sections": resp})
+}
+
+func (h *AdminHandler) CreateSection(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	eventID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	var req CreateSectionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "section name is required")
+		return
+	}
+
+	section, err := entity.NewSection(eventID, req.Name, req.ImageURL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.sectionRepo.Create(r.Context(), section); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create section")
+		return
+	}
+	writeJSON(w, http.StatusCreated, SectionResponse{
+		ID:       section.ID.String(),
+		EventID:  section.EventID.String(),
+		Name:     section.Name,
+		ImageURL: section.ImageURL,
+	})
+}
+
+// ----- Seats -----
+
+type SeatInput struct {
+	Section    string `json:"section"`
+	Row        string `json:"row"`
+	Number     string `json:"number"`
+	PriceCents int64  `json:"priceCents"`
+	Col        int    `json:"col"`
+	RowIndex   int    `json:"rowIndex"`
+}
+
+type BatchCreateSeatsRequest struct {
+	Seats []SeatInput `json:"seats"`
+}
+
+type SeatResponse struct {
+	ID         string `json:"id"`
+	EventID    string `json:"eventId"`
+	Section    string `json:"section"`
+	Row        string `json:"row"`
+	Number     string `json:"number"`
+	PriceCents int64  `json:"priceCents"`
+	Status     string `json:"status"`
+	Col        int    `json:"col"`
+	RowIndex   int    `json:"rowIndex"`
+}
+
+func (h *AdminHandler) BatchCreateSeats(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	eventID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	var req BatchCreateSeatsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.Seats) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one seat is required")
+		return
+	}
+
+	seats := make([]*entity.Seat, 0, len(req.Seats))
+	for _, input := range req.Seats {
+		seat, err := entity.NewSeat(eventID, input.Section, input.Row, input.Number, input.PriceCents, input.Col, input.RowIndex)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		seats = append(seats, seat)
+	}
+
+	if err := h.seatRepo.CreateBatch(r.Context(), seats); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create seats")
+		return
+	}
+
+	resp := make([]SeatResponse, 0, len(seats))
+	for _, s := range seats {
+		resp = append(resp, SeatResponse{
+			ID:         s.ID.String(),
+			EventID:    s.EventID.String(),
+			Section:    s.Section,
+			Row:        s.Row,
+			Number:     s.Number,
+			PriceCents: s.PriceCents,
+			Status:     s.Status.String(),
+			Col:        s.Col,
+			RowIndex:   s.RowIndex,
+		})
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"seats": resp})
 }

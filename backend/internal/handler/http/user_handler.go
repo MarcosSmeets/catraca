@@ -11,6 +11,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
 	"github.com/marcos-smeets/catraca/backend/internal/handler/dto"
+	"github.com/marcos-smeets/catraca/backend/internal/handler/http/sse"
 	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
@@ -20,6 +21,7 @@ import (
 // UserHandler handles profile, orders, tickets, and reservation routes.
 type UserHandler struct {
 	userRepo      repository.UserRepository
+	sseHub        *sse.Hub
 	reserveSeatUC *reservationuc.ReserveSeatUseCase
 	releaseSeatUC *reservationuc.ReleaseSeatUseCase
 	createOrderUC *orderuc.CreateOrderUseCase
@@ -32,6 +34,7 @@ type UserHandler struct {
 // UserDeps holds all dependencies for UserHandler.
 type UserDeps struct {
 	UserRepo      repository.UserRepository
+	SSEHub        *sse.Hub
 	ReserveSeatUC *reservationuc.ReserveSeatUseCase
 	ReleaseSeatUC *reservationuc.ReleaseSeatUseCase
 	CreateOrderUC *orderuc.CreateOrderUseCase
@@ -44,6 +47,7 @@ type UserDeps struct {
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
 		userRepo:      deps.UserRepo,
+		sseHub:        deps.SSEHub,
 		reserveSeatUC: deps.ReserveSeatUC,
 		releaseSeatUC: deps.ReleaseSeatUC,
 		createOrderUC: deps.CreateOrderUC,
@@ -181,6 +185,15 @@ func (h *UserHandler) CreateReservation(w http.ResponseWriter, r *http.Request) 
 			Status:    res.Status.String(),
 		})
 		expiresAt = res.ExpiresAt.Format(time.RFC3339)
+		// Broadcast seat status change to SSE subscribers
+		if h.sseHub != nil {
+			h.sseHub.Broadcast(eventID, sse.SeatUpdateEvent{
+				Type:    "seat_update",
+				SeatID:  res.SeatID.String(),
+				Status:  "RESERVED",
+				EventID: eventID.String(),
+			})
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, dto.CreateReservationResponse{

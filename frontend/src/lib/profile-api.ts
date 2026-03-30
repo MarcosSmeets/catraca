@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { useAuthStore } from "@/store/auth";
-import { mockUser, type User } from "./mock-data";
+import type { User } from "./mock-data";
 
 export interface UpdateProfileRequest {
   name?: string;
@@ -16,12 +16,12 @@ export interface ChangePasswordRequest {
 
 async function fetchProfile(): Promise<User> {
   const token = useAuthStore.getState().accessToken;
-  return apiFetch<User>("/users/me", { accessToken: token });
+  return apiFetch<User>("/me/profile", { accessToken: token });
 }
 
 async function updateProfile(data: UpdateProfileRequest): Promise<User> {
   const token = useAuthStore.getState().accessToken;
-  return apiFetch<User>("/users/me", {
+  return apiFetch<User>("/me/profile", {
     method: "PATCH",
     body: JSON.stringify(data),
     accessToken: token,
@@ -41,7 +41,6 @@ export function useProfile() {
   return useQuery({
     queryKey: ["profile"],
     queryFn: fetchProfile,
-    placeholderData: mockUser,
   });
 }
 

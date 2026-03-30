@@ -10,7 +10,11 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/usecase/user"
 )
 
-const refreshTokenCookieName = "refresh_token"
+const (
+	refreshTokenCookieName = "refresh_token"
+	adminTokenCookieName   = "admin_token"
+	adminTokenDuration     = 8 * 60 * 60 // 8 hours
+)
 
 type AuthHandler struct {
 	registerUC       *user.RegisterUseCase
@@ -180,6 +184,71 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "password updated successfully"})
+}
+
+func (h *AuthHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
+	var req dto.LoginRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+
+	output, err := h.loginUC.Execute(r.Context(), user.LoginInput{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		if errors.Is(err, user.ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "invalid email or password")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	if output.User.Role != entity.UserRoleAdmin && output.User.Role != entity.UserRoleOrganizer {
+		writeError(w, http.StatusForbidden, "access restricted to admin and organizer accounts")
+		return
+	}
+
+	h.setAdminTokenCookie(w, output.TokenPair.AccessToken)
+	writeJSON(w, http.StatusOK, dto.AuthResponse{
+		AccessToken: output.TokenPair.AccessToken,
+		User:        toUserResponse(output.User),
+	})
+}
+
+func (h *AuthHandler) AdminLogout(w http.ResponseWriter, r *http.Request) {
+	h.clearAdminTokenCookie(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AuthHandler) setAdminTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   adminTokenDuration,
+		HttpOnly: true,
+		Secure:   h.appEnv != "development",
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (h *AuthHandler) clearAdminTokenCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminTokenCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.appEnv != "development",
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string) {

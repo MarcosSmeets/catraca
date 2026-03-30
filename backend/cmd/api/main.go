@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
@@ -64,6 +65,7 @@ func main() {
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 	venueRepo := pginfra.NewVenueRepository(pool)
+	sectionRepo := pginfra.NewSectionRepository(pool)
 	reservationRepo := pginfra.NewReservationRepository(pool)
 	orderRepo := pginfra.NewOrderRepository(pool)
 	ticketRepo := pginfra.NewTicketRepository(pool)
@@ -99,7 +101,7 @@ func main() {
 	listSeatsUC := userevents.NewListSeatsUseCase(seatRepo)
 
 	reserveSeatUC := reservationuc.NewReserveSeatUseCase(seatRepo, reservationRepo, seatLocker)
-	releaseSeatUC := reservationuc.NewReleaseSeatUseCase(reservationRepo, seatLocker)
+	releaseSeatUC := reservationuc.NewReleaseSeatUseCase(reservationRepo, seatRepo, seatLocker)
 
 	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo, paymentGateway)
 	getOrderUC := orderuc.NewGetOrderUseCase(orderRepo)
@@ -117,9 +119,10 @@ func main() {
 	eventHandler := httphandler.NewEventHandler(listEventsUC, getEventUC, listSeatsUC)
 	sseHandler := httphandler.NewSSEHandler(sseHub)
 	webhookHandler := httphandler.NewWebhookHandler(paymentGateway, webhookWorker)
-	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo)
+	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo)
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
 		UserRepo:      userRepo,
+		SSEHub:        sseHub,
 		ReserveSeatUC: reserveSeatUC,
 		ReleaseSeatUC: releaseSeatUC,
 		CreateOrderUC: createOrderUC,
@@ -158,6 +161,10 @@ func main() {
 	r.Post("/auth/forgot-password", authHandler.ForgotPassword)
 	r.Post("/auth/reset-password", authHandler.ResetPassword)
 
+	// Admin auth (public — role is verified inside the handler)
+	r.Post("/admin/auth/login", authHandler.AdminLogin)
+	r.Post("/admin/auth/logout", authHandler.AdminLogout)
+
 	// Events (public)
 	r.Get("/events", eventHandler.List)
 	r.Get("/events/{id}", eventHandler.Get)
@@ -166,6 +173,30 @@ func main() {
 
 	// Stripe webhook (public — Stripe sends its own signature)
 	r.Post("/webhooks/stripe", webhookHandler.HandleStripe)
+
+	// Dev-only: simulate payment success without Stripe (only active when STRIPE_SECRET_KEY is empty)
+	if cfg.StripeSecretKey == "" {
+		r.Post("/dev/orders/{id}/pay", func(w http.ResponseWriter, r *http.Request) {
+			idStr := chi.URLParam(r, "id")
+			orderID, err := uuid.Parse(idStr)
+			if err != nil {
+				http.Error(w, `{"error":"invalid order id"}`, http.StatusBadRequest)
+				return
+			}
+			order, err := orderRepo.GetByID(r.Context(), orderID)
+			if err != nil {
+				http.Error(w, `{"error":"order not found"}`, http.StatusNotFound)
+				return
+			}
+			webhookWorker.Enqueue(worker.WebhookEvent{
+				Type:    "payment_intent.succeeded",
+				Payload: []byte(`{"id":"` + order.StripePaymentID + `","metadata":{"order_id":"` + order.ID.String() + `","user_id":"` + order.UserID.String() + `"}}`),
+			})
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"message":"payment simulated","orderId":"` + orderID.String() + `"}`))
+		})
+	}
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -194,10 +225,18 @@ func main() {
 		r.Use(authmw.Auth(tokenService))
 		r.Use(authmw.RequireRole("admin", "organizer"))
 
+		r.Get("/admin/venues", adminHandler.ListVenues)
 		r.Post("/admin/venues", adminHandler.CreateVenue)
+
+		r.Get("/admin/events", adminHandler.ListEvents)
 		r.Post("/admin/events", adminHandler.CreateEvent)
 		r.Patch("/admin/events/{id}", adminHandler.UpdateEvent)
 		r.Post("/admin/events/{id}/publish", adminHandler.PublishEvent)
+
+		r.Get("/admin/events/{id}/sections", adminHandler.ListSections)
+		r.Post("/admin/events/{id}/sections", adminHandler.CreateSection)
+
+		r.Post("/admin/events/{id}/seats/batch", adminHandler.BatchCreateSeats)
 	})
 
 	srv := &http.Server{

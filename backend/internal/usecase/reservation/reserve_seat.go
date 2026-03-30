@@ -95,6 +95,11 @@ func (uc *ReserveSeatUseCase) Execute(ctx context.Context, input ReserveSeatInpu
 			rollback()
 			return nil, fmt.Errorf("reserve seat: create reservation: %w", err)
 		}
+		// Mark seat as RESERVED in DB so the seat map shows it as unavailable
+		if err := uc.seatRepo.UpdateStatus(ctx, seatID, entity.SeatStatusReserved); err != nil {
+			rollback()
+			return nil, fmt.Errorf("reserve seat: update seat status: %w", err)
+		}
 		reservations = append(reservations, res)
 	}
 
@@ -111,15 +116,18 @@ type ReleaseSeatInput struct {
 // ReleaseSeatUseCase cancels an active reservation and unlocks the seat.
 type ReleaseSeatUseCase struct {
 	reservationRepo repository.ReservationRepository
+	seatRepo        repository.SeatRepository
 	seatLocker      service.SeatLockerService
 }
 
 func NewReleaseSeatUseCase(
 	reservationRepo repository.ReservationRepository,
+	seatRepo repository.SeatRepository,
 	seatLocker service.SeatLockerService,
 ) *ReleaseSeatUseCase {
 	return &ReleaseSeatUseCase{
 		reservationRepo: reservationRepo,
+		seatRepo:        seatRepo,
 		seatLocker:      seatLocker,
 	}
 }
@@ -143,6 +151,10 @@ func (uc *ReleaseSeatUseCase) Execute(ctx context.Context, input ReleaseSeatInpu
 	}
 	if err := uc.reservationRepo.UpdateStatus(ctx, res.ID, res.Status); err != nil {
 		return fmt.Errorf("release seat: update status: %w", err)
+	}
+	// Release the seat back to AVAILABLE in the DB
+	if err := uc.seatRepo.UpdateStatus(ctx, res.SeatID, entity.SeatStatusAvailable); err != nil {
+		return fmt.Errorf("release seat: update seat status: %w", err)
 	}
 	_ = uc.seatLocker.Unlock(ctx, input.EventID, res.SeatID)
 	return nil
