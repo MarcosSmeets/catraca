@@ -13,3 +13,8 @@ SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL;
 UPDATE users
 SET name = $2, email = $3, phone = $4
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = $2
+WHERE id = $1 AND deleted_at IS NULL;

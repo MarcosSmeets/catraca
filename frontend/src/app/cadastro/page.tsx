@@ -46,7 +46,7 @@ export default function CadastroPage() {
     setErrors({});
     try {
       const res = await register({ name: name.trim(), email, password });
-      setAuth(res.user, res.access_token);
+      setAuth(res.user, res.accessToken);
       router.push("/");
     } catch (err) {
       const message =

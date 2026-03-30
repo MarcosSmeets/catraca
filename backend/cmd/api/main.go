@@ -11,16 +11,25 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/marcos-smeets/catraca/backend/internal/config"
 	httphandler "github.com/marcos-smeets/catraca/backend/internal/handler/http"
+	"github.com/marcos-smeets/catraca/backend/internal/handler/http/sse"
 	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
 	jwtinfra "github.com/marcos-smeets/catraca/backend/internal/infra/jwt"
 	pginfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
-	eventuc "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
-	"github.com/marcos-smeets/catraca/backend/internal/usecase/user"
-	"github.com/marcos-smeets/catraca/backend/test/mock"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	redisinfra "github.com/marcos-smeets/catraca/backend/internal/infra/redis"
+	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
+	"github.com/marcos-smeets/catraca/backend/internal/infra/seed"
+	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
+	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
+	ticketuc "github.com/marcos-smeets/catraca/backend/internal/usecase/ticket"
+	userevents "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
+	useruc "github.com/marcos-smeets/catraca/backend/internal/usecase/user"
+	"github.com/marcos-smeets/catraca/backend/internal/worker"
 )
 
 func main() {
@@ -43,26 +52,81 @@ func main() {
 	}
 	defer pool.Close()
 
+	// --- Redis ---
+	redisClient, err := redisinfra.NewClient(cfg.RedisURL)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to connect to redis")
+	}
+	defer redisClient.Close()
+
 	// --- Repositories ---
-	userRepo := mock.NewUserRepository() // TODO: replace with postgres UserRepository
+	userRepo := pginfra.NewUserRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
+	venueRepo := pginfra.NewVenueRepository(pool)
+	reservationRepo := pginfra.NewReservationRepository(pool)
+	orderRepo := pginfra.NewOrderRepository(pool)
+	ticketRepo := pginfra.NewTicketRepository(pool)
 
-	// --- Infrastructure ---
+	// --- Seed demo data (idempotent) ---
+	if cfg.AppSeed {
+		log.Info().Msg("seeding demo data...")
+		if err := seed.LoadDemoData(ctx, eventRepo, venueRepo, seatRepo); err != nil {
+			log.Warn().Err(err).Msg("seed completed with warnings (data may already exist)")
+		} else {
+			log.Info().Msg("seed complete")
+		}
+	}
+
+	// --- Infrastructure services ---
 	tokenService := jwtinfra.NewTokenService(cfg.JWTSecret, cfg.JWTRefreshSecret)
+	seatLocker := redisinfra.NewSeatLocker(redisClient)
+	tokenStore := redisinfra.NewTokenStore(redisClient)
+	paymentGateway := stripeinfra.NewPaymentGateway(cfg.StripeSecretKey, cfg.StripeWebhookSecret)
+
+	// --- SSE Hub ---
+	sseHub := sse.NewHub()
 
 	// --- Use Cases ---
-	registerUC := user.NewRegisterUseCase(userRepo, tokenService)
-	loginUC := user.NewLoginUseCase(userRepo, tokenService)
-	refreshUC := user.NewRefreshUseCase(userRepo, tokenService)
+	registerUC := useruc.NewRegisterUseCase(userRepo, tokenService)
+	loginUC := useruc.NewLoginUseCase(userRepo, tokenService)
+	refreshUC := useruc.NewRefreshUseCase(userRepo, tokenService)
+	forgotPasswordUC := useruc.NewForgotPasswordUseCase(userRepo, tokenStore)
+	resetPasswordUC := useruc.NewResetPasswordUseCase(userRepo, tokenStore)
 
-	listEventsUC := eventuc.NewListEventsUseCase(eventRepo)
-	getEventUC := eventuc.NewGetEventUseCase(eventRepo)
-	listSeatsUC := eventuc.NewListSeatsUseCase(seatRepo)
+	listEventsUC := userevents.NewListEventsUseCase(eventRepo)
+	getEventUC := userevents.NewGetEventUseCase(eventRepo)
+	listSeatsUC := userevents.NewListSeatsUseCase(seatRepo)
+
+	reserveSeatUC := reservationuc.NewReserveSeatUseCase(seatRepo, reservationRepo, seatLocker)
+	releaseSeatUC := reservationuc.NewReleaseSeatUseCase(reservationRepo, seatLocker)
+
+	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo, paymentGateway)
+	getOrderUC := orderuc.NewGetOrderUseCase(orderRepo)
+	listOrdersUC := orderuc.NewListOrdersUseCase(orderRepo)
+
+	listTicketsUC := ticketuc.NewListTicketsUseCase(ticketRepo)
+	getTicketUC := ticketuc.NewGetTicketUseCase(ticketRepo, orderRepo)
+
+	// --- Workers ---
+	webhookWorker := worker.NewPaymentWebhookWorker(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub)
+	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, sseHub)
 
 	// --- Handlers ---
-	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC)
+	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AppEnv)
 	eventHandler := httphandler.NewEventHandler(listEventsUC, getEventUC, listSeatsUC)
+	sseHandler := httphandler.NewSSEHandler(sseHub)
+	webhookHandler := httphandler.NewWebhookHandler(paymentGateway, webhookWorker)
+	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo)
+	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
+		ReserveSeatUC: reserveSeatUC,
+		ReleaseSeatUC: releaseSeatUC,
+		CreateOrderUC: createOrderUC,
+		GetOrderUC:    getOrderUC,
+		ListOrdersUC:  listOrdersUC,
+		ListTicketsUC: listTicketsUC,
+		GetTicketUC:   getTicketUC,
+	})
 
 	// --- Router ---
 	r := chi.NewRouter()
@@ -71,34 +135,68 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedOrigins:   cfg.CORSAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 
+	// Health
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Auth routes (public)
+	// Auth (public)
 	r.Post("/auth/register", authHandler.Register)
 	r.Post("/auth/login", authHandler.Login)
 	r.Post("/auth/refresh", authHandler.Refresh)
 	r.Delete("/auth/logout", authHandler.Logout)
+	r.Post("/auth/forgot-password", authHandler.ForgotPassword)
+	r.Post("/auth/reset-password", authHandler.ResetPassword)
 
-	// Event routes (public)
+	// Events (public)
 	r.Get("/events", eventHandler.List)
 	r.Get("/events/{id}", eventHandler.Get)
 	r.Get("/events/{id}/seats", eventHandler.ListSeats)
+	r.Get("/events/{id}/seats/stream", sseHandler.SeatStream)
+
+	// Stripe webhook (public — Stripe sends its own signature)
+	r.Post("/webhooks/stripe", webhookHandler.HandleStripe)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(authmw.Auth(tokenService))
-		// Phase 4+: /reservations, /orders, /me/tickets
+
+		// Profile
+		r.Get("/me/profile", userHandler.GetProfile)
+		r.Patch("/me/profile", userHandler.UpdateProfile)
+
+		// Reservations
+		r.Post("/reservations", userHandler.CreateReservation)
+		r.Delete("/reservations/{id}", userHandler.DeleteReservation)
+
+		// Orders
+		r.Post("/orders", userHandler.CreateOrder)
+		r.Get("/me/orders", userHandler.ListOrders)
+		r.Get("/me/orders/{id}", userHandler.GetOrder)
+
+		// Tickets
+		r.Get("/me/tickets", userHandler.ListTickets)
+		r.Get("/me/tickets/{id}", userHandler.GetTicket)
+	})
+
+	// Admin routes
+	r.Group(func(r chi.Router) {
+		r.Use(authmw.Auth(tokenService))
+		r.Use(authmw.RequireRole("admin", "organizer"))
+
+		r.Post("/admin/venues", adminHandler.CreateVenue)
+		r.Post("/admin/events", adminHandler.CreateEvent)
+		r.Patch("/admin/events/{id}", adminHandler.UpdateEvent)
+		r.Post("/admin/events/{id}/publish", adminHandler.PublishEvent)
 	})
 
 	srv := &http.Server{
@@ -109,22 +207,35 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	go func() {
+	// Start workers + HTTP server with errgroup
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return webhookWorker.Run(gCtx)
+	})
+
+	g.Go(func() error {
+		return expiryWorker.Run(gCtx)
+	})
+
+	g.Go(func() error {
 		log.Info().Str("addr", cfg.Addr()).Msg("server starting")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("server failed")
+			return err
 		}
-	}()
+		return nil
+	})
 
-	<-ctx.Done()
-	log.Info().Msg("shutting down gracefully...")
+	g.Go(func() error {
+		<-gCtx.Done()
+		log.Info().Msg("shutting down gracefully...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	})
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatal().Err(err).Msg("shutdown failed")
+	if err := g.Wait(); err != nil && err != http.ErrServerClosed {
+		log.Error().Err(err).Msg("server exited with error")
 	}
-
 	log.Info().Msg("server stopped")
 }

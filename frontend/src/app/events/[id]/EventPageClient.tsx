@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
-import SeatMap from "@/components/features/SeatMap";
+import StadiumMap from "@/components/features/StadiumMap";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import {
@@ -35,8 +35,13 @@ function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEv
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
   const router = useRouter();
   const addSeats = useCartStore((s) => s.addSeats);
+
+  const gallery = event.venue.galleryUrls?.length
+    ? event.venue.galleryUrls
+    : [event.imageUrl];
 
   const isSoldOut = event.status === "SOLD_OUT";
   const subtotalCents = selectedSeats.reduce((sum, s) => sum + s.priceCents, 0);

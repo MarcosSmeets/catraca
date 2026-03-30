@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
-	DatabaseURL        string
-	RedisURL           string
-	JWTSecret          string
-	JWTRefreshSecret   string
-	StripeSecretKey    string
+	DatabaseURL         string
+	RedisURL            string
+	JWTSecret           string
+	JWTRefreshSecret    string
+	StripeSecretKey     string
 	StripeWebhookSecret string
-	AppEnv             string
-	Port               int
+	AppEnv              string
+	Port                int
+	AppSeed             bool
+	CORSAllowedOrigins  []string
 }
 
 func Load() (*Config, error) {
@@ -28,14 +31,16 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable"),
-		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:          getEnv("JWT_SECRET", "dev-secret-change-me"),
-		JWTRefreshSecret:   getEnv("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
-		StripeSecretKey:    os.Getenv("STRIPE_SECRET_KEY"),
+		DatabaseURL:         getEnv("DATABASE_URL", "postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable"),
+		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:           getEnv("JWT_SECRET", "dev-secret-change-me"),
+		JWTRefreshSecret:    getEnv("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
+		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
-		AppEnv:             getEnv("APP_ENV", "development"),
-		Port:               port,
+		AppEnv:              getEnv("APP_ENV", "development"),
+		Port:                port,
+		AppSeed:             getEnvBool("APP_SEED", false),
+		CORSAllowedOrigins:  getEnvSlice("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
 	}
 
 	return cfg, nil
@@ -50,4 +55,33 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
+// getEnvSlice reads a comma-separated env var and returns it as a string slice.
+// Falls back to a slice containing the single fallback value.
+func getEnvSlice(key, fallback string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		v = fallback
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

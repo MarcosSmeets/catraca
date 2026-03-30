@@ -1,4 +1,4 @@
-.PHONY: run test test/unit test/int mock migrate/up migrate/down sqlc lint build
+.PHONY: run test test/unit test/int mock migrate/up migrate/down sqlc lint build seed
 
 DATABASE_URL ?= postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable
 
@@ -7,6 +7,9 @@ run:
 
 build:
 	go build -o bin/api cmd/api/main.go
+
+seed:
+	go run cmd/seed/main.go
 
 test:
 	go test ./... -race -count=1

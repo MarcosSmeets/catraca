@@ -19,6 +19,9 @@ export interface Venue {
   city: string;
   state: string;
   capacity: number;
+  imageUrl: string;
+  galleryUrls: string[];
+  sectionPhotos: Record<string, string>;
 }
 
 export interface Event {
@@ -91,6 +94,18 @@ export interface User {
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 
+const SECTION_PHOTOS: Record<string, string> = {
+  Norte:
+    "https://images.unsplash.com/photo-1489944440615-453fc2b6a9a9?w=600&q=80",
+  Sul: "https://images.unsplash.com/photo-1551958219-acbc595d5afe?w=600&q=80",
+  "Leste Premium":
+    "https://images.unsplash.com/photo-1464983953574-0892a716854b?w=600&q=80",
+  "Oeste Premium":
+    "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&q=80",
+  "Cadeiras Superiores":
+    "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600&q=80",
+};
+
 export const mockVenues: Venue[] = [
   {
     id: "venue-1",
@@ -98,6 +113,14 @@ export const mockVenues: Venue[] = [
     city: "Belo Horizonte",
     state: "MG",
     capacity: 46000,
+    imageUrl:
+      "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=1200&q=80",
+    galleryUrls: [
+      "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=900&q=80",
+      "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=900&q=80",
+      "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=900&q=80",
+    ],
+    sectionPhotos: SECTION_PHOTOS,
   },
   {
     id: "venue-2",
@@ -105,6 +128,14 @@ export const mockVenues: Venue[] = [
     city: "São Paulo",
     state: "SP",
     capacity: 49205,
+    imageUrl:
+      "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=1200&q=80",
+    galleryUrls: [
+      "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=900&q=80",
+      "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=900&q=80",
+      "https://images.unsplash.com/photo-1553778263-73a83bab9b0c?w=900&q=80",
+    ],
+    sectionPhotos: SECTION_PHOTOS,
   },
   {
     id: "venue-3",
@@ -112,6 +143,14 @@ export const mockVenues: Venue[] = [
     city: "Rio de Janeiro",
     state: "RJ",
     capacity: 78838,
+    imageUrl:
+      "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1200&q=80",
+    galleryUrls: [
+      "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=900&q=80",
+      "https://images.unsplash.com/photo-1553778263-73a83bab9b0c?w=900&q=80",
+      "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=900&q=80",
+    ],
+    sectionPhotos: SECTION_PHOTOS,
   },
   {
     id: "venue-4",
@@ -119,6 +158,22 @@ export const mockVenues: Venue[] = [
     city: "São Paulo",
     state: "SP",
     capacity: 8000,
+    imageUrl:
+      "https://images.unsplash.com/photo-1504450758481-7338eba7524a?w=1200&q=80",
+    galleryUrls: [
+      "https://images.unsplash.com/photo-1504450758481-7338eba7524a?w=900&q=80",
+      "https://images.unsplash.com/photo-1546519638405-a9d1b2e7c6b7?w=900&q=80",
+    ],
+    sectionPhotos: {
+      Norte: "https://images.unsplash.com/photo-1489944440615-453fc2b6a9a9?w=600&q=80",
+      Sul: "https://images.unsplash.com/photo-1551958219-acbc595d5afe?w=600&q=80",
+      "Leste Premium":
+        "https://images.unsplash.com/photo-1464983953574-0892a716854b?w=600&q=80",
+      "Oeste Premium":
+        "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&q=80",
+      "Cadeiras Superiores":
+        "https://images.unsplash.com/photo-1546519638405-a9d1b2e7c6b7?w=600&q=80",
+    },
   },
   {
     id: "venue-5",
@@ -126,6 +181,13 @@ export const mockVenues: Venue[] = [
     city: "Curitiba",
     state: "PR",
     capacity: 42372,
+    imageUrl:
+      "https://images.unsplash.com/photo-1553778263-73a83bab9b0c?w=1200&q=80",
+    galleryUrls: [
+      "https://images.unsplash.com/photo-1553778263-73a83bab9b0c?w=900&q=80",
+      "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=900&q=80",
+    ],
+    sectionPhotos: SECTION_PHOTOS,
   },
   {
     id: "venue-6",
@@ -133,6 +195,13 @@ export const mockVenues: Venue[] = [
     city: "Fortaleza",
     state: "CE",
     capacity: 63903,
+    imageUrl:
+      "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1200&q=80",
+    galleryUrls: [
+      "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=900&q=80",
+      "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=900&q=80",
+    ],
+    sectionPhotos: SECTION_PHOTOS,
   },
 ];
 

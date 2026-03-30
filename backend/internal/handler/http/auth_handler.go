@@ -13,16 +13,29 @@ import (
 const refreshTokenCookieName = "refresh_token"
 
 type AuthHandler struct {
-	registerUC *user.RegisterUseCase
-	loginUC    *user.LoginUseCase
-	refreshUC  *user.RefreshUseCase
+	registerUC       *user.RegisterUseCase
+	loginUC          *user.LoginUseCase
+	refreshUC        *user.RefreshUseCase
+	forgotPasswordUC *user.ForgotPasswordUseCase
+	resetPasswordUC  *user.ResetPasswordUseCase
+	appEnv           string
 }
 
-func NewAuthHandler(registerUC *user.RegisterUseCase, loginUC *user.LoginUseCase, refreshUC *user.RefreshUseCase) *AuthHandler {
+func NewAuthHandler(
+	registerUC *user.RegisterUseCase,
+	loginUC *user.LoginUseCase,
+	refreshUC *user.RefreshUseCase,
+	forgotPasswordUC *user.ForgotPasswordUseCase,
+	resetPasswordUC *user.ResetPasswordUseCase,
+	appEnv string,
+) *AuthHandler {
 	return &AuthHandler{
-		registerUC: registerUC,
-		loginUC:    loginUC,
-		refreshUC:  refreshUC,
+		registerUC:       registerUC,
+		loginUC:          loginUC,
+		refreshUC:        refreshUC,
+		forgotPasswordUC: forgotPasswordUC,
+		resetPasswordUC:  resetPasswordUC,
+		appEnv:           appEnv,
 	}
 }
 
@@ -59,7 +72,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setRefreshCookie(w, output.TokenPair.RefreshToken)
+	h.setRefreshCookie(w, output.TokenPair.RefreshToken)
 	writeJSON(w, http.StatusCreated, dto.AuthResponse{
 		AccessToken: output.TokenPair.AccessToken,
 		User:        toUserResponse(output.User),
@@ -91,7 +104,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setRefreshCookie(w, output.TokenPair.RefreshToken)
+	h.setRefreshCookie(w, output.TokenPair.RefreshToken)
 	writeJSON(w, http.StatusOK, dto.AuthResponse{
 		AccessToken: output.TokenPair.AccessToken,
 		User:        toUserResponse(output.User),
@@ -107,43 +120,81 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.refreshUC.Execute(r.Context(), cookie.Value)
 	if err != nil {
-		clearRefreshCookie(w)
+		h.clearRefreshCookie(w)
 		writeError(w, http.StatusUnauthorized, "invalid refresh token")
 		return
 	}
 
-	setRefreshCookie(w, output.TokenPair.RefreshToken)
+	h.setRefreshCookie(w, output.TokenPair.RefreshToken)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"accessToken": output.TokenPair.AccessToken,
 	})
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	clearRefreshCookie(w)
+	h.clearRefreshCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func setRefreshCookie(w http.ResponseWriter, token string) {
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ForgotPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+	// Always return 200 to avoid email enumeration
+	_, _ = h.forgotPasswordUC.Execute(r.Context(), req.Email)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "if this email is registered, a reset link will be sent",
+	})
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ResetPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Token == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "token and password are required")
+		return
+	}
+	if err := h.resetPasswordUC.Execute(r.Context(), req.Token, req.Password); err != nil {
+		if errors.Is(err, user.ErrInvalidResetToken) {
+			writeError(w, http.StatusBadRequest, "invalid or expired reset token")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "password updated successfully"})
+}
+
+func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   7 * 24 * 60 * 60, // 7 days
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   h.appEnv != "development",
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
-func clearRefreshCookie(w http.ResponseWriter) {
+func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   h.appEnv != "development",
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -154,6 +205,7 @@ func toUserResponse(u *entity.User) dto.UserResponse {
 		Email:     u.Email,
 		CPF:       maskCPF(),
 		Phone:     u.Phone,
+		Role:      string(u.Role),
 		CreatedAt: u.CreatedAt.Format(time.RFC3339),
 	}
 }

@@ -2,34 +2,59 @@ package seed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
 )
 
+const pgUniqueViolation = "23505"
+
+// isAlreadyExists returns true if the error is a Postgres unique constraint violation.
+func isAlreadyExists(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgUniqueViolation
+	}
+	return false
+}
+
+// LoadDemoData populates the database with demo venues, events, and seats.
+// It is idempotent: if a record already exists (unique key collision) it is skipped.
 func LoadDemoData(ctx context.Context, eventRepo repository.EventRepository, venueRepo repository.VenueRepository, seatRepo repository.SeatRepository) error {
 	venues := createVenues()
 	for _, v := range venues {
 		if err := venueRepo.Create(ctx, v); err != nil {
-			return fmt.Errorf("seed venue: %w", err)
+			if isAlreadyExists(err) {
+				continue
+			}
+			return fmt.Errorf("seed venue %s: %w", v.Name, err)
 		}
 	}
 
 	events := createEvents(venues)
 	for _, e := range events {
 		if err := eventRepo.Create(ctx, e); err != nil {
-			return fmt.Errorf("seed event: %w", err)
+			if isAlreadyExists(err) {
+				continue
+			}
+			return fmt.Errorf("seed event %s: %w", e.Title, err)
 		}
 
 		seats := generateSeats(e.ID)
 		if err := seatRepo.CreateBatch(ctx, seats); err != nil {
-			return fmt.Errorf("seed seats: %w", err)
+			if isAlreadyExists(err) {
+				continue
+			}
+			return fmt.Errorf("seed seats for event %s: %w", e.Title, err)
 		}
 
-		// Compute min/max from seats
+		// Compute min/max from seats for reference (stored on the Event entity;
+		// the DB computes these via aggregate queries at read time).
 		var minPrice, maxPrice int64
 		for _, s := range seats {
 			if s.Status == entity.SeatStatusAvailable {

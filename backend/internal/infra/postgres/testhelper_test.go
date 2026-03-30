@@ -51,9 +51,9 @@ func newTestDB(t *testing.T) *pgxpool.Pool {
 // migrationsDir returns the absolute path to the migrations directory.
 func migrationsDir() string {
 	_, filename, _, _ := runtime.Caller(0)
-	// filename is .../internal/infra/postgres/testhelper_test.go
-	// migrations are at .../migrations/
-	root := filepath.Join(filepath.Dir(filename), "..", "..", "..", "..", "migrations")
+	// filename: .../backend/internal/infra/postgres/testhelper_test.go
+	// migrations: .../backend/migrations/
+	root := filepath.Join(filepath.Dir(filename), "..", "..", "..", "migrations")
 	return fmt.Sprintf("file://%s", filepath.Clean(root))
 }
 
