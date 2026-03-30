@@ -27,4 +27,7 @@ type EventResponse struct {
 
 type EventListResponse struct {
 	Events []EventResponse `json:"events"`
+	Total  int64           `json:"total"`
+	Page   int             `json:"page"`
+	Limit  int             `json:"limit"`
 }

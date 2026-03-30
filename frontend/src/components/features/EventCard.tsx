@@ -1,19 +1,14 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { type Event, formatCurrency, formatShortDate, sportLabel } from "@/lib/mock-data";
 import Badge from "@/components/ui/Badge";
 
-const SPORT_FALLBACK_IMAGES: Record<string, string> = {
-  FOOTBALL: "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&q=80",
-  BASKETBALL: "https://images.unsplash.com/photo-1546519638405-a9d1b2e7c6b7?w=800&q=80",
-  VOLLEYBALL: "https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800&q=80",
-  FUTSAL: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=80",
-  ATHLETICS: "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&q=80",
-};
-
 function getEventImage(event: Event): string {
   if (event.imageUrl) return event.imageUrl;
-  return SPORT_FALLBACK_IMAGES[event.sport] ?? SPORT_FALLBACK_IMAGES.FOOTBALL;
+  return "/placeholder-event.svg";
 }
 
 interface EventCardProps {
@@ -22,6 +17,7 @@ interface EventCardProps {
 
 export default function EventCard({ event }: EventCardProps) {
   const isSoldOut = event.status === "SOLD_OUT";
+  const [imgSrc, setImgSrc] = useState(getEventImage(event));
 
   return (
     <Link href={`/events/${event.id}`} className="group block">
@@ -29,11 +25,12 @@ export default function EventCard({ event }: EventCardProps) {
         {/* Image area */}
         <div className="relative aspect-[16/9] bg-surface-dim overflow-hidden">
           <Image
-            src={getEventImage(event)}
+            src={imgSrc}
             alt={`${event.homeTeam} vs ${event.awayTeam}`}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-500"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            onError={() => setImgSrc("/placeholder-event.svg")}
           />
           {/* Gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-primary/60 via-transparent to-transparent" />

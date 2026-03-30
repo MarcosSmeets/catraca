@@ -76,11 +76,28 @@ export interface Ticket {
   orderId: string;
   eventId: string;
   seatId: string;
-  event: Event;
-  seat: Seat;
   qrCode: string;
   status: "VALID" | "USED" | "CANCELLED";
   purchasedAt: string;
+  /** Populated by the API via JOIN — present on list/get endpoints */
+  event?: {
+    id: string;
+    homeTeam: string;
+    awayTeam: string;
+    league: string;
+    sport: string;
+    startsAt: string;
+    imageUrl: string;
+    venueName: string;
+    venueCity: string;
+  };
+  seat?: {
+    id: string;
+    section: string;
+    row: string;
+    number: string;
+    priceCents: number;
+  };
 }
 
 export interface User {

@@ -72,42 +72,162 @@ func (r *EventRepository) List(ctx context.Context, filter repository.EventFilte
 		limit = 20
 	}
 
-	params := pgdb.ListEventsParams{
-		QueryLimit:  int32(limit),
-		QueryOffset: int32(filter.Offset),
-	}
-
-	if filter.Sport != nil {
-		params.Sport = pgtype.Text{String: filter.Sport.String(), Valid: true}
-	}
-	if filter.League != nil {
-		params.League = pgtype.Text{String: *filter.League, Valid: true}
-	}
-	if filter.City != nil {
-		params.City = pgtype.Text{String: *filter.City, Valid: true}
-	}
-	if filter.Date != nil {
-		t, err := time.Parse("2006-01-02", *filter.Date)
-		if err == nil {
-			params.Date = pgtype.Date{Time: t, Valid: true}
+	orderBy := "e.starts_at ASC"
+	if filter.Sort != nil {
+		switch *filter.Sort {
+		case "price-asc":
+			orderBy = "COALESCE(ep.min_p, 0) ASC, e.starts_at ASC"
+		case "price-desc":
+			orderBy = "COALESCE(ep.min_p, 0) DESC, e.starts_at ASC"
 		}
 	}
 
-	rows, err := r.queries.ListEvents(ctx, params)
+	q := `
+WITH event_prices AS (
+    SELECT event_id, MIN(price_cents) AS min_p, MAX(price_cents) AS max_p
+    FROM seats WHERE status = 'AVAILABLE' GROUP BY event_id
+)
+SELECT
+    e.id, e.title, e.sport, e.league, e.venue_id, e.starts_at, e.status,
+    e.service_fee_percent, e.home_team, e.away_team, e.image_url, e.vibe_chips,
+    e.created_at, e.updated_at, e.deleted_at,
+    v.id AS venue_id_2, v.name AS venue_name, v.city AS venue_city,
+    v.state AS venue_state, v.capacity AS venue_capacity,
+    COALESCE(ep.min_p, 0) AS min_price_cents,
+    COALESCE(ep.max_p, 0) AS max_price_cents
+FROM events e
+JOIN venues v ON v.id = e.venue_id
+LEFT JOIN event_prices ep ON ep.event_id = e.id
+WHERE e.deleted_at IS NULL
+  AND ($1::text IS NULL OR e.sport = $1)
+  AND ($2::text IS NULL OR e.league = $2)
+  AND ($3::text IS NULL OR v.city = $3)
+  AND ($4::date IS NULL OR DATE(e.starts_at) >= $4::date)
+  AND ($5::date IS NULL OR DATE(e.starts_at) <= $5::date)
+  AND ($6::text IS NULL OR (
+        e.title ILIKE '%' || $6 || '%' OR
+        e.home_team ILIKE '%' || $6 || '%' OR
+        e.away_team ILIKE '%' || $6 || '%' OR
+        e.league ILIKE '%' || $6 || '%'
+  ))
+  AND ($7::bigint IS NULL OR COALESCE(ep.min_p, 0) >= $7)
+  AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)
+ORDER BY ` + orderBy + `
+LIMIT $9 OFFSET $10`
+
+	args := buildEventFilterArgs(filter)
+	args = append(args, int32(limit), int32(filter.Offset))
+
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("EventRepository.List: %w", err)
 	}
+	defer rows.Close()
 
-	events := make([]*entity.Event, 0, len(rows))
-	for _, row := range rows {
-		e := rowToEvent(row.ID, row.Title, row.Sport, row.League, row.VenueID, row.StartsAt,
-			row.Status, row.ServiceFeePercent, row.HomeTeam, row.AwayTeam, row.ImageUrl,
-			row.VibeChips, row.CreatedAt, row.UpdatedAt, row.DeletedAt,
-			row.VenueID2, row.VenueName, row.VenueCity, row.VenueState, row.VenueCapacity,
-			row.MinPriceCents, row.MaxPriceCents)
+	events := make([]*entity.Event, 0)
+	for rows.Next() {
+		var (
+			id                uuid.UUID
+			title, sport, league string
+			venueID           uuid.UUID
+			startsAt          time.Time
+			status            string
+			serviceFee        pgtype.Numeric
+			homeTeam, awayTeam, imageURL string
+			vibeChips         []string
+			createdAt, updatedAt time.Time
+			deletedAt         pgtype.Timestamptz
+			venueID2          uuid.UUID
+			venueName, venueCity, venueState string
+			venueCapacity     int32
+			minPrice, maxPrice int64
+		)
+		if err := rows.Scan(
+			&id, &title, &sport, &league, &venueID, &startsAt, &status,
+			&serviceFee, &homeTeam, &awayTeam, &imageURL, &vibeChips,
+			&createdAt, &updatedAt, &deletedAt,
+			&venueID2, &venueName, &venueCity, &venueState, &venueCapacity,
+			&minPrice, &maxPrice,
+		); err != nil {
+			return nil, fmt.Errorf("EventRepository.List scan: %w", err)
+		}
+		e := rowToEvent(id, title, sport, league, venueID, startsAt, status,
+			serviceFee, homeTeam, awayTeam, imageURL, vibeChips, createdAt, updatedAt, deletedAt,
+			venueID2, venueName, venueCity, venueState, venueCapacity,
+			minPrice, maxPrice)
 		events = append(events, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("EventRepository.List rows: %w", err)
+	}
 	return events, nil
+}
+
+func (r *EventRepository) Count(ctx context.Context, filter repository.EventFilter) (int64, error) {
+	q := `
+WITH event_prices AS (
+    SELECT event_id, MIN(price_cents) AS min_p, MAX(price_cents) AS max_p
+    FROM seats WHERE status = 'AVAILABLE' GROUP BY event_id
+)
+SELECT COUNT(*)
+FROM events e
+JOIN venues v ON v.id = e.venue_id
+LEFT JOIN event_prices ep ON ep.event_id = e.id
+WHERE e.deleted_at IS NULL
+  AND ($1::text IS NULL OR e.sport = $1)
+  AND ($2::text IS NULL OR e.league = $2)
+  AND ($3::text IS NULL OR v.city = $3)
+  AND ($4::date IS NULL OR DATE(e.starts_at) >= $4::date)
+  AND ($5::date IS NULL OR DATE(e.starts_at) <= $5::date)
+  AND ($6::text IS NULL OR (
+        e.title ILIKE '%' || $6 || '%' OR
+        e.home_team ILIKE '%' || $6 || '%' OR
+        e.away_team ILIKE '%' || $6 || '%' OR
+        e.league ILIKE '%' || $6 || '%'
+  ))
+  AND ($7::bigint IS NULL OR COALESCE(ep.min_p, 0) >= $7)
+  AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)`
+
+	args := buildEventFilterArgs(filter)
+
+	var total int64
+	if err := r.pool.QueryRow(ctx, q, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("EventRepository.Count: %w", err)
+	}
+	return total, nil
+}
+
+// buildEventFilterArgs returns the 8 positional args ($1–$8) shared by List and Count.
+func buildEventFilterArgs(filter repository.EventFilter) []interface{} {
+	var sport, league, city, dateFrom, dateTo, q interface{}
+	var minPrice, maxPrice interface{}
+
+	if filter.Sport != nil {
+		sport = filter.Sport.String()
+	}
+	if filter.League != nil {
+		league = *filter.League
+	}
+	if filter.City != nil {
+		city = *filter.City
+	}
+	if filter.DateFrom != nil {
+		dateFrom = *filter.DateFrom
+	}
+	if filter.DateTo != nil {
+		dateTo = *filter.DateTo
+	}
+	if filter.Q != nil && *filter.Q != "" {
+		q = *filter.Q
+	}
+	if filter.MinPrice != nil {
+		minPrice = *filter.MinPrice
+	}
+	if filter.MaxPrice != nil {
+		maxPrice = *filter.MaxPrice
+	}
+
+	return []interface{}{sport, league, city, dateFrom, dateTo, q, minPrice, maxPrice}
 }
 
 func (r *EventRepository) Update(ctx context.Context, e *entity.Event) error {

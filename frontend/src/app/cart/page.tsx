@@ -50,6 +50,12 @@ export default function CartPage() {
   const fee = event ? Math.round(subtotal * (event.serviceFeePercent / 100)) : 0;
   const total = subtotal + fee;
 
+  const [eventImgSrc, setEventImgSrc] = useState(
+    event?.imageUrl && event.imageUrl.startsWith("http")
+      ? event.imageUrl
+      : "/placeholder-event.svg"
+  );
+
   useEffect(() => {
     if (countdown.isExpired && items.length > 0) {
       clearCart();
@@ -159,11 +165,12 @@ export default function CartPage() {
                 <div className="bg-surface-lowest rounded-md overflow-hidden">
                   <div className="relative h-32 bg-surface-dim">
                     <Image
-                      src={event.imageUrl}
+                      src={eventImgSrc}
                       alt={event.title}
                       fill
                       className="object-cover opacity-60"
                       sizes="800px"
+                      onError={() => setEventImgSrc("/placeholder-event.svg")}
                     />
                     <div className="absolute inset-0 bg-gradient-to-r from-primary/80 to-transparent" />
                     <div className="absolute bottom-4 left-5">

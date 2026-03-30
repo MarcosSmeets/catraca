@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import MainLayout from "@/components/features/MainLayout";
 import Badge from "@/components/ui/Badge";
 import { TicketSkeleton } from "@/components/ui/Skeleton";
@@ -12,18 +13,32 @@ const STATUS_LABELS: Record<string, string> = {
   VALID: "Válido",
   USED: "Utilizado",
   CANCELLED: "Cancelado",
+  EXPIRED: "Expirado",
 };
 
 const STATUS_VARIANTS: Record<string, "vibe" | "status" | "outline"> = {
   VALID: "vibe",
   USED: "status",
   CANCELLED: "outline",
+  EXPIRED: "outline",
 };
+
+/** Returns "EXPIRED" when a VALID ticket's event date has already passed. */
+function effectiveStatus(ticket: Ticket): string {
+  if (
+    ticket.status === "VALID" &&
+    ticket.event?.startsAt &&
+    new Date(ticket.event.startsAt) < new Date()
+  ) {
+    return "EXPIRED";
+  }
+  return ticket.status;
+}
 
 export default function TicketsPage() {
   const { data: tickets = [], isLoading } = useTickets();
-  const upcoming = tickets.filter((t) => t.status === "VALID");
-  const past = tickets.filter((t) => t.status !== "VALID");
+  const upcoming = tickets.filter((t) => effectiveStatus(t) === "VALID");
+  const past = tickets.filter((t) => effectiveStatus(t) !== "VALID");
 
   return (
     <MainLayout>
@@ -92,21 +107,36 @@ function TicketCard({
   ticket: Ticket;
   showQr: boolean;
 }) {
+  const ev = ticket.event;
+  const seat = ticket.seat;
+  const effStatus = effectiveStatus(ticket);
+  const initialImage =
+    ev?.imageUrl && ev.imageUrl.startsWith("http")
+      ? ev.imageUrl
+      : "/placeholder-event.svg";
+  const [imgSrc, setImgSrc] = useState(initialImage);
+
+  const qrData = ticket.qrCode || "INVALIDO";
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=112x112&data=${encodeURIComponent(qrData)}&bgcolor=ffffff&color=000000&margin=4`;
+
   return (
     <div className="bg-surface-lowest rounded-md overflow-hidden flex flex-col sm:flex-row">
       {/* Left — event image strip */}
       <div className="relative w-full sm:w-48 h-36 sm:h-auto bg-surface-dim shrink-0">
         <Image
-          src={ticket.event.imageUrl}
-          alt={`${ticket.event.homeTeam} vs ${ticket.event.awayTeam}`}
+          src={imgSrc}
+          alt={ev ? `${ev.homeTeam} vs ${ev.awayTeam}` : "Ingresso"}
           fill
-          className="object-cover"
+          className={`object-cover ${effStatus === "EXPIRED" ? "opacity-50 grayscale" : ""}`}
           sizes="(max-width: 640px) 100vw, 192px"
+          onError={() => setImgSrc("/placeholder-event.svg")}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/30 to-primary/60" />
-        <div className="absolute bottom-3 left-3">
-          <Badge label={ticket.event.league} variant="vibe" />
-        </div>
+        {ev && (
+          <div className="absolute bottom-3 left-3">
+            <Badge label={ev.league} variant="vibe" />
+          </div>
+        )}
       </div>
 
       {/* Middle — info */}
@@ -114,65 +144,78 @@ function TicketCard({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Badge
-              label={STATUS_LABELS[ticket.status]}
-              variant={STATUS_VARIANTS[ticket.status]}
+              label={STATUS_LABELS[effStatus]}
+              variant={STATUS_VARIANTS[effStatus]}
             />
           </div>
           <h3 className="font-display font-bold text-base text-on-surface tracking-tight leading-tight mt-2">
-            {ticket.event.homeTeam}{" "}
-            <span className="text-on-surface/40 font-normal">vs</span>{" "}
-            {ticket.event.awayTeam}
+            {ev ? (
+              <>
+                {ev.homeTeam}{" "}
+                <span className="text-on-surface/40 font-normal">vs</span>{" "}
+                {ev.awayTeam}
+              </>
+            ) : (
+              <span className="text-on-surface/40">Evento</span>
+            )}
           </h3>
-          <p className="text-xs text-on-surface/40 font-body mt-1">
-            {formatDate(ticket.event.startsAt)}
-          </p>
+          {ev && (
+            <p className="text-xs text-on-surface/40 font-body mt-1">
+              {formatDate(ev.startsAt)} · {ev.venueName}, {ev.venueCity}
+            </p>
+          )}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-1">
-          <div>
-            <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
-              Setor
-            </p>
-            <p className="text-sm font-body font-medium text-on-surface">
-              {ticket.seat.section}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
-              Fileira
-            </p>
-            <p className="text-sm font-body font-medium text-on-surface">
-              {ticket.seat.row}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
-              Assento
-            </p>
-            <p className="text-sm font-body font-medium text-on-surface">
-              {ticket.seat.number}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
-              Valor
-            </p>
-            <p className="text-sm font-display font-bold text-on-surface tracking-tight">
-              {formatCurrency(ticket.seat.priceCents)}
-            </p>
-          </div>
+          {seat && (
+            <>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
+                  Setor
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  {seat.section}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
+                  Fileira
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  {seat.row}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
+                  Assento
+                </p>
+                <p className="text-sm font-body font-medium text-on-surface">
+                  {seat.number}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
+                  Valor
+                </p>
+                <p className="text-sm font-display font-bold text-on-surface tracking-tight">
+                  {formatCurrency(seat.priceCents)}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Right — QR code */}
-      {showQr && (
+      {/* Right — QR code (only for truly upcoming valid tickets) */}
+      {showQr && effStatus === "VALID" && (
         <div className="sm:border-l border-t sm:border-t-0 border-outline-variant p-5 flex flex-col items-center justify-center gap-2 shrink-0">
-          <div className="w-28 h-28 bg-surface-low rounded-sm overflow-hidden flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={ticket.qrCode}
+          <div className="w-28 h-28 bg-white rounded-sm overflow-hidden flex items-center justify-center">
+            <Image
+              src={qrUrl}
               alt="QR Code do ingresso"
-              className="w-full h-full object-contain"
+              width={112}
+              height={112}
+              className="object-contain"
             />
           </div>
           <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 text-center">
@@ -181,6 +224,18 @@ function TicketCard({
           <Link
             href={`/tickets/${ticket.id}`}
             className="text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors underline underline-offset-2 mt-1"
+          >
+            Ver detalhe
+          </Link>
+        </div>
+      )}
+
+      {/* Expired — link to detail without QR */}
+      {effStatus === "EXPIRED" && (
+        <div className="sm:border-l border-t sm:border-t-0 border-outline-variant p-5 flex items-center justify-center shrink-0">
+          <Link
+            href={`/tickets/${ticket.id}`}
+            className="text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors underline underline-offset-2"
           >
             Ver detalhe
           </Link>

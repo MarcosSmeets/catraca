@@ -403,8 +403,8 @@ func toOrderResponse(o *entity.Order) dto.OrderResponse {
 	}
 }
 
-func toTicketResponse(t *entity.Ticket) dto.TicketResponse {
-	return dto.TicketResponse{
+func toTicketResponse(t *repository.TicketWithDetails) dto.TicketResponse {
+	resp := dto.TicketResponse{
 		ID:          t.ID.String(),
 		OrderID:     t.OrderID.String(),
 		EventID:     t.EventID.String(),
@@ -412,5 +412,24 @@ func toTicketResponse(t *entity.Ticket) dto.TicketResponse {
 		QRCode:      t.QRCode,
 		Status:      t.Status.String(),
 		PurchasedAt: t.PurchasedAt.Format(time.RFC3339),
+		Event: &dto.TicketEventInfo{
+			ID:        t.EventID.String(),
+			HomeTeam:  t.EventHomeTeam,
+			AwayTeam:  t.EventAwayTeam,
+			League:    t.EventLeague,
+			Sport:     t.EventSport,
+			StartsAt:  t.EventStartsAt.Format(time.RFC3339),
+			ImageURL:  t.EventImageURL,
+			VenueName: t.VenueName,
+			VenueCity: t.VenueCity,
+		},
+		Seat: &dto.TicketSeatInfo{
+			ID:         t.SeatID.String(),
+			Section:    t.SeatSection,
+			Row:        t.SeatRow,
+			Number:     t.SeatNumber,
+			PriceCents: t.SeatPriceCents,
+		},
 	}
+	return resp
 }

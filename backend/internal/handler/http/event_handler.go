@@ -41,32 +41,62 @@ func (h *EventHandler) List(w http.ResponseWriter, r *http.Request) {
 	if c := r.URL.Query().Get("city"); c != "" {
 		input.City = &c
 	}
-	if d := r.URL.Query().Get("date"); d != "" {
-		input.Date = &d
+	if q := r.URL.Query().Get("q"); q != "" {
+		input.Q = &q
 	}
-	if lim := r.URL.Query().Get("limit"); lim != "" {
-		if v, err := strconv.Atoi(lim); err == nil {
-			input.Limit = v
+	if df := r.URL.Query().Get("date_from"); df != "" {
+		input.DateFrom = &df
+	}
+	if dt := r.URL.Query().Get("date_to"); dt != "" {
+		input.DateTo = &dt
+	}
+	if s := r.URL.Query().Get("sort"); s != "" {
+		input.Sort = &s
+	}
+	if mp := r.URL.Query().Get("min_price"); mp != "" {
+		if v, err := strconv.ParseInt(mp, 10, 64); err == nil {
+			input.MinPrice = &v
 		}
 	}
-	if off := r.URL.Query().Get("offset"); off != "" {
-		if v, err := strconv.Atoi(off); err == nil {
-			input.Offset = v
+	if mp := r.URL.Query().Get("max_price"); mp != "" {
+		if v, err := strconv.ParseInt(mp, 10, 64); err == nil {
+			input.MaxPrice = &v
 		}
 	}
 
-	events, err := h.listEventsUC.Execute(r.Context(), input)
+	limit := 20
+	if lim := r.URL.Query().Get("limit"); lim != "" {
+		if v, err := strconv.Atoi(lim); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	input.Limit = limit
+
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	input.Offset = (page - 1) * limit
+
+	result, err := h.listEventsUC.Execute(r.Context(), input)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list events")
 		return
 	}
 
-	resp := make([]dto.EventResponse, 0, len(events))
-	for _, e := range events {
+	resp := make([]dto.EventResponse, 0, len(result.Events))
+	for _, e := range result.Events {
 		resp = append(resp, toEventResponse(e))
 	}
 
-	writeJSON(w, http.StatusOK, dto.EventListResponse{Events: resp})
+	writeJSON(w, http.StatusOK, dto.EventListResponse{
+		Events: resp,
+		Total:  result.Total,
+		Page:   page,
+		Limit:  limit,
+	})
 }
 
 func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {

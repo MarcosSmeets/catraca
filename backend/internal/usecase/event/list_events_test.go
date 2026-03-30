@@ -28,7 +28,7 @@ func TestListEvents_All(t *testing.T) {
 
 	events, err := uc.Execute(context.Background(), event.ListEventsInput{})
 	require.NoError(t, err)
-	assert.Len(t, events, 2)
+	assert.Len(t, events.Events, 2)
 }
 
 func TestListEvents_FilterBySport(t *testing.T) {
@@ -53,8 +53,8 @@ func TestListEvents_FilterBySport(t *testing.T) {
 		Sport: &sport,
 	})
 	require.NoError(t, err)
-	assert.Len(t, events, 1)
-	assert.Equal(t, entity.SportFootball, events[0].Sport)
+	assert.Len(t, events.Events, 1)
+	assert.Equal(t, entity.SportFootball, events.Events[0].Sport)
 }
 
 func TestListEvents_DefaultLimit(t *testing.T) {
@@ -64,5 +64,5 @@ func TestListEvents_DefaultLimit(t *testing.T) {
 	// Zero limit should default to 20
 	events, err := uc.Execute(context.Background(), event.ListEventsInput{Limit: 0})
 	require.NoError(t, err)
-	assert.Empty(t, events)
+	assert.Empty(t, events.Events)
 }

@@ -36,14 +36,36 @@ type CreateOrderResponse struct {
 	TotalCents   int64  `json:"totalCents"`
 }
 
+type TicketEventInfo struct {
+	ID        string `json:"id"`
+	HomeTeam  string `json:"homeTeam"`
+	AwayTeam  string `json:"awayTeam"`
+	League    string `json:"league"`
+	Sport     string `json:"sport"`
+	StartsAt  string `json:"startsAt"`
+	ImageURL  string `json:"imageUrl"`
+	VenueName string `json:"venueName"`
+	VenueCity string `json:"venueCity"`
+}
+
+type TicketSeatInfo struct {
+	ID         string `json:"id"`
+	Section    string `json:"section"`
+	Row        string `json:"row"`
+	Number     string `json:"number"`
+	PriceCents int64  `json:"priceCents"`
+}
+
 type TicketResponse struct {
-	ID          string `json:"id"`
-	OrderID     string `json:"orderId"`
-	EventID     string `json:"eventId"`
-	SeatID      string `json:"seatId"`
-	QRCode      string `json:"qrCode"`
-	Status      string `json:"status"`
-	PurchasedAt string `json:"purchasedAt"`
+	ID          string         `json:"id"`
+	OrderID     string         `json:"orderId"`
+	EventID     string         `json:"eventId"`
+	SeatID      string         `json:"seatId"`
+	QRCode      string         `json:"qrCode"`
+	Status      string         `json:"status"`
+	PurchasedAt string         `json:"purchasedAt"`
+	Event       *TicketEventInfo `json:"event,omitempty"`
+	Seat        *TicketSeatInfo  `json:"seat,omitempty"`
 }
 
 type UpdateProfileRequest struct {

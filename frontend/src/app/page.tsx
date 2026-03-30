@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import MainLayout from "@/components/features/MainLayout";
 import EventCard from "@/components/features/EventCard";
 import Badge from "@/components/ui/Badge";
@@ -10,16 +11,8 @@ import { EventCardSkeleton } from "@/components/ui/Skeleton";
 import { sportLabel, type SportType, type Event, formatCurrency } from "@/lib/mock-data";
 import { useEvents } from "@/lib/events-api";
 
-const SPORT_FALLBACK: Record<string, string> = {
-  FOOTBALL: "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&q=80",
-  BASKETBALL: "https://images.unsplash.com/photo-1546519638405-a9d1b2e7c6b7?w=800&q=80",
-  VOLLEYBALL: "https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800&q=80",
-  FUTSAL: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=80",
-  ATHLETICS: "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&q=80",
-};
-
 function getImg(event: Event): string {
-  return event.imageUrl || SPORT_FALLBACK[event.sport] || SPORT_FALLBACK.BASKETBALL;
+  return event.imageUrl || "/placeholder-event.svg";
 }
 
 const SPORT_FILTERS: { sport: SportType | "ALL"; label: string }[] = [
@@ -31,11 +24,15 @@ const SPORT_FILTERS: { sport: SportType | "ALL"; label: string }[] = [
 ];
 
 export default function HomePage() {
-  const { data, isLoading } = useEvents({ limit: 8 });
+  const { data, isLoading } = useEvents({
+    limit: 8,
+    dateFrom: new Date().toISOString().split("T")[0],
+  });
   const events = data?.events ?? [];
   const heroEvent = events[0];
   const featured = events.slice(0, 4);
   const upcoming = events.slice(4);
+  const [heroImgError, setHeroImgError] = useState(false);
 
   return (
     <MainLayout>
@@ -45,12 +42,13 @@ export default function HomePage() {
           <>
             <div className="absolute inset-0">
               <Image
-                src={getImg(heroEvent)}
+                src={heroImgError ? "/placeholder-event.svg" : getImg(heroEvent)}
                 alt={heroEvent.title}
                 fill
                 priority
                 className="object-cover opacity-30"
                 sizes="100vw"
+                onError={() => setHeroImgError(true)}
               />
               <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/80 to-transparent" />
             </div>
@@ -177,6 +175,7 @@ export default function HomePage() {
 }
 
 function UpcomingRow({ event, isLast }: { event: Event; isLast: boolean }) {
+  const [imgSrc, setImgSrc] = useState(getImg(event));
   return (
     <Link href={`/events/${event.id}`} className="group block">
       <div
@@ -190,11 +189,12 @@ function UpcomingRow({ event, isLast }: { event: Event; isLast: boolean }) {
       >
         <div className="relative w-16 h-16 rounded-sm overflow-hidden bg-surface-dim shrink-0">
           <Image
-            src={getImg(event)}
+            src={imgSrc}
             alt={`${event.homeTeam} vs ${event.awayTeam}`}
             fill
             className="object-cover"
             sizes="64px"
+            onError={() => setImgSrc("/placeholder-event.svg")}
           />
         </div>
 

@@ -62,17 +62,20 @@ function EventPageInner({
   const accessToken = useAuthStore((s) => s.accessToken);
 
   const SPORT_FALLBACK: Record<string, string> = {
-    FOOTBALL: "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&q=80",
-    BASKETBALL: "https://images.unsplash.com/photo-1546519638405-a9d1b2e7c6b7?w=800&q=80",
-    VOLLEYBALL: "https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800&q=80",
-    FUTSAL: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=80",
-    ATHLETICS: "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&q=80",
+    FOOTBALL: "/placeholder-event.svg",
+    BASKETBALL: "/placeholder-event.svg",
+    VOLLEYBALL: "/placeholder-event.svg",
+    FUTSAL: "/placeholder-event.svg",
+    ATHLETICS: "/placeholder-event.svg",
   };
-  const eventImage = event.imageUrl || SPORT_FALLBACK[event.sport] || SPORT_FALLBACK.BASKETBALL;
+  const eventImage = event.imageUrl || SPORT_FALLBACK[event.sport] || "/placeholder-event.svg";
 
   const gallery = (event.venue as { galleryUrls?: string[] }).galleryUrls?.length
     ? (event.venue as { galleryUrls?: string[] }).galleryUrls!
     : [eventImage];
+
+  const [heroImgSrc, setHeroImgSrc] = useState(eventImage);
+  const [gallerySrcs, setGallerySrcs] = useState(gallery);
 
   const isSoldOut = event.status === "SOLD_OUT";
   const subtotalCents = selectedSeats.reduce((sum, s) => sum + s.priceCents, 0);
@@ -130,12 +133,13 @@ function EventPageInner({
       <div className="relative bg-primary overflow-hidden">
         <div className="absolute inset-0">
           <Image
-            src={eventImage}
+            src={heroImgSrc}
             alt={`${event.homeTeam} vs ${event.awayTeam} em ${event.venue.name}`}
             fill
             priority
             className="object-cover opacity-20"
             sizes="100vw"
+            onError={() => setHeroImgSrc("/placeholder-event.svg")}
           />
           <div className="absolute inset-0 bg-gradient-to-b from-primary/40 via-primary/70 to-primary" />
         </div>
@@ -198,12 +202,19 @@ function EventPageInner({
               {/* Photo slider */}
               <div className="relative h-52 bg-surface-dim">
                 <Image
-                  src={gallery[galleryIndex]}
+                  src={gallerySrcs[galleryIndex]}
                   alt={`${event.venue.name} — foto ${galleryIndex + 1}`}
                   fill
                   className="object-cover transition-opacity duration-300"
                   sizes="800px"
                   priority={galleryIndex === 0}
+                  onError={() =>
+                    setGallerySrcs((prev) => {
+                      const next = [...prev];
+                      next[galleryIndex] = "/placeholder-event.svg";
+                      return next;
+                    })
+                  }
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 

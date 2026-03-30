@@ -80,3 +80,16 @@ func (r *EventRepository) Update(_ context.Context, event *entity.Event) error {
 	r.events[event.ID] = event
 	return nil
 }
+
+func (r *EventRepository) Count(_ context.Context, filter repository.EventFilter) (int64, error) {
+	events, err := r.List(context.Background(), repository.EventFilter{
+		Sport:  filter.Sport,
+		League: filter.League,
+		City:   filter.City,
+		Limit:  1000000,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(events)), nil
+}

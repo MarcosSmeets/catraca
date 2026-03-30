@@ -89,8 +89,7 @@ func main() {
 	fallbackVenueID := resolveFallbackVenue(ctx, venueRepo)
 
 	// --- Persist events + seats ---
-	season := extractSeason(games)
-	league := "NBB " + season
+	league := "NBB"
 
 	var (
 		inserted      int
@@ -135,6 +134,22 @@ func main() {
 		if err := event.Validate(); err != nil {
 			log.Warn().Err(err).Str("title", title).Msg("event validation failed, skipping")
 			failed++
+			continue
+		}
+
+		// Skip if a matching event already exists (prevents duplicate inserts on re-runs).
+		var existingCount int
+		if err := pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM events
+			 WHERE sport = $1 AND home_team = $2 AND away_team = $3 AND starts_at = $4 AND deleted_at IS NULL`,
+			entity.SportBasketball.String(), g.HomeTeam, g.AwayTeam, g.Date,
+		).Scan(&existingCount); err != nil {
+			log.Warn().Err(err).Str("title", title).Msg("could not check for existing event, skipping")
+			skipped++
+			continue
+		}
+		if existingCount > 0 {
+			skipped++
 			continue
 		}
 
