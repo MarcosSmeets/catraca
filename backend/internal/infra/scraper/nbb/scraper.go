@@ -26,6 +26,7 @@ func NewScraper() *Scraper {
 // and returns the raw outer HTML of the table for further parsing.
 func (s *Scraper) Fetch(ctx context.Context) (string, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath("/usr/bin/chromium-browser"),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-gpu", true),
