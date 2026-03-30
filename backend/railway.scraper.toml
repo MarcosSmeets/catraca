@@ -1,0 +1,6 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.scraper"
+
+[deploy]
+restartPolicyType = "never"
