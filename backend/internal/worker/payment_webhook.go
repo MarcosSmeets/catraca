@@ -88,27 +88,6 @@ func (w *PaymentWebhookWorker) process(ctx context.Context, evt WebhookEvent) er
 	return nil
 }
 
-type paymentIntentData struct {
-	ID       string            `json:"id"`
-	Metadata map[string]string `json:"metadata"`
-}
-
-func extractPaymentIntentID(payload []byte) (string, error) {
-	var pi paymentIntentData
-	if err := json.Unmarshal(payload, &pi); err != nil {
-		return "", fmt.Errorf("unmarshal payment intent: %w", err)
-	}
-	return pi.ID, nil
-}
-
-func (w *PaymentWebhookWorker) findOrderByStripeID(ctx context.Context, stripePaymentID string) (*entity.Order, error) {
-	// We find the order by scanning via stripe_payment_id.
-	// In a production system we'd add an index; for now we rely on the small
-	// number of PENDING orders and a helper query (not yet in sqlc).
-	// As a workaround, the metadata carries order_id set during CreateOrder.
-	return nil, fmt.Errorf("order lookup by stripe_payment_id not yet implemented via sqlc; use metadata order_id")
-}
-
 func (w *PaymentWebhookWorker) handleSucceeded(ctx context.Context, payload []byte) error {
 	var pi struct {
 		ID       string            `json:"id"`

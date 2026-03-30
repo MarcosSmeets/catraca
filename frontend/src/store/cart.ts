@@ -11,7 +11,12 @@ interface CartState {
   items: CartItem[];
   event: Event | null;
   reservedAt: number | null;
+  /** ISO string from server — precise expiry set by the reservation API */
+  serverExpiresAt: string | null;
+  /** Reservation IDs returned by POST /reservations */
+  reservationIds: string[];
   addSeats: (seats: Seat[], event: Event) => void;
+  setReservation: (reservationIds: string[], expiresAt: string) => void;
   removeSeat: (seatId: string) => void;
   clearCart: () => void;
   isExpired: () => boolean;
@@ -26,12 +31,23 @@ export const useCartStore = create<CartState>()(
       items: [],
       event: null,
       reservedAt: null,
+      serverExpiresAt: null,
+      reservationIds: [],
 
       addSeats: (seats, event) =>
         set({
           items: seats.map((seat) => ({ seat, eventId: event.id })),
           event,
           reservedAt: Date.now(),
+          serverExpiresAt: null,
+          reservationIds: [],
+        }),
+
+      setReservation: (reservationIds, expiresAt) =>
+        set({
+          reservationIds,
+          serverExpiresAt: expiresAt,
+          reservedAt: new Date(expiresAt).getTime() - RESERVATION_MS,
         }),
 
       removeSeat: (seatId) =>
@@ -39,19 +55,29 @@ export const useCartStore = create<CartState>()(
           items: state.items.filter((item) => item.seat.id !== seatId),
         })),
 
-      clearCart: () => set({ items: [], event: null, reservedAt: null }),
+      clearCart: () =>
+        set({
+          items: [],
+          event: null,
+          reservedAt: null,
+          serverExpiresAt: null,
+          reservationIds: [],
+        }),
 
       isExpired: () => {
-        const { reservedAt } = get();
-        if (!reservedAt) return false;
-        return Date.now() - reservedAt > RESERVATION_MS;
+        const { serverExpiresAt, reservedAt } = get();
+        const expiry = serverExpiresAt
+          ? new Date(serverExpiresAt).getTime()
+          : (reservedAt ?? 0) + RESERVATION_MS;
+        return Date.now() > expiry;
       },
 
       secondsRemaining: () => {
-        const { reservedAt } = get();
-        if (!reservedAt) return 0;
-        const elapsed = Date.now() - reservedAt;
-        const remaining = RESERVATION_MS - elapsed;
+        const { serverExpiresAt, reservedAt } = get();
+        const expiry = serverExpiresAt
+          ? new Date(serverExpiresAt).getTime()
+          : (reservedAt ?? 0) + RESERVATION_MS;
+        const remaining = expiry - Date.now();
         return Math.max(0, Math.floor(remaining / 1000));
       },
     }),

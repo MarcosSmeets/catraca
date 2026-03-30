@@ -98,21 +98,28 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 	fee := int64(math.Round(float64(totalCents) * serviceFeePercent / 100))
 	totalCents += fee
 
-	// Create Stripe PaymentIntent
-	pi, err := uc.paymentGateway.CreatePaymentIntent(ctx, totalCents, "BRL", map[string]string{
-		"user_id": input.UserID.String(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create order: payment intent: %w", err)
-	}
-
-	// Persist order
-	order, err := entity.NewOrder(input.UserID, input.ReservationIDs, totalCents, pi.ID)
+	// Persist order first (with empty StripePaymentID) to get the order.ID for metadata
+	order, err := entity.NewOrder(input.UserID, input.ReservationIDs, totalCents, "")
 	if err != nil {
 		return nil, fmt.Errorf("create order: new order: %w", err)
 	}
 	if err := uc.orderRepo.Create(ctx, order); err != nil {
 		return nil, fmt.Errorf("create order: persist: %w", err)
+	}
+
+	// Create Stripe PaymentIntent with order_id so the webhook can look up the order
+	pi, err := uc.paymentGateway.CreatePaymentIntent(ctx, totalCents, "BRL", map[string]string{
+		"user_id":  input.UserID.String(),
+		"order_id": order.ID.String(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create order: payment intent: %w", err)
+	}
+
+	// Back-fill the Stripe PaymentIntent ID on the persisted order
+	order.StripePaymentID = pi.ID
+	if err := uc.orderRepo.UpdateStripePaymentID(ctx, order.ID, pi.ID); err != nil {
+		return nil, fmt.Errorf("create order: update stripe payment id: %w", err)
 	}
 
 	return &CreateOrderOutput{Order: order, ClientSecret: pi.ClientSecret}, nil

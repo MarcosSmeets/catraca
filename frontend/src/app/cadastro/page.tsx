@@ -12,17 +12,42 @@ function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function formatCPF(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  return digits
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+function validateCPF(cpf: string): boolean {
+  const digits = cpf.replace(/\D/g, "");
+  if (digits.length !== 11 || /^(\d)\1+$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(digits[i]) * (10 - i);
+  let rest = (sum * 10) % 11;
+  if (rest === 10 || rest === 11) rest = 0;
+  if (rest !== parseInt(digits[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(digits[i]) * (11 - i);
+  rest = (sum * 10) % 11;
+  if (rest === 10 || rest === 11) rest = 0;
+  return rest === parseInt(digits[10]);
+}
+
 export default function CadastroPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [cpf, setCpf] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<{
     name?: string;
     email?: string;
+    cpf?: string;
     password?: string;
     confirmPassword?: string;
     api?: string;
@@ -33,7 +58,12 @@ export default function CadastroPage() {
     const next: typeof errors = {};
     if (name.trim().length < 2) next.name = "Informe seu nome completo.";
     if (!validateEmail(email)) next.email = "Informe um e-mail válido.";
-    if (password.length < 6) next.password = "A senha deve ter pelo menos 6 caracteres.";
+    if (!cpf.trim()) {
+      next.cpf = "CPF obrigatório.";
+    } else if (!validateCPF(cpf)) {
+      next.cpf = "CPF inválido.";
+    }
+    if (password.length < 8) next.password = "A senha deve ter pelo menos 8 caracteres.";
     if (confirmPassword !== password) next.confirmPassword = "As senhas não coincidem.";
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -45,7 +75,7 @@ export default function CadastroPage() {
     setLoading(true);
     setErrors({});
     try {
-      const res = await register({ name: name.trim(), email, password });
+      const res = await register({ name: name.trim(), email, password, cpf: cpf.replace(/\D/g, "") });
       setAuth(res.user, res.accessToken);
       router.push("/");
     } catch (err) {
@@ -128,6 +158,16 @@ export default function CadastroPage() {
               onChange={(e) => setEmail(e.target.value)}
               error={errors.email}
               autoComplete="email"
+            />
+
+            <Input
+              label="CPF"
+              placeholder="000.000.000-00"
+              value={cpf}
+              onChange={(e) => setCpf(formatCPF(e.target.value))}
+              error={errors.cpf}
+              inputMode="numeric"
+              autoComplete="off"
             />
 
             <Input

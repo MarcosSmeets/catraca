@@ -60,7 +60,7 @@ func main() {
 	defer redisClient.Close()
 
 	// --- Repositories ---
-	userRepo := pginfra.NewUserRepository(pool)
+	userRepo := pginfra.NewUserRepository(pool, cfg.PhoneEncryptionKey)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 	venueRepo := pginfra.NewVenueRepository(pool)
@@ -88,7 +88,7 @@ func main() {
 	sseHub := sse.NewHub()
 
 	// --- Use Cases ---
-	registerUC := useruc.NewRegisterUseCase(userRepo, tokenService)
+	registerUC := useruc.NewRegisterUseCase(userRepo, tokenService, cfg.CPFPepper)
 	loginUC := useruc.NewLoginUseCase(userRepo, tokenService)
 	refreshUC := useruc.NewRefreshUseCase(userRepo, tokenService)
 	forgotPasswordUC := useruc.NewForgotPasswordUseCase(userRepo, tokenStore)
@@ -119,6 +119,7 @@ func main() {
 	webhookHandler := httphandler.NewWebhookHandler(paymentGateway, webhookWorker)
 	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo)
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
+		UserRepo:      userRepo,
 		ReserveSeatUC: reserveSeatUC,
 		ReleaseSeatUC: releaseSeatUC,
 		CreateOrderUC: createOrderUC,

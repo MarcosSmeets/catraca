@@ -2,35 +2,55 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
 import StadiumMap from "@/components/features/StadiumMap";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
+import { SeatMapSkeleton } from "@/components/ui/Skeleton";
 import {
-  mockEvents,
-  mockSeats,
   Seat,
   formatCurrency,
   formatDate,
   sportLabel,
 } from "@/lib/mock-data";
+import { useEvent, useEventSeats } from "@/lib/events-api";
+import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 import { useCartStore } from "@/store/cart";
+import { useAuthStore } from "@/store/auth";
+import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
 
 export default function EventPageClient({ id }: { id: string }) {
-  const event = mockEvents.find((e) => e.id === id);
-  if (!event) {
-    notFound();
-    return null;
+  const { data: event, isLoading: eventLoading } = useEvent(id);
+  const { data: seats = [], isLoading: seatsLoading } = useEventSeats(id);
+  useSeatAvailability(id);
+
+  if (eventLoading) {
+    return (
+      <MainLayout>
+        <div className="h-80 bg-surface-dim animate-pulse" />
+        <div className="max-w-7xl mx-auto px-6 py-10">
+          <SeatMapSkeleton />
+        </div>
+      </MainLayout>
+    );
   }
-  return <EventPageInner event={event} />;
+  if (!event) return null;
+
+  return <EventPageInner event={event} seats={seats} seatsLoading={seatsLoading} />;
 }
 
-function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEvents.find>> }) {
-  const seats = mockSeats[event.id] ?? [];
+function EventPageInner({
+  event,
+  seats,
+  seatsLoading,
+}: {
+  event: NonNullable<ReturnType<typeof useEvent>["data"]>;
+  seats: Seat[];
+  seatsLoading: boolean;
+}) {
   const [selectedSeats, setSelectedSeats] = useState<Seat[]>([]);
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
@@ -38,9 +58,11 @@ function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEv
   const [galleryIndex, setGalleryIndex] = useState(0);
   const router = useRouter();
   const addSeats = useCartStore((s) => s.addSeats);
+  const setReservation = useCartStore((s) => s.setReservation);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
-  const gallery = event.venue.galleryUrls?.length
-    ? event.venue.galleryUrls
+  const gallery = (event.venue as { galleryUrls?: string[] }).galleryUrls?.length
+    ? (event.venue as { galleryUrls?: string[] }).galleryUrls!
     : [event.imageUrl];
 
   const isSoldOut = event.status === "SOLD_OUT";
@@ -48,9 +70,25 @@ function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEv
   const feeCents = Math.round(subtotalCents * (event.serviceFeePercent / 100));
   const totalCents = subtotalCents + feeCents;
 
-  function handleAddToCart() {
+  async function handleAddToCart() {
     if (selectedSeats.length === 0) return;
     addSeats(selectedSeats, event);
+    try {
+      const res = await apiFetch<{ reservations: { id: string; expiresAt: string }[]; expiresAt: string }>(
+        "/reservations",
+        {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({
+            eventId: event.id,
+            seatIds: selectedSeats.map((s) => s.id),
+          }),
+        }
+      );
+      setReservation(res.reservations.map((r) => r.id), res.expiresAt);
+    } catch {
+      toast.error("Não foi possível reservar no servidor. Tente novamente.");
+    }
     toast.success(
       `${selectedSeats.length} assento${selectedSeats.length > 1 ? "s" : ""} adicionado${selectedSeats.length > 1 ? "s" : ""} ao carrinho`
     );
@@ -312,6 +350,8 @@ function EventPageInner({ event }: { event: NonNullable<ReturnType<typeof mockEv
                     </p>
                   )}
                 </div>
+              ) : seatsLoading ? (
+                <SeatMapSkeleton />
               ) : (
                 <StadiumMap
                   seats={seats}

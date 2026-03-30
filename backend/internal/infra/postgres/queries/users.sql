@@ -9,6 +9,9 @@ SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL;
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL;
 
+-- name: ExistsByCPFHash :one
+SELECT EXISTS(SELECT 1 FROM users WHERE cpf_hash = $1 AND deleted_at IS NULL);
+
 -- name: UpdateUser :exec
 UPDATE users
 SET name = $2, email = $3, phone = $4

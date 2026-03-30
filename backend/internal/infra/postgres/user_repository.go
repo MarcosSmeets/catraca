@@ -11,31 +11,38 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
+	"github.com/marcos-smeets/catraca/backend/internal/infra/crypto"
 	pgdb "github.com/marcos-smeets/catraca/backend/internal/infra/postgres/db"
 )
 
 var _ repository.UserRepository = (*UserRepository)(nil)
 
 type UserRepository struct {
-	pool    *pgxpool.Pool
-	queries *pgdb.Queries
+	pool     *pgxpool.Pool
+	queries  *pgdb.Queries
+	phoneKey string
 }
 
-func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
+func NewUserRepository(pool *pgxpool.Pool, phoneKey string) *UserRepository {
 	return &UserRepository{
-		pool:    pool,
-		queries: pgdb.New(pool),
+		pool:     pool,
+		queries:  pgdb.New(pool),
+		phoneKey: phoneKey,
 	}
 }
 
 func (r *UserRepository) Create(ctx context.Context, u *entity.User) error {
-	_, err := r.queries.CreateUser(ctx, pgdb.CreateUserParams{
+	encPhone, err := crypto.Encrypt(u.Phone, r.phoneKey)
+	if err != nil {
+		return fmt.Errorf("UserRepository.Create: encrypt phone: %w", err)
+	}
+	_, err = r.queries.CreateUser(ctx, pgdb.CreateUserParams{
 		ID:           u.ID,
 		Name:         u.Name,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		CpfHash:      u.CPFHash,
-		Phone:        u.Phone,
+		Phone:        encPhone,
 		Role:         string(u.Role),
 	})
 	if err != nil {
@@ -52,7 +59,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Use
 		}
 		return nil, fmt.Errorf("UserRepository.GetByID: %w", err)
 	}
-	return dbUserToEntity(row), nil
+	return r.dbUserToEntity(row)
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
@@ -63,37 +70,51 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*entity.
 		}
 		return nil, fmt.Errorf("UserRepository.GetByEmail: %w", err)
 	}
-	return dbUserToEntity(row), nil
+	return r.dbUserToEntity(row)
 }
 
 func (r *UserRepository) Update(ctx context.Context, u *entity.User) error {
-	err := r.queries.UpdateUser(ctx, pgdb.UpdateUserParams{
+	encPhone, err := crypto.Encrypt(u.Phone, r.phoneKey)
+	if err != nil {
+		return fmt.Errorf("UserRepository.Update: encrypt phone: %w", err)
+	}
+	err = r.queries.UpdateUser(ctx, pgdb.UpdateUserParams{
 		ID:    u.ID,
 		Name:  u.Name,
 		Email: u.Email,
-		Phone: u.Phone,
+		Phone: encPhone,
 	})
 	if err != nil {
 		return fmt.Errorf("UserRepository.Update: %w", err)
 	}
-	// Also update password hash if set (uses raw query since sqlc query is not regenerated yet)
 	if u.PasswordHash != "" {
-		_, err = r.pool.Exec(ctx,
-			`UPDATE users SET password_hash = $1 WHERE id = $2 AND deleted_at IS NULL`,
-			u.PasswordHash, u.ID,
-		)
-		if err != nil {
+		if err := r.queries.UpdateUserPassword(ctx, pgdb.UpdateUserPasswordParams{
+			ID:           u.ID,
+			PasswordHash: u.PasswordHash,
+		}); err != nil {
 			return fmt.Errorf("UserRepository.Update password_hash: %w", err)
 		}
 	}
 	return nil
 }
 
-func dbUserToEntity(u pgdb.User) *entity.User {
+func (r *UserRepository) ExistsByCPFHash(ctx context.Context, cpfHash string) (bool, error) {
+	exists, err := r.queries.ExistsByCPFHash(ctx, cpfHash)
+	if err != nil {
+		return false, fmt.Errorf("UserRepository.ExistsByCPFHash: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *UserRepository) dbUserToEntity(u pgdb.User) (*entity.User, error) {
 	var deletedAt *time.Time
 	if u.DeletedAt.Valid {
 		t := u.DeletedAt.Time
 		deletedAt = &t
+	}
+	phone, err := crypto.Decrypt(u.Phone, r.phoneKey)
+	if err != nil {
+		return nil, fmt.Errorf("UserRepository: decrypt phone: %w", err)
 	}
 	return &entity.User{
 		ID:           u.ID,
@@ -101,10 +122,10 @@ func dbUserToEntity(u pgdb.User) *entity.User {
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		CPFHash:      u.CpfHash,
-		Phone:        u.Phone,
+		Phone:        phone,
 		Role:         entity.UserRole(u.Role),
 		CreatedAt:    u.CreatedAt,
 		UpdatedAt:    u.UpdatedAt,
 		DeletedAt:    deletedAt,
-	}
+	}, nil
 }

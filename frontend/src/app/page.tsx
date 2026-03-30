@@ -1,10 +1,14 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
 import EventCard from "@/components/features/EventCard";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
-import { mockEvents, sportLabel, SportType } from "@/lib/mock-data";
+import { EventCardSkeleton } from "@/components/ui/Skeleton";
+import { sportLabel, SportType, type Event } from "@/lib/mock-data";
+import { useEvents } from "@/lib/events-api";
 
 const SPORT_FILTERS: { sport: SportType | "ALL"; label: string }[] = [
   { sport: "ALL", label: "Todos" },
@@ -14,64 +18,72 @@ const SPORT_FILTERS: { sport: SportType | "ALL"; label: string }[] = [
   { sport: "FUTSAL", label: "Futsal" },
 ];
 
-const HERO_EVENT = mockEvents[0];
-const FEATURED = mockEvents.slice(0, 4);
-const UPCOMING = mockEvents.slice(4);
-
 export default function HomePage() {
+  const { data, isLoading } = useEvents({ limit: 8 });
+  const events = data?.events ?? [];
+  const heroEvent = events[0];
+  const featured = events.slice(0, 4);
+  const upcoming = events.slice(4);
+
   return (
     <MainLayout>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-primary">
-        <div className="absolute inset-0">
-          <Image
-            src={HERO_EVENT.imageUrl}
-            alt={HERO_EVENT.title}
-            fill
-            priority
-            className="object-cover opacity-30"
-            sizes="100vw"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/80 to-transparent" />
-        </div>
-
-        <div className="relative max-w-7xl mx-auto px-6 py-24 md:py-32">
-          <div className="max-w-xl">
-            {/* Eyebrow */}
-            <div className="flex items-center gap-3 mb-6">
-              <Badge label={HERO_EVENT.league} variant="vibe" />
-              <span className="text-on-primary/50 text-xs font-body uppercase tracking-widest">
-                Em destaque
-              </span>
+      <section className="relative overflow-hidden bg-primary min-h-[28rem] md:min-h-[36rem]">
+        {heroEvent ? (
+          <>
+            <div className="absolute inset-0">
+              <Image
+                src={heroEvent.imageUrl}
+                alt={heroEvent.title}
+                fill
+                priority
+                className="object-cover opacity-30"
+                sizes="100vw"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/80 to-transparent" />
             </div>
 
-            {/* Title */}
-            <h1 className="font-display font-black text-4xl md:text-6xl text-on-primary tracking-tight leading-none uppercase mb-2">
-              {HERO_EVENT.homeTeam}
-            </h1>
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-on-primary/40 font-display font-bold text-2xl md:text-4xl uppercase tracking-tight">
-                vs
-              </span>
+            <div className="relative max-w-7xl mx-auto px-6 py-24 md:py-32">
+              <div className="max-w-xl">
+                <div className="flex items-center gap-3 mb-6">
+                  <Badge label={heroEvent.league} variant="vibe" />
+                  <span className="text-on-primary/50 text-xs font-body uppercase tracking-widest">
+                    Em destaque
+                  </span>
+                </div>
+                <h1 className="font-display font-black text-4xl md:text-6xl text-on-primary tracking-tight leading-none uppercase mb-2">
+                  {heroEvent.homeTeam}
+                </h1>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-on-primary/40 font-display font-bold text-2xl md:text-4xl uppercase tracking-tight">
+                    vs
+                  </span>
+                </div>
+                <h2 className="font-display font-black text-4xl md:text-6xl text-on-primary/70 tracking-tight leading-none uppercase mb-8">
+                  {heroEvent.awayTeam}
+                </h2>
+                <p className="text-on-primary/50 text-sm font-body mb-8">
+                  {heroEvent.venue.name} · {heroEvent.venue.city},{" "}
+                  {heroEvent.venue.state}
+                </p>
+                <Link href={`/events/${heroEvent.id}`}>
+                  <Button size="lg" variant="secondary">
+                    Ver Ingressos
+                  </Button>
+                </Link>
+              </div>
             </div>
-            <h2 className="font-display font-black text-4xl md:text-6xl text-on-primary/70 tracking-tight leading-none uppercase mb-8">
-              {HERO_EVENT.awayTeam}
-            </h2>
-
-            {/* Meta */}
-            <p className="text-on-primary/50 text-sm font-body mb-8">
-              {HERO_EVENT.venue.name} · {HERO_EVENT.venue.city},{" "}
-              {HERO_EVENT.venue.state}
-            </p>
-
-            {/* CTA */}
-            <Link href={`/events/${HERO_EVENT.id}`}>
-              <Button size="lg" variant="secondary">
-                Ver Ingressos
-              </Button>
-            </Link>
+          </>
+        ) : (
+          <div className="relative max-w-7xl mx-auto px-6 py-24 md:py-32">
+            <div className="max-w-xl h-40 animate-pulse">
+              <div className="h-6 bg-on-primary/10 rounded-sm w-1/3 mb-4" />
+              <div className="h-12 bg-on-primary/10 rounded-sm w-3/4 mb-2" />
+              <div className="h-12 bg-on-primary/10 rounded-sm w-1/2 mb-8" />
+              <div className="h-10 bg-on-primary/10 rounded-sm w-1/4" />
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* ── Sport Category Chips ─────────────────────────────────────────── */}
@@ -112,132 +124,107 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {FEATURED.map((event) => (
-              <EventCard key={event.id} event={event} />
-            ))}
+            {isLoading
+              ? Array.from({ length: 4 }).map((_, i) => <EventCardSkeleton key={i} />)
+              : featured.map((event) => <EventCard key={event.id} event={event} />)}
           </div>
         </div>
       </section>
 
       {/* ── Upcoming Events ──────────────────────────────────────────────── */}
-      <section className="bg-surface-low py-12">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-8">
-            <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">
-              Próximos eventos
-            </p>
-            <h2 className="font-display font-black text-2xl md:text-3xl text-on-surface tracking-tight uppercase">
-              No calendário
-            </h2>
-          </div>
+      {(isLoading || upcoming.length > 0) && (
+        <section className="bg-surface-low py-12">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="mb-8">
+              <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">
+                Próximos eventos
+              </p>
+              <h2 className="font-display font-black text-2xl md:text-3xl text-on-surface tracking-tight uppercase">
+                No calendário
+              </h2>
+            </div>
 
-          <div className="flex flex-col gap-0">
-            {UPCOMING.map((event, idx) => (
-              <Link
-                key={event.id}
-                href={`/events/${event.id}`}
-                className="group block"
-              >
-                <div
-                  className={[
-                    "flex items-center gap-6 py-5 transition-colors duration-150",
-                    idx < UPCOMING.length - 1
-                      ? "border-b border-outline-variant"
-                      : "",
-                    "hover:bg-surface-lowest px-4 -mx-4 rounded-sm",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                >
-                  {/* Event image thumb */}
-                  <div className="relative w-16 h-16 rounded-sm overflow-hidden bg-surface-dim shrink-0">
-                    <Image
-                      src={event.imageUrl}
-                      alt={event.title}
-                      fill
-                      className="object-cover"
-                      sizes="64px"
+            <div className="flex flex-col gap-0">
+              {isLoading
+                ? Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-20 bg-surface-dim animate-pulse rounded-sm mb-1" />
+                  ))
+                : upcoming.map((event, idx) => (
+                    <UpcomingRow
+                      key={event.id}
+                      event={event}
+                      isLast={idx === upcoming.length - 1}
                     />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Badge
-                        label={sportLabel(event.sport)}
-                        variant="outline"
-                        className="text-[10px] py-0.5"
-                      />
-                      <span className="text-xs text-on-surface/40 font-body">
-                        {event.league}
-                      </span>
-                    </div>
-                    <p className="font-display font-bold text-sm text-on-surface tracking-tight truncate">
-                      {event.homeTeam}{" "}
-                      <span className="text-on-surface/40 font-normal">vs</span>{" "}
-                      {event.awayTeam}
-                    </p>
-                    <p className="text-xs text-on-surface/40 font-body mt-0.5 truncate">
-                      {event.venue.name} · {event.venue.city}
-                    </p>
-                  </div>
-
-                  {/* Price */}
-                  <div className="shrink-0 text-right">
-                    <p className="text-xs text-on-surface/40 font-body">
-                      A partir de
-                    </p>
-                    <p className="font-display font-bold text-sm text-on-surface tracking-tight">
-                      {new Intl.NumberFormat("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      }).format(event.minPriceCents / 100)}
-                    </p>
-                  </div>
-
-                  {/* Arrow */}
-                  <svg
-                    className="w-4 h-4 text-on-surface/30 shrink-0 group-hover:text-on-surface transition-colors duration-150"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 18l6-6-6-6"
-                    />
-                  </svg>
-                </div>
-              </Link>
-            ))}
+                  ))}
+            </div>
           </div>
-        </div>
-      </section>
-
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="bg-primary py-12">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <span className="font-display font-black text-lg tracking-tight text-on-primary uppercase">
-            Catraca
-          </span>
-          <p className="text-on-primary/30 text-xs font-body text-center">
-            © 2026 Catraca. O marketplace do torcedor brasileiro.
-          </p>
-          <div className="flex gap-6">
-            {["Termos", "Privacidade", "Contato"].map((item) => (
-              <a
-                key={item}
-                href="#"
-                className="text-xs text-on-primary/40 hover:text-on-primary font-body transition-colors duration-150"
-              >
-                {item}
-              </a>
-            ))}
-          </div>
-        </div>
-      </footer>
+        </section>
+      )}
     </MainLayout>
+  );
+}
+
+function UpcomingRow({ event, isLast }: { event: Event; isLast: boolean }) {
+  return (
+    <Link href={`/events/${event.id}`} className="group block">
+      <div
+        className={[
+          "flex items-center gap-6 py-5 transition-colors duration-150",
+          !isLast ? "border-b border-outline-variant" : "",
+          "hover:bg-surface-lowest px-4 -mx-4 rounded-sm",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <div className="relative w-16 h-16 rounded-sm overflow-hidden bg-surface-dim shrink-0">
+          <Image
+            src={event.imageUrl}
+            alt={`${event.homeTeam} vs ${event.awayTeam}`}
+            fill
+            className="object-cover"
+            sizes="64px"
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Badge label={sportLabel(event.sport)} variant="outline" className="text-[10px] py-0.5" />
+            <span className="text-xs text-on-surface/40 font-body">{event.league}</span>
+          </div>
+          <p className="font-display font-bold text-sm text-on-surface tracking-tight truncate">
+            {event.homeTeam}{" "}
+            <span className="text-on-surface/40 font-normal">vs</span>{" "}
+            {event.awayTeam}
+          </p>
+          <p className="text-xs text-on-surface/40 font-body mt-0.5 truncate">
+            {event.venue.name} · {event.venue.city}
+          </p>
+        </div>
+
+        <div className="text-right shrink-0">
+          <p className="font-display font-bold text-sm text-on-surface tracking-tight">
+            {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+              event.minPriceCents / 100
+            )}
+          </p>
+          <p className="text-xs text-on-surface/30 font-body">a partir de</p>
+        </div>
+
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-on-surface/30 group-hover:text-on-surface transition-colors duration-150 shrink-0"
+          aria-hidden="true"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </div>
+    </Link>
   );
 }

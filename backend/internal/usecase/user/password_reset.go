@@ -78,7 +78,7 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, token, newPassword 
 		return fmt.Errorf("ResetPassword: get user: %w", err)
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
 	if err != nil {
 		return fmt.Errorf("ResetPassword: hash password: %w", err)
 	}

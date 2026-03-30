@@ -59,7 +59,7 @@ func NewTestUser() *entity.User {
 		Name:         "Rafael Souza",
 		Email:        "rafael@exemplo.com.br",
 		PasswordHash: "$2a$10$fakehashfakehashfakehashfakehashfakehashfakehash",
-		CPFHash:      entity.HashCPF("12345678901"),
+		CPFHash:      entity.HashCPF("52998224725", "test-pepper"),
 		Phone:        "(11) 98765-4321",
 		Role:         entity.UserRoleUser,
 		CreatedAt:    time.Now(),

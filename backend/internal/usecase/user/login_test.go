@@ -14,14 +14,14 @@ import (
 func TestLogin_Success(t *testing.T) {
 	repo := mock.NewUserRepository()
 	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
-	registerUC := user.NewRegisterUseCase(repo, tokenSvc)
+	registerUC := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
 	loginUC := user.NewLoginUseCase(repo, tokenSvc)
 
 	_, err := registerUC.Execute(context.Background(), user.RegisterInput{
 		Name:     "Rafael Souza",
 		Email:    "rafael@exemplo.com.br",
 		Password: "senhaforte123",
-		CPF:      "12345678901",
+		CPF:      validCPF,
 		Phone:    "(11) 98765-4321",
 	})
 	require.NoError(t, err)
@@ -39,14 +39,14 @@ func TestLogin_Success(t *testing.T) {
 func TestLogin_WrongPassword(t *testing.T) {
 	repo := mock.NewUserRepository()
 	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
-	registerUC := user.NewRegisterUseCase(repo, tokenSvc)
+	registerUC := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
 	loginUC := user.NewLoginUseCase(repo, tokenSvc)
 
 	_, _ = registerUC.Execute(context.Background(), user.RegisterInput{
 		Name:     "Rafael Souza",
 		Email:    "rafael@exemplo.com.br",
 		Password: "senhaforte123",
-		CPF:      "12345678901",
+		CPF:      validCPF,
 	})
 
 	_, err := loginUC.Execute(context.Background(), user.LoginInput{

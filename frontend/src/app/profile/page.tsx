@@ -1,34 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
-import { mockUser, mockOrders, formatCurrency, formatDate } from "@/lib/mock-data";
+import { ProfileSkeleton } from "@/components/ui/Skeleton";
+import { formatCurrency } from "@/lib/mock-data";
+import { useProfile, useUpdateProfile } from "@/lib/profile-api";
+import { useOrders } from "@/lib/orders-api";
+import { toast } from "sonner";
 
 type Tab = "account" | "orders";
 
 export default function ProfilePage() {
   const [tab, setTab] = useState<Tab>("account");
-  const [saved, setSaved] = useState(false);
-  const [form, setForm] = useState({
-    name: mockUser.name,
-    email: mockUser.email,
-    phone: mockUser.phone,
-    cpf: mockUser.cpf,
-  });
+  const { data: user, isLoading: userLoading } = useProfile();
+  const { data: orders = [], isLoading: ordersLoading } = useOrders();
+  const updateProfileMutation = useUpdateProfile();
+
+  const [form, setForm] = useState({ name: "", email: "", phone: "" });
+
+  useEffect(() => {
+    if (user) {
+      setForm({ name: user.name, email: user.email, phone: user.phone });
+    }
+  }, [user]);
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
-    setSaved(false);
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    await new Promise((r) => setTimeout(r, 600));
-    setSaved(true);
+    try {
+      await updateProfileMutation.mutateAsync({ name: form.name, email: form.email, phone: form.phone });
+      toast.success("Perfil atualizado com sucesso!");
+    } catch {
+      toast.error("Não foi possível salvar. Tente novamente.");
+    }
   }
 
   return (
@@ -48,10 +59,10 @@ export default function ProfilePage() {
           {/* Avatar */}
           <div className="w-14 h-14 bg-primary rounded-sm flex items-center justify-center shrink-0">
             <span className="font-display font-black text-lg text-on-primary uppercase">
-              {mockUser.name
+              {(user?.name ?? "?")
                 .split(" ")
                 .slice(0, 2)
-                .map((n) => n[0])
+                .map((n: string) => n[0])
                 .join("")}
             </span>
           </div>
@@ -79,6 +90,7 @@ export default function ProfilePage() {
 
         {/* ── Account Tab ───────────────────────────────────────────────── */}
         {tab === "account" && (
+          userLoading ? <ProfileSkeleton /> :
           <form onSubmit={handleSave} className="flex flex-col gap-8">
             <section className="bg-surface-lowest rounded-md p-6">
               <h2 className="font-display font-bold text-xs uppercase tracking-widest text-on-surface/40 mb-5">
@@ -107,7 +119,7 @@ export default function ProfilePage() {
                 <div className="sm:col-span-2">
                   <Input
                     label="CPF"
-                    value={form.cpf}
+                    value="***.***.***-**"
                     disabled
                     className="opacity-40 cursor-not-allowed"
                   />
@@ -137,14 +149,9 @@ export default function ProfilePage() {
             </section>
 
             <div className="flex items-center gap-4">
-              <Button type="submit" size="md">
-                Salvar alterações
+              <Button type="submit" size="md" disabled={updateProfileMutation.isPending}>
+                {updateProfileMutation.isPending ? "Salvando…" : "Salvar alterações"}
               </Button>
-              {saved && (
-                <span className="text-sm font-body text-on-surface/50 animate-pulse">
-                  ✓ Salvo com sucesso
-                </span>
-              )}
             </div>
           </form>
         )}
@@ -152,14 +159,20 @@ export default function ProfilePage() {
         {/* ── Orders Tab ────────────────────────────────────────────────── */}
         {tab === "orders" && (
           <div className="flex flex-col gap-4">
-            {mockOrders.length === 0 ? (
+            {ordersLoading ? (
+              <div className="flex flex-col gap-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} className="h-32 bg-surface-dim rounded-md animate-pulse" />
+                ))}
+              </div>
+            ) : orders.length === 0 ? (
               <div className="bg-surface-lowest rounded-md p-12 text-center">
                 <p className="font-display font-bold text-xl text-on-surface/20 tracking-tight uppercase">
                   Nenhum pedido
                 </p>
               </div>
             ) : (
-              mockOrders.map((order) => (
+              orders.map((order) => (
                 <div key={order.id} className="bg-surface-lowest rounded-md p-5">
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div>
@@ -177,14 +190,14 @@ export default function ProfilePage() {
                           variant={order.status === "PAID" ? "vibe" : "status"}
                         />
                         <span className="text-xs text-on-surface/30 font-body">
-                          #{order.id.toUpperCase()}
+                          #{order.id.slice(0, 8).toUpperCase()}
                         </span>
                       </div>
                       <p className="font-display font-bold text-sm text-on-surface tracking-tight">
-                        {order.event.homeTeam} vs {order.event.awayTeam}
+                        Pedido #{order.id.slice(0, 8).toUpperCase()}
                       </p>
                       <p className="text-xs text-on-surface/40 font-body mt-0.5">
-                        {formatDate(order.event.startsAt)}
+                        {new Date(order.createdAt).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -192,26 +205,17 @@ export default function ProfilePage() {
                         {formatCurrency(order.totalCents)}
                       </p>
                       <p className="text-xs text-on-surface/30 font-body">
-                        {order.seats.length} ingresso{order.seats.length > 1 ? "s" : ""}
+                        {order.reservationIds.length} ingresso{order.reservationIds.length > 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
 
-                  {/* Seats list */}
-                  <div className="flex flex-wrap gap-2 pt-4 border-t border-outline-variant">
-                    {order.seats.map((seat) => (
-                      <div
-                        key={seat.id}
-                        className="bg-surface-low rounded-sm px-3 py-1.5 text-xs font-body text-on-surface/60"
-                      >
-                        {seat.section} · {seat.row}{seat.number}
-                      </div>
-                    ))}
+                  <div className="pt-4 border-t border-outline-variant flex justify-end">
                     <Link
-                      href="/tickets"
-                      className="ml-auto text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors underline underline-offset-2 self-center"
+                      href={`/orders/${order.id}`}
+                      className="text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors underline underline-offset-2"
                     >
-                      Ver ingressos →
+                      Ver pedido →
                     </Link>
                   </div>
                 </div>

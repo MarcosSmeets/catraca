@@ -1,8 +1,12 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
 import Badge from "@/components/ui/Badge";
-import { mockTickets, formatCurrency, formatDate } from "@/lib/mock-data";
+import { TicketSkeleton } from "@/components/ui/Skeleton";
+import { formatCurrency, formatDate, type Ticket } from "@/lib/mock-data";
+import { useTickets } from "@/lib/tickets-api";
 
 const STATUS_LABELS: Record<string, string> = {
   VALID: "Válido",
@@ -17,8 +21,9 @@ const STATUS_VARIANTS: Record<string, "vibe" | "status" | "outline"> = {
 };
 
 export default function TicketsPage() {
-  const upcoming = mockTickets.filter((t) => t.status === "VALID");
-  const past = mockTickets.filter((t) => t.status !== "VALID");
+  const { data: tickets = [], isLoading } = useTickets();
+  const upcoming = tickets.filter((t) => t.status === "VALID");
+  const past = tickets.filter((t) => t.status !== "VALID");
 
   return (
     <MainLayout>
@@ -34,7 +39,11 @@ export default function TicketsPage() {
         </div>
 
         {/* ── Upcoming ──────────────────────────────────────────────────── */}
-        {upcoming.length > 0 && (
+        {isLoading ? (
+          <div className="flex flex-col gap-4">
+            {Array.from({ length: 2 }).map((_, i) => <TicketSkeleton key={i} />)}
+          </div>
+        ) : upcoming.length > 0 && (
           <section className="mb-10">
             <h2 className="font-display font-bold text-xs uppercase tracking-widest text-on-surface/40 mb-4">
               Próximos eventos
@@ -48,7 +57,7 @@ export default function TicketsPage() {
         )}
 
         {/* ── Past ──────────────────────────────────────────────────────── */}
-        {past.length > 0 && (
+        {!isLoading && past.length > 0 && (
           <section>
             <h2 className="font-display font-bold text-xs uppercase tracking-widest text-on-surface/40 mb-4">
               Histórico
@@ -61,7 +70,7 @@ export default function TicketsPage() {
           </section>
         )}
 
-        {mockTickets.length === 0 && (
+        {!isLoading && tickets.length === 0 && (
           <div className="bg-surface-lowest rounded-md p-16 text-center">
             <p className="font-display font-bold text-xl text-on-surface/20 tracking-tight uppercase">
               Nenhum ingresso
@@ -80,7 +89,7 @@ function TicketCard({
   ticket,
   showQr,
 }: {
-  ticket: (typeof mockTickets)[0];
+  ticket: Ticket;
   showQr: boolean;
 }) {
   return (

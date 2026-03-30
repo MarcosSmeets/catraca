@@ -14,14 +14,14 @@ import (
 func TestRefresh_Success(t *testing.T) {
 	repo := mock.NewUserRepository()
 	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
-	registerUC := user.NewRegisterUseCase(repo, tokenSvc)
+	registerUC := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
 	refreshUC := user.NewRefreshUseCase(repo, tokenSvc)
 
 	regOutput, err := registerUC.Execute(context.Background(), user.RegisterInput{
 		Name:     "Rafael Souza",
 		Email:    "rafael@exemplo.com.br",
 		Password: "senhaforte123",
-		CPF:      "12345678901",
+		CPF:      validCPF,
 	})
 	require.NoError(t, err)
 

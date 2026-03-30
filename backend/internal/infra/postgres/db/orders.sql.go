@@ -149,3 +149,17 @@ func (q *Queries) UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusPa
 	_, err := q.db.Exec(ctx, updateOrderStatus, arg.ID, arg.Status)
 	return err
 }
+
+const updateOrderStripePaymentID = `-- name: UpdateOrderStripePaymentID :exec
+UPDATE orders SET stripe_payment_id = $2 WHERE id = $1
+`
+
+type UpdateOrderStripePaymentIDParams struct {
+	ID              uuid.UUID `json:"id"`
+	StripePaymentID string    `json:"stripe_payment_id"`
+}
+
+func (q *Queries) UpdateOrderStripePaymentID(ctx context.Context, arg UpdateOrderStripePaymentIDParams) error {
+	_, err := q.db.Exec(ctx, updateOrderStripePaymentID, arg.ID, arg.StripePaymentID)
+	return err
+}

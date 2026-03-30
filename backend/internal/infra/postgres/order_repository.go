@@ -91,6 +91,17 @@ func (r *OrderRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status
 	return nil
 }
 
+func (r *OrderRepository) UpdateStripePaymentID(ctx context.Context, id uuid.UUID, stripePaymentID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE orders SET stripe_payment_id = $2 WHERE id = $1`,
+		id, stripePaymentID,
+	)
+	if err != nil {
+		return fmt.Errorf("OrderRepository.UpdateStripePaymentID: %w", err)
+	}
+	return nil
+}
+
 func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
 	return &entity.Order{
 		ID:              o.ID,

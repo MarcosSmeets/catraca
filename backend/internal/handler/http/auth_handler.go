@@ -68,6 +68,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "email already registered")
 			return
 		}
+		if errors.Is(err, user.ErrCPFAlreadyExists) {
+			writeError(w, http.StatusConflict, "CPF already registered")
+			return
+		}
+		if errors.Is(err, entity.ErrInvalidCPF) {
+			writeError(w, http.StatusBadRequest, "invalid CPF")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

@@ -53,6 +53,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const existsByCPFHash = `-- name: ExistsByCPFHash :one
+SELECT EXISTS(SELECT 1 FROM users WHERE cpf_hash = $1 AND deleted_at IS NULL)
+`
+
+func (q *Queries) ExistsByCPFHash(ctx context.Context, cpfHash string) (bool, error) {
+	row := q.db.QueryRow(ctx, existsByCPFHash, cpfHash)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL
 `
@@ -117,5 +128,21 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 		arg.Email,
 		arg.Phone,
 	)
+	return err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = $2
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type UpdateUserPasswordParams struct {
+	ID           uuid.UUID `json:"id"`
+	PasswordHash string    `json:"password_hash"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
 	return err
 }

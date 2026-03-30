@@ -11,16 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testPepper = "test-pepper"
+const validCPF = "52998224725"
+
 func TestRegister_Success(t *testing.T) {
 	repo := mock.NewUserRepository()
 	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
-	uc := user.NewRegisterUseCase(repo, tokenSvc)
+	uc := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
 
 	output, err := uc.Execute(context.Background(), user.RegisterInput{
 		Name:     "Rafael Souza",
 		Email:    "rafael@exemplo.com.br",
 		Password: "senhaforte123",
-		CPF:      "12345678901",
+		CPF:      validCPF,
 		Phone:    "(11) 98765-4321",
 	})
 
@@ -34,13 +37,13 @@ func TestRegister_Success(t *testing.T) {
 func TestRegister_DuplicateEmail(t *testing.T) {
 	repo := mock.NewUserRepository()
 	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
-	uc := user.NewRegisterUseCase(repo, tokenSvc)
+	uc := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
 
 	input := user.RegisterInput{
 		Name:     "Rafael Souza",
 		Email:    "rafael@exemplo.com.br",
 		Password: "senhaforte123",
-		CPF:      "12345678901",
+		CPF:      validCPF,
 		Phone:    "(11) 98765-4321",
 	}
 
@@ -54,13 +57,28 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 func TestRegister_InvalidEmail(t *testing.T) {
 	repo := mock.NewUserRepository()
 	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
-	uc := user.NewRegisterUseCase(repo, tokenSvc)
+	uc := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
 
 	_, err := uc.Execute(context.Background(), user.RegisterInput{
 		Name:     "Rafael",
 		Email:    "invalid-email",
 		Password: "senhaforte123",
-		CPF:      "12345678901",
+		CPF:      validCPF,
+	})
+
+	assert.Error(t, err)
+}
+
+func TestRegister_InvalidCPF(t *testing.T) {
+	repo := mock.NewUserRepository()
+	tokenSvc := jwtinfra.NewTokenService("access-secret", "refresh-secret")
+	uc := user.NewRegisterUseCase(repo, tokenSvc, testPepper)
+
+	_, err := uc.Execute(context.Background(), user.RegisterInput{
+		Name:     "Rafael",
+		Email:    "rafael@exemplo.com.br",
+		Password: "senhaforte123",
+		CPF:      "00000000000",
 	})
 
 	assert.Error(t, err)

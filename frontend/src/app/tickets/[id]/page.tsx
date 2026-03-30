@@ -1,12 +1,14 @@
 "use client";
 
-import { use } from "react";
+import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
-import { mockTickets, formatCurrency, formatDate } from "@/lib/mock-data";
+import { TicketSkeleton } from "@/components/ui/Skeleton";
+import { formatCurrency, formatDate } from "@/lib/mock-data";
+import { useTicket } from "@/lib/tickets-api";
 import { toast } from "sonner";
 
 interface Props {
@@ -26,8 +28,8 @@ const STATUS_VARIANTS: Record<string, "vibe" | "status" | "outline"> = {
 };
 
 export default function TicketDetailPage({ params }: Props) {
-  const { id } = use(params);
-  const ticket = mockTickets.find((t) => t.id === id) ?? mockTickets[0];
+  const resolvedParams = React.use(params);
+  const { data: ticket, isLoading } = useTicket(resolvedParams.id);
 
   function handleDownloadPdf() {
     toast.success("Baixando ingresso em PDF…");
@@ -38,6 +40,7 @@ export default function TicketDetailPage({ params }: Props) {
   }
 
   function handleShare() {
+    if (!ticket) return;
     if (navigator.share) {
       navigator.share({
         title: `Ingresso — ${ticket.event.homeTeam} vs ${ticket.event.awayTeam}`,
@@ -48,6 +51,26 @@ export default function TicketDetailPage({ params }: Props) {
       navigator.clipboard.writeText(window.location.href);
       toast.success("Link copiado!");
     }
+  }
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="max-w-2xl mx-auto px-6 py-10">
+          <TicketSkeleton />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (!ticket) {
+    return (
+      <MainLayout>
+        <div className="max-w-2xl mx-auto px-6 py-10 text-center">
+          <p className="font-display font-bold text-xl text-on-surface/30 uppercase">Ingresso não encontrado</p>
+        </div>
+      </MainLayout>
+    );
   }
 
   return (

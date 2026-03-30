@@ -19,6 +19,7 @@ import (
 
 // UserHandler handles profile, orders, tickets, and reservation routes.
 type UserHandler struct {
+	userRepo      repository.UserRepository
 	reserveSeatUC *reservationuc.ReserveSeatUseCase
 	releaseSeatUC *reservationuc.ReleaseSeatUseCase
 	createOrderUC *orderuc.CreateOrderUseCase
@@ -30,6 +31,7 @@ type UserHandler struct {
 
 // UserDeps holds all dependencies for UserHandler.
 type UserDeps struct {
+	UserRepo      repository.UserRepository
 	ReserveSeatUC *reservationuc.ReserveSeatUseCase
 	ReleaseSeatUC *reservationuc.ReleaseSeatUseCase
 	CreateOrderUC *orderuc.CreateOrderUseCase
@@ -41,6 +43,7 @@ type UserDeps struct {
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
+		userRepo:      deps.UserRepo,
 		reserveSeatUC: deps.ReserveSeatUC,
 		releaseSeatUC: deps.ReleaseSeatUC,
 		createOrderUC: deps.CreateOrderUC,
@@ -59,11 +62,18 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	user, err := h.userRepo.GetByID(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get profile")
+		return
+	}
 	writeJSON(w, http.StatusOK, dto.ProfileResponse{
-		ID:        claims.UserID.String(),
-		Email:     claims.Email,
-		Role:      claims.Role,
-		CreatedAt: time.Now().Format(time.RFC3339),
+		ID:        user.ID.String(),
+		Name:      user.Name,
+		Email:     user.Email,
+		Phone:     user.Phone,
+		Role:      string(user.Role),
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -78,12 +88,31 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	user, err := h.userRepo.GetByID(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get profile")
+		return
+	}
+	if req.Name != "" {
+		user.Name = req.Name
+	}
+	if req.Email != "" {
+		user.Email = req.Email
+	}
+	if req.Phone != "" {
+		user.Phone = req.Phone
+	}
+	if err := h.userRepo.Update(r.Context(), user); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update profile")
+		return
+	}
 	writeJSON(w, http.StatusOK, dto.ProfileResponse{
-		ID:    claims.UserID.String(),
-		Name:  req.Name,
-		Email: req.Email,
-		Phone: req.Phone,
-		Role:  claims.Role,
+		ID:        user.ID.String(),
+		Name:      user.Name,
+		Email:     user.Email,
+		Phone:     user.Phone,
+		Role:      string(user.Role),
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 	})
 }
 

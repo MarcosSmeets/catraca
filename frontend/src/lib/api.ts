@@ -1,3 +1,5 @@
+import { useAuthStore } from "@/store/auth";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -13,11 +15,24 @@ export class ApiError extends Error {
 
 interface RequestOptions extends RequestInit {
   accessToken?: string | null;
+  /** Internal flag — prevents infinite retry loop on refresh failure. */
+  _retry?: boolean;
+}
+
+async function parseError(res: Response): Promise<string> {
+  let message = res.statusText;
+  try {
+    const body = await res.json();
+    message = body.message ?? body.error ?? message;
+  } catch {
+    // use statusText fallback
+  }
+  return message;
 }
 
 export async function apiFetch<T>(
   path: string,
-  { accessToken, ...options }: RequestOptions = {}
+  { accessToken, _retry, ...options }: RequestOptions = {}
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -34,14 +49,41 @@ export async function apiFetch<T>(
     credentials: "include",
   });
 
-  if (!res.ok) {
-    let message = res.statusText;
+  // Auto-refresh on 401
+  if (res.status === 401 && !_retry) {
     try {
-      const body = await res.json();
-      message = body.message ?? body.error ?? message;
+      const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (refreshRes.ok) {
+        const data = await refreshRes.json() as { accessToken: string };
+        const store = useAuthStore.getState();
+        if (store.user) {
+          store.setAuth(store.user, data.accessToken);
+        }
+        // Retry original request with new token
+        return apiFetch<T>(path, {
+          ...options,
+          accessToken: data.accessToken,
+          _retry: true,
+        });
+      }
     } catch {
-      // use statusText fallback
+      // refresh failed — fall through to throw 401
     }
+
+    // Clear auth and redirect to login
+    useAuthStore.getState().clear();
+    if (typeof window !== "undefined") {
+      window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+    }
+    throw new ApiError(401, "Session expired. Please log in again.");
+  }
+
+  if (!res.ok) {
+    const message = await parseError(res);
     throw new ApiError(res.status, message);
   }
 

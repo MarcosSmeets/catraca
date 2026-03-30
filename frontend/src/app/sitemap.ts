@@ -1,9 +1,9 @@
 import type { MetadataRoute } from "next";
-import { mockEvents } from "@/lib/mock-data";
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://catraca.com.br";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
@@ -31,12 +31,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  const eventRoutes: MetadataRoute.Sitemap = mockEvents.map((event) => ({
-    url: `${BASE_URL}/events/${event.id}`,
-    lastModified: new Date(),
-    changeFrequency: "daily" as const,
-    priority: event.status === "ON_SALE" ? 0.8 : 0.4,
-  }));
+  let eventRoutes: MetadataRoute.Sitemap = [];
+  try {
+    const res = await fetch(`${API_URL}/events?limit=100`, {
+      next: { revalidate: 3600 },
+    });
+    if (res.ok) {
+      const data = await res.json() as { events: { id: string; status: string }[] };
+      eventRoutes = data.events.map((event) => ({
+        url: `${BASE_URL}/events/${event.id}`,
+        lastModified: new Date(),
+        changeFrequency: "daily" as const,
+        priority: event.status === "ON_SALE" ? 0.8 : 0.4,
+      }));
+    }
+  } catch {
+    // API not available during build — skip event routes
+  }
 
   return [...staticRoutes, ...eventRoutes];
 }

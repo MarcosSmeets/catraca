@@ -12,6 +12,9 @@ SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC;
 -- name: UpdateOrderStatus :exec
 UPDATE orders SET status = $2 WHERE id = $1;
 
+-- name: UpdateOrderStripePaymentID :exec
+UPDATE orders SET stripe_payment_id = $2 WHERE id = $1;
+
 -- name: CreateOrderReservation :exec
 INSERT INTO order_reservations (order_id, reservation_id)
 VALUES ($1, $2);

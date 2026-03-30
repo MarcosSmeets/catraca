@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import MainLayout from "@/components/features/MainLayout";
 import EventCard from "@/components/features/EventCard";
 import Pagination from "@/components/ui/Pagination";
 import { EventCardSkeleton } from "@/components/ui/Skeleton";
-import { mockEvents, SportType, formatCurrency } from "@/lib/mock-data";
+import { SportType, formatCurrency } from "@/lib/mock-data";
+import { useEvents } from "@/lib/events-api";
 
 type SortOption = "date" | "price-asc" | "price-desc";
 
@@ -43,48 +44,23 @@ function SearchPageContent() {
   const [minPrice, setMinPrice] = useState(PRICE_STEPS[0]);
   const [maxPrice, setMaxPrice] = useState(PRICE_STEPS[PRICE_STEPS.length - 1]);
 
-  const filtered = useMemo(() => {
-    let events = [...mockEvents];
+  // Use real API — placeholderData with mocks keeps UI responsive during first load
+  const { data, isLoading } = useEvents({
+    q: query || undefined,
+    sport: selectedSport || undefined,
+    league: selectedLeague || undefined,
+    city: selectedCity || undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    minPrice: minPrice > 0 ? minPrice : undefined,
+    maxPrice: maxPrice < PRICE_STEPS[PRICE_STEPS.length - 1] ? maxPrice : undefined,
+    sort,
+    page,
+    limit: PAGE_SIZE,
+  });
 
-    if (query) {
-      const q = query.toLowerCase();
-      events = events.filter(
-        (e) =>
-          e.homeTeam.toLowerCase().includes(q) ||
-          e.awayTeam.toLowerCase().includes(q) ||
-          e.venue.city.toLowerCase().includes(q) ||
-          e.league.toLowerCase().includes(q)
-      );
-    }
-    if (selectedSport) events = events.filter((e) => e.sport === selectedSport);
-    if (selectedLeague) events = events.filter((e) => e.league === selectedLeague);
-    if (selectedCity) events = events.filter((e) => e.venue.city === selectedCity);
-
-    if (dateFrom) {
-      events = events.filter((e) => new Date(e.startsAt) >= new Date(dateFrom));
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      events = events.filter((e) => new Date(e.startsAt) <= toDate);
-    }
-
-    events = events.filter(
-      (e) => e.minPriceCents >= minPrice && e.minPriceCents <= maxPrice
-    );
-
-    events.sort((a, b) => {
-      if (sort === "date") return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
-      if (sort === "price-asc") return a.minPriceCents - b.minPriceCents;
-      if (sort === "price-desc") return b.minPriceCents - a.minPriceCents;
-      return 0;
-    });
-
-    return events;
-  }, [query, selectedSport, selectedLeague, selectedCity, dateFrom, dateTo, minPrice, maxPrice, sort]);
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginated = data?.events ?? [];
+  const totalCount = data?.total ?? 0;
 
   function handleFilterChange(fn: () => void) {
     fn();
@@ -244,11 +220,11 @@ function SearchPageContent() {
             {/* Sort bar */}
             <div className="flex items-center justify-between mb-6">
               <p className="text-sm font-body text-on-surface/50">
-                <span className="font-semibold text-on-surface">{filtered.length}</span>{" "}
-                {filtered.length === 1 ? "evento encontrado" : "eventos encontrados"}
-                {totalPages > 1 && (
+                <span className="font-semibold text-on-surface">{totalCount}</span>{" "}
+                {totalCount === 1 ? "evento encontrado" : "eventos encontrados"}
+                {totalCount > PAGE_SIZE && (
                   <span className="ml-1 text-on-surface/30">
-                    · página {page} de {totalPages}
+                    · página {page} de {Math.ceil(totalCount / PAGE_SIZE)}
                   </span>
                 )}
               </p>
@@ -270,7 +246,13 @@ function SearchPageContent() {
               </div>
             </div>
 
-            {paginated.length === 0 ? (
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+                  <EventCardSkeleton key={i} />
+                ))}
+              </div>
+            ) : paginated.length === 0 ? (
               <div className="bg-surface-lowest rounded-md p-16 text-center">
                 <p className="font-display font-bold text-xl text-on-surface/20 tracking-tight uppercase">
                   Nenhum evento encontrado
@@ -288,7 +270,7 @@ function SearchPageContent() {
                 </div>
                 <Pagination
                   page={page}
-                  total={filtered.length}
+                  total={totalCount}
                   limit={PAGE_SIZE}
                   onPageChange={(p) => {
                     setPage(p);

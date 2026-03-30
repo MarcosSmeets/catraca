@@ -56,3 +56,14 @@ func (r *UserRepository) Update(_ context.Context, user *entity.User) error {
 	r.users[user.ID] = user
 	return nil
 }
+
+func (r *UserRepository) ExistsByCPFHash(_ context.Context, cpfHash string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, u := range r.users {
+		if u.CPFHash == cpfHash {
+			return true, nil
+		}
+	}
+	return false, nil
+}

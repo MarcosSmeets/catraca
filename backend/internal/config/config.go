@@ -18,6 +18,8 @@ type Config struct {
 	Port                int
 	AppSeed             bool
 	CORSAllowedOrigins  []string
+	CPFPepper           string
+	PhoneEncryptionKey  string
 }
 
 func Load() (*Config, error) {
@@ -41,6 +43,8 @@ func Load() (*Config, error) {
 		Port:                port,
 		AppSeed:             getEnvBool("APP_SEED", false),
 		CORSAllowedOrigins:  getEnvSlice("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
+		CPFPepper:           getEnv("CPF_PEPPER", "dev-cpf-pepper-change-in-prod"),
+		PhoneEncryptionKey:  getEnv("PHONE_ENCRYPTION_KEY", "catraca-phone-key-change-in-prod"),
 	}
 
 	return cfg, nil

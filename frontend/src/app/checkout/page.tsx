@@ -14,6 +14,8 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { formatCurrency, formatDate, type Seat, type Event } from "@/lib/mock-data";
 import { useCartStore } from "@/store/cart";
+import { useAuthStore } from "@/store/auth";
+import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
 
 const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -126,6 +128,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
   const [loading, setLoading] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
   const [installments, setInstallments] = useState(1);
+  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
+
+  const reservationIds = useCartStore((s) => s.reservationIds);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   const [form, setForm] = useState({
     name: "",
@@ -141,8 +147,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
   });
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [cepLoading, setCepLoading] = useState(false);
-
-  const orderId = `order-${Date.now()}`;
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -198,27 +202,41 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
   async function handleConfirm() {
     setLoading(true);
     try {
+      // 1. Create order on the backend → get clientSecret
+      const orderRes = await apiFetch<{ orderId: string; clientSecret: string; totalCents: number }>(
+        "/orders",
+        {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({ reservationIds }),
+        }
+      );
+      setConfirmedOrderId(orderRes.orderId);
+
+      // 2. Confirm payment with Stripe (card) or wait for PIX webhook
       if (method === "card" && stripe && elements) {
         const cardElement = elements.getElement(CardElement);
-        if (cardElement) {
-          const { error } = await stripe.createPaymentMethod({
-            type: "card",
-            card: cardElement,
-            billing_details: { name: form.cardName || form.name, email: form.email },
+        if (cardElement && orderRes.clientSecret) {
+          const { error } = await stripe.confirmCardPayment(orderRes.clientSecret, {
+            payment_method: {
+              card: cardElement,
+              billing_details: { name: form.cardName || form.name, email: form.email },
+            },
           });
           if (error) {
-            toast.error(error.message ?? "Erro no cartão");
+            toast.error(error.message ?? "Pagamento recusado pelo cartão");
             setLoading(false);
             return;
           }
         }
       }
-      // Simulate API call until backend is ready
-      await new Promise((r) => setTimeout(r, 1800));
+      // PIX: webhook will confirm asynchronously — we show success and let user check tickets
+
       clearCart();
       setStep("success");
-    } catch {
-      toast.error("Erro ao processar pagamento. Tente novamente.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao processar pagamento. Tente novamente.";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -268,7 +286,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
             </div>
           )}
           <div className="flex flex-col gap-3">
-            <Button fullWidth onClick={() => router.push(`/orders/${orderId}`)}>
+            <Button fullWidth onClick={() => router.push(`/orders/${confirmedOrderId ?? ""}`)}>
               Ver detalhes do pedido
             </Button>
             <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
