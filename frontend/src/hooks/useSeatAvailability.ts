@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Seat, SeatStatus } from "@/lib/mock-data";
+import { PUBLIC_API_BASE_URL } from "@/lib/public-api-base";
 
 interface SeatUpdateMessage {
   type: "seat_update";
@@ -15,8 +16,6 @@ interface ConnectionMessage {
 }
 
 type SseMessage = SeatUpdateMessage | ConnectionMessage;
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 /**
  * Subscribes to real-time seat availability updates for a given event via SSE.
@@ -41,7 +40,7 @@ export function useSeatAvailability(eventId: string) {
         esRef.current.close();
       }
 
-      const url = `${API_BASE_URL}/events/${eventIdRef.current}/seats/stream`;
+      const url = `${PUBLIC_API_BASE_URL}/events/${eventIdRef.current}/seats/stream`;
       const es = new EventSource(url, { withCredentials: true });
       esRef.current = es;
 

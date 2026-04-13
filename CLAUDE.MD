@@ -363,10 +363,19 @@ STRIPE_WEBHOOK_SECRET=
 APP_ENV=development|production
 PORT=8080
 
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:8080
+# Frontend (local — Next em :3000, API Go em :8080)
+# O browser deve chamar a API via rewrite /api no Next (mesmo host), senão o cookie
+# refresh_token fica no host da API e o middleware do Next redireciona /tickets para /login.
+NEXT_PUBLIC_API_URL=http://localhost:3000/api
+BACKEND_URL=http://localhost:8080
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+
+# Frontend (produção — exemplo Railway)
+# NEXT_PUBLIC_API_URL=https://seu-frontend.up.railway.app/api
+# BACKEND_URL=http://nome-interno-do-servico-go.railway.internal:8080
 ```
+
+**Auth / cookies:** `NEXT_PUBLIC_API_URL` **não** deve ser a URL pública direta do backend em produção. Use `{origem do frontend}/api`; o Next encaminha para o Go via `BACKEND_URL` (`frontend/next.config.ts`). Depois de corrigir isso no deploy, usuários precisam **entrar de novo** uma vez para o `refresh_token` ser gravado no host certo.
 
 ---
 

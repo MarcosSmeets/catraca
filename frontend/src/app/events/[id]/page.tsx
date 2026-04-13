@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { formatCurrency, type Event } from "@/lib/mock-data";
+import { PUBLIC_API_BASE_URL } from "@/lib/public-api-base";
 import EventPageClient from "./EventPageClient";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const API_URL = PUBLIC_API_BASE_URL;
 
 interface Props {
   params: Promise<{ id: string }>;

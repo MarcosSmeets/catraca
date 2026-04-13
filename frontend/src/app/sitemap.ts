@@ -1,7 +1,8 @@
 import type { MetadataRoute } from "next";
+import { PUBLIC_API_BASE_URL } from "@/lib/public-api-base";
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://catraca.com.br";
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const API_URL = PUBLIC_API_BASE_URL;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
