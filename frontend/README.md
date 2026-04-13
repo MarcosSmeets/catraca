@@ -10,7 +10,7 @@ Next.js (App Router) app for the Catraca ticket marketplace.
    cp .env.example .env.local
    ```
 
-   - **`NEXT_PUBLIC_API_URL`**: must be the **same origin** as this app plus `/api` (e.g. `http://localhost:3000/api` in dev). The browser talks to Next; Next proxies to Go via `next.config.ts` rewrites. That way the backend’s `refresh_token` cookie is stored on the frontend host and protected routes (`/tickets`, `/cart`, etc.) work with middleware.
+   - **`NEXT_PUBLIC_API_URL`**: must be the **same origin** as this app plus `/api` (e.g. `http://localhost:3000/api` in dev). The browser hits Next; [`app/api/[[...path]]/route.ts`](src/app/api/[[...path]]/route.ts) proxies to Go (`BACKEND_URL`) and forwards `Set-Cookie` so `refresh_token` is stored on the frontend host and middleware allows `/tickets`, `/cart`, etc.
    - **`BACKEND_URL`**: direct URL of the Go API (e.g. `http://localhost:8080`) — server-side only.
 
 2. Run the Go API (see repo root / `backend`) on the port matching `BACKEND_URL`.
