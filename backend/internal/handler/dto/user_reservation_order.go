@@ -37,9 +37,9 @@ type CreateOrderResponse struct {
 	StripeEnabled bool   `json:"stripeEnabled"` // false: use dev /dev/orders/:id/pay when STRIPE_SECRET_KEY is unset
 }
 
-type CreateCheckoutSessionRequest struct {
-	PaymentMethod string `json:"paymentMethod"` // must be "card"
-}
+// CreateCheckoutSessionRequest is the JSON body for POST .../checkout-session (may be {}).
+// Payment methods (card and PIX when valid for BRL) are enabled on Stripe Checkout — no field needed here.
+type CreateCheckoutSessionRequest struct{}
 
 type CreateCheckoutSessionResponse struct {
 	URL string `json:"url"`

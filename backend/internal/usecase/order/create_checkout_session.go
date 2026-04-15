@@ -15,14 +15,18 @@ import (
 
 var (
 	ErrOrderNotPending        = errors.New("order is not pending payment")
-	ErrInvalidCheckoutMethod  = errors.New("paymentMethod must be card")
 	ErrStripeCheckoutDisabled = errors.New("stripe is not configured")
+)
+
+// BRL Pix limits per Stripe (Brazil): https://docs.stripe.com/payments/pix
+const (
+	PixMinAmountCentsBRL int64 = 50      // R$ 0,50
+	PixMaxAmountCentsBRL int64 = 300_000 // R$ 3.000,00
 )
 
 type CreateCheckoutSessionInput struct {
 	UserID         uuid.UUID
 	OrderID        uuid.UUID
-	PaymentMethod  string // must be "card"
 	SuccessURLBase string
 	CancelURLBase  string
 }
@@ -47,11 +51,6 @@ func NewCreateCheckoutSessionUseCase(
 }
 
 func (uc *CreateCheckoutSessionUseCase) Execute(ctx context.Context, in CreateCheckoutSessionInput) (*CreateCheckoutSessionOutput, error) {
-	pm := strings.ToLower(strings.TrimSpace(in.PaymentMethod))
-	if pm != "card" {
-		return nil, ErrInvalidCheckoutMethod
-	}
-
 	order, err := uc.orderRepo.GetByID(ctx, in.OrderID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -76,12 +75,18 @@ func (uc *CreateCheckoutSessionUseCase) Execute(ctx context.Context, in CreateCh
 		return nil, ErrStripeCheckoutDisabled
 	}
 
+	// Hosted Checkout shows card (debit/credit on the network) and PIX when the order total allows PIX in BRL.
+	pmTypes := []string{"card"}
+	if order.TotalCents >= PixMinAmountCentsBRL && order.TotalCents <= PixMaxAmountCentsBRL {
+		pmTypes = []string{"card", "pix"}
+	}
+
 	sess, err := uc.paymentGateway.CreateCheckoutSession(ctx, service.CheckoutSessionInput{
 		AmountCents:        order.TotalCents,
 		Currency:           "brl",
 		SuccessURL:         successURL,
 		CancelURL:          cancelURL,
-		PaymentMethodTypes: []string{"card"},
+		PaymentMethodTypes: pmTypes,
 		ClientReferenceID:  order.ID.String(),
 		PaymentIntentMetadata: map[string]string{
 			"order_id": order.ID.String(),

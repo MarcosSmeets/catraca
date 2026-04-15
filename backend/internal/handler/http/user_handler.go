@@ -330,7 +330,6 @@ func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Reque
 	out, err := h.createCheckoutSessionUC.Execute(r.Context(), orderuc.CreateCheckoutSessionInput{
 		UserID:         claims.UserID,
 		OrderID:        orderID,
-		PaymentMethod:  req.PaymentMethod,
 		SuccessURLBase: h.checkoutSuccessURL,
 		CancelURLBase:  h.checkoutCancelURL,
 	})
@@ -345,8 +344,6 @@ func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusNotFound, "order not found")
 		case errors.Is(err, orderuc.ErrOrderNotPending):
 			writeError(w, http.StatusConflict, "order is not pending payment")
-		case errors.Is(err, orderuc.ErrInvalidCheckoutMethod):
-			writeError(w, http.StatusBadRequest, "paymentMethod must be card")
 		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
 			writeError(w, http.StatusServiceUnavailable, "stripe checkout is not configured")
 		default:

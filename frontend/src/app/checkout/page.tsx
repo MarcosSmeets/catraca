@@ -12,9 +12,6 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
 import { toast } from "sonner";
 
-/** Backend only accepts card for Stripe Checkout. */
-const CHECKOUT_PAYMENT_METHOD = "card" as const;
-
 type Step = "payment" | "confirm";
 
 function formatCpf(value: string): string {
@@ -220,7 +217,7 @@ function CheckoutForm({
                 {
                   method: "POST",
                   accessToken,
-                  body: JSON.stringify({ paymentMethod: CHECKOUT_PAYMENT_METHOD }),
+                  body: JSON.stringify({}),
                 }
               );
               if (sessionRes.url) {
@@ -283,7 +280,7 @@ function CheckoutForm({
         {
           method: "POST",
           accessToken,
-          body: JSON.stringify({ paymentMethod: CHECKOUT_PAYMENT_METHOD }),
+          body: JSON.stringify({}),
         }
       );
       if (!sessionRes.url) {
@@ -442,8 +439,8 @@ function CheckoutForm({
                     Forma de pagamento
                   </h2>
                   <p className="text-sm font-body text-on-surface/50">
-                    Você será redirecionado para o checkout seguro da Stripe para concluir o pagamento com cartão de
-                    crédito.
+                    Na página segura da Stripe você escolhe como pagar: cartão (débito ou crédito na rede) ou PIX, quando
+                    o valor do pedido permitir PIX em reais.
                   </p>
                 </section>
 
@@ -476,7 +473,9 @@ function CheckoutForm({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="font-body text-on-surface/50">Pagamento</span>
-                      <span className="font-body text-on-surface uppercase">Cartão (Stripe)</span>
+                      <span className="font-body text-on-surface text-right max-w-[14rem]">
+                        Cartão ou PIX na Stripe (conforme valor)
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm border-t border-outline-variant pt-3 mt-1">
                       <span className="font-display font-bold uppercase tracking-tight text-on-surface">

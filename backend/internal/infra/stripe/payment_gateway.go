@@ -47,7 +47,7 @@ func (g *PaymentGateway) IsConfigured() bool {
 	return g.secretKey != ""
 }
 
-// CreateCheckoutSession creates a hosted Checkout Session for card payments.
+// CreateCheckoutSession creates a hosted Checkout Session (card and/or PIX per PaymentMethodTypes).
 func (g *PaymentGateway) CreateCheckoutSession(
 	ctx context.Context,
 	in service.CheckoutSessionInput,
@@ -90,19 +90,27 @@ func (g *PaymentGateway) CreateCheckoutSession(
 		params.ClientReferenceID = stripelib.String(in.ClientReferenceID)
 	}
 
-	// Card installments (BR credit) per Stripe Checkout docs.
+	// payment_method_options: Pix expiry + card installments (BR) per Stripe Checkout docs.
+	pmOpts := &stripelib.CheckoutSessionPaymentMethodOptionsParams{}
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") {
+		pmOpts.Pix = &stripelib.CheckoutSessionPaymentMethodOptionsPixParams{
+			ExpiresAfterSeconds: stripelib.Int64(14_400), // 4 hours
+		}
+	}
 	if paymentMethodTypesInclude(in.PaymentMethodTypes, "card") {
-		params.PaymentMethodOptions = &stripelib.CheckoutSessionPaymentMethodOptionsParams{
-			Card: &stripelib.CheckoutSessionPaymentMethodOptionsCardParams{
-				Installments: &stripelib.CheckoutSessionPaymentMethodOptionsCardInstallmentsParams{
-					Enabled: stripelib.Bool(true),
-				},
+		pmOpts.Card = &stripelib.CheckoutSessionPaymentMethodOptionsCardParams{
+			Installments: &stripelib.CheckoutSessionPaymentMethodOptionsCardInstallmentsParams{
+				Enabled: stripelib.Bool(true),
 			},
 		}
 	}
+	if pmOpts.Pix != nil || pmOpts.Card != nil {
+		params.PaymentMethodOptions = pmOpts
+	}
 
-	// Portuguese Checkout for BRL card sessions (debit à vista / crédito parcelado escolhido na rede).
-	if paymentMethodTypesInclude(in.PaymentMethodTypes, "card") && strings.EqualFold(strings.TrimSpace(in.Currency), "brl") {
+	// Portuguese Checkout for BRL (card debit/credit + PIX on the hosted page).
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") ||
+		(paymentMethodTypesInclude(in.PaymentMethodTypes, "card") && strings.EqualFold(strings.TrimSpace(in.Currency), "brl")) {
 		params.Locale = stripelib.String("pt-BR")
 	}
 
