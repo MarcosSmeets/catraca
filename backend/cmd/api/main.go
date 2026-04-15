@@ -116,7 +116,7 @@ func main() {
 	scanTicketUC := ticketuc.NewScanTicketUseCase(ticketRepo)
 
 	// --- Workers ---
-	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub)
+	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub, paymentGateway)
 	stripeInboxWorker := worker.NewStripeInboxWorker(pool, stripeWebhookInboxRepo, paymentGateway, stripePaymentProcessor)
 	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, sseHub)
 

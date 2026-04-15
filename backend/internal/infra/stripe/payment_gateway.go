@@ -188,6 +188,30 @@ func (g *PaymentGateway) CreatePaymentIntent(
 	}, nil
 }
 
+// GetPaymentIntentMetadata returns PaymentIntent metadata (e.g. order_id from Checkout-created intents).
+func (g *PaymentGateway) GetPaymentIntentMetadata(ctx context.Context, paymentIntentID string) (map[string]string, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+	id := strings.TrimSpace(paymentIntentID)
+	if id == "" {
+		return nil, fmt.Errorf("payment intent id required")
+	}
+	pi, err := paymentintent.Get(id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stripe.GetPaymentIntent: %w", err)
+	}
+	if pi.Metadata == nil {
+		return map[string]string{}, nil
+	}
+	out := make(map[string]string, len(pi.Metadata))
+	for k, v := range pi.Metadata {
+		out[k] = v
+	}
+	return out, nil
+}
+
 // ValidateWebhook verifies the Stripe webhook signature and returns the event type and raw data.
 // In development mode (no webhook secret), it returns an error indicating Stripe is not configured.
 func (g *PaymentGateway) ValidateWebhook(payload []byte, signature string) (string, []byte, error) {

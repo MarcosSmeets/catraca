@@ -23,6 +23,7 @@ type StripePaymentProcessor struct {
 	ticketRepo      repository.TicketRepository
 	seatLocker      service.SeatLockerService
 	sseHub          *sse.Hub
+	paymentGW       service.PaymentGateway
 }
 
 func NewStripePaymentProcessor(
@@ -32,6 +33,7 @@ func NewStripePaymentProcessor(
 	ticketRepo repository.TicketRepository,
 	seatLocker service.SeatLockerService,
 	sseHub *sse.Hub,
+	paymentGW service.PaymentGateway,
 ) *StripePaymentProcessor {
 	return &StripePaymentProcessor{
 		orderRepo:       orderRepo,
@@ -40,6 +42,7 @@ func NewStripePaymentProcessor(
 		ticketRepo:      ticketRepo,
 		seatLocker:      seatLocker,
 		sseHub:          sseHub,
+		paymentGW:       paymentGW,
 	}
 }
 
@@ -48,6 +51,8 @@ func (p *StripePaymentProcessor) ProcessStripeEvent(ctx context.Context, eventTy
 	switch eventType {
 	case string(stripelib.EventTypePaymentIntentSucceeded):
 		return p.handlePaymentIntentSucceeded(ctx, payload)
+	case string(stripelib.EventTypeChargeSucceeded):
+		return p.handleChargeSucceeded(ctx, payload)
 	case string(stripelib.EventTypeCheckoutSessionCompleted):
 		return p.handleCheckoutSessionCompleted(ctx, payload)
 	case string(stripelib.EventTypePaymentIntentPaymentFailed):
@@ -78,6 +83,71 @@ func (p *StripePaymentProcessor) handlePaymentIntentSucceeded(ctx context.Contex
 	}
 
 	return p.fulfillPaidOrder(ctx, orderID)
+}
+
+// handleChargeSucceeded fulfills from charge.succeeded when order_id is on the Charge or on the related PaymentIntent metadata.
+func (p *StripePaymentProcessor) handleChargeSucceeded(ctx context.Context, payload []byte) error {
+	var ch struct {
+		ID       string            `json:"id"`
+		Metadata map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal(payload, &ch); err != nil {
+		return fmt.Errorf("handleChargeSucceeded unmarshal: %w", err)
+	}
+
+	orderIDStr := ""
+	if ch.Metadata != nil {
+		orderIDStr = ch.Metadata["order_id"]
+	}
+
+	if orderIDStr == "" && p.paymentGW.IsConfigured() {
+		piID, err := parseChargePaymentIntentID(payload)
+		if err != nil {
+			return fmt.Errorf("handleChargeSucceeded payment_intent: %w", err)
+		}
+		if piID != "" {
+			meta, err := p.paymentGW.GetPaymentIntentMetadata(ctx, piID)
+			if err != nil {
+				return fmt.Errorf("handleChargeSucceeded get PI metadata: %w", err)
+			}
+			orderIDStr = meta["order_id"]
+		}
+	}
+
+	if orderIDStr == "" {
+		log.Warn().Str("charge_id", ch.ID).Msg("charge.succeeded missing order_id on charge and payment intent metadata")
+		return nil
+	}
+
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		return fmt.Errorf("handleChargeSucceeded parse order_id: %w", err)
+	}
+
+	return p.fulfillPaidOrder(ctx, orderID)
+}
+
+func parseChargePaymentIntentID(payload []byte) (string, error) {
+	var c struct {
+		PaymentIntent json.RawMessage `json:"payment_intent"`
+	}
+	if err := json.Unmarshal(payload, &c); err != nil {
+		return "", err
+	}
+	if len(c.PaymentIntent) == 0 {
+		return "", nil
+	}
+	var idStr string
+	if err := json.Unmarshal(c.PaymentIntent, &idStr); err == nil && idStr != "" {
+		return idStr, nil
+	}
+	var expanded struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(c.PaymentIntent, &expanded); err != nil {
+		return "", fmt.Errorf("parse payment_intent: %w", err)
+	}
+	return expanded.ID, nil
 }
 
 // handleCheckoutSessionCompleted fulfills when Checkout completes with a paid session and order_id on session metadata.

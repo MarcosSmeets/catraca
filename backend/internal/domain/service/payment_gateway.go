@@ -49,5 +49,7 @@ type PaymentGateway interface {
 	IsConfigured() bool
 	CreatePaymentIntent(ctx context.Context, in CreatePaymentIntentInput) (*PaymentIntentResult, error)
 	CreateCheckoutSession(ctx context.Context, in CheckoutSessionInput) (*CheckoutSessionResult, error)
+	// GetPaymentIntentMetadata loads a PaymentIntent by id (e.g. from charge.succeeded) to read metadata such as order_id.
+	GetPaymentIntentMetadata(ctx context.Context, paymentIntentID string) (map[string]string, error)
 	ValidateWebhook(payload []byte, signature string) (eventType string, data []byte, err error)
 }
