@@ -9,7 +9,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   return (
     <>
       <Navbar />
-      <main className="pt-16 min-h-screen bg-surface lg:pt-80">{children}</main>
+      <main className="pt-16 min-h-screen bg-surface">{children}</main>
       <footer className="bg-surface-lowest border-t border-outline-variant mt-auto">
         <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs font-body text-on-surface/30">
