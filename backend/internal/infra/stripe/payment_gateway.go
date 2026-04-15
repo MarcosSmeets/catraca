@@ -3,9 +3,11 @@ package stripe
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	stripelib "github.com/stripe/stripe-go/v76"
+	checkoutsession "github.com/stripe/stripe-go/v76/checkout/session"
 	"github.com/stripe/stripe-go/v76/paymentintent"
 	"github.com/stripe/stripe-go/v76/webhook"
 
@@ -32,6 +34,55 @@ func NewPaymentGateway(secretKey, webhookSecret string) *PaymentGateway {
 // IsConfigured returns true when a real Stripe secret key is provided.
 func (g *PaymentGateway) IsConfigured() bool {
 	return g.secretKey != ""
+}
+
+// CreateCheckoutSession creates a hosted Checkout Session (PIX or card only).
+func (g *PaymentGateway) CreateCheckoutSession(
+	ctx context.Context,
+	in service.CheckoutSessionInput,
+) (*service.CheckoutSessionResult, error) {
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+
+	meta := make(map[string]string, len(in.PaymentIntentMetadata))
+	for k, v := range in.PaymentIntentMetadata {
+		meta[k] = v
+	}
+
+	lineItems := []*stripelib.CheckoutSessionLineItemParams{
+		{
+			Quantity: stripelib.Int64(1),
+			PriceData: &stripelib.CheckoutSessionLineItemPriceDataParams{
+				Currency:   stripelib.String(strings.ToLower(in.Currency)),
+				UnitAmount: stripelib.Int64(in.AmountCents),
+				ProductData: &stripelib.CheckoutSessionLineItemPriceDataProductDataParams{
+					Name: stripelib.String("Ingressos"),
+				},
+			},
+		},
+	}
+
+	params := &stripelib.CheckoutSessionParams{
+		Mode:       stripelib.String(string(stripelib.CheckoutSessionModePayment)),
+		SuccessURL: stripelib.String(in.SuccessURL),
+		CancelURL:  stripelib.String(in.CancelURL),
+		LineItems:  lineItems,
+		PaymentIntentData: &stripelib.CheckoutSessionPaymentIntentDataParams{
+			Metadata: meta,
+		},
+		PaymentMethodTypes: stripelib.StringSlice(in.PaymentMethodTypes),
+	}
+
+	sess, err := checkoutsession.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("stripe.CreateCheckoutSession: %w", err)
+	}
+
+	return &service.CheckoutSessionResult{
+		ID:  sess.ID,
+		URL: sess.URL,
+	}, nil
 }
 
 // CreatePaymentIntent creates a Stripe PaymentIntent for the given amount in BRL.

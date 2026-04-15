@@ -27,15 +27,22 @@ type OrderResponse struct {
 }
 
 type CreateOrderRequest struct {
-	ReservationIDs  []string `json:"reservationIds"`
-	PaymentMethod   string   `json:"paymentMethod"`             // "card" | "pix"
-	Installments    int      `json:"installments,omitempty"` // 1 = à vista; only for card
+	ReservationIDs []string `json:"reservationIds"`
 }
 
+// CreateOrderResponse is returned after creating a pending order. Payment happens via Stripe Checkout (redirect).
 type CreateOrderResponse struct {
-	OrderID      string `json:"orderId"`
-	ClientSecret string `json:"clientSecret"`
-	TotalCents   int64  `json:"totalCents"`
+	OrderID       string `json:"orderId"`
+	TotalCents    int64  `json:"totalCents"`
+	StripeEnabled bool   `json:"stripeEnabled"` // false: use dev /dev/orders/:id/pay when STRIPE_SECRET_KEY is unset
+}
+
+type CreateCheckoutSessionRequest struct {
+	PaymentMethod string `json:"paymentMethod"` // "card" | "pix"
+}
+
+type CreateCheckoutSessionResponse struct {
+	URL string `json:"url"`
 }
 
 type TicketEventInfo struct {

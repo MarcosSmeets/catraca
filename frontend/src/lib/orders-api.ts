@@ -5,8 +5,6 @@ import type { Order } from "./mock-data";
 
 export interface CreateOrderRequest {
   reservationIds: string[];
-  paymentMethod: "card" | "pix";
-  installments?: number;
 }
 
 // List orders for the authenticated user — backend: GET /me/orders
@@ -30,11 +28,15 @@ async function createOrder(data: CreateOrderRequest): Promise<CreateOrderRespons
   });
 }
 
-/** Response shape from POST /orders (create order + PaymentIntent). */
+/** Response from POST /orders — payment continues via Stripe Checkout redirect or dev simulation. */
 export interface CreateOrderResponse {
   orderId: string;
-  clientSecret: string;
   totalCents: number;
+  stripeEnabled: boolean;
+}
+
+export interface CreateCheckoutSessionResponse {
+  url: string;
 }
 
 export function useOrders() {

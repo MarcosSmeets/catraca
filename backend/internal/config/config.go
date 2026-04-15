@@ -14,6 +14,9 @@ type Config struct {
 	JWTRefreshSecret    string
 	StripeSecretKey     string
 	StripeWebhookSecret string
+	// StripeCheckoutSuccessURL must include {CHECKOUT_SESSION_ID} where Stripe substitutes the session id (see Stripe docs).
+	StripeCheckoutSuccessURL string
+	StripeCheckoutCancelURL  string
 	AppEnv              string
 	Port                int
 	AppSeed             bool
@@ -39,6 +42,8 @@ func Load() (*Config, error) {
 		JWTRefreshSecret:    getEnv("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripeCheckoutSuccessURL: getEnv("STRIPE_CHECKOUT_SUCCESS_URL", "http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
+		StripeCheckoutCancelURL:  getEnv("STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:3000/checkout"),
 		AppEnv:              getEnv("APP_ENV", "development"),
 		Port:                port,
 		AppSeed:             getEnvBool("APP_SEED", false),

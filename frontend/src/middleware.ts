@@ -65,6 +65,7 @@ export const config = {
     "/cadastro",
     "/cart",
     "/checkout",
+    "/checkout/:path*",
     "/tickets",
     "/profile",
     "/orders/:path*",

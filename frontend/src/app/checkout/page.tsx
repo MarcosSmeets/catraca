@@ -1,14 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Elements,
-  CardElement,
-  useStripe,
-  useElements,
-} from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
 import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -16,28 +9,11 @@ import { formatCurrency, formatDate, type Seat, type Event } from "@/lib/mock-da
 import { useCartStore } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
 import { apiFetch } from "@/lib/api";
+import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
 import { toast } from "sonner";
-import QRCode from "react-qr-code";
-
-const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
-  : null;
 
 type PaymentMethod = "pix" | "card";
-type Step = "payment" | "confirm" | "pix_awaiting" | "success";
-
-type PixDisplay = {
-  imageUrlPng?: string;
-  copyPaste?: string;
-};
-
-const INSTALLMENT_OPTIONS = [
-  { value: 1, label: "À vista" },
-  { value: 2, label: "2x" },
-  { value: 3, label: "3x" },
-  { value: 6, label: "6x" },
-  { value: 12, label: "12x" },
-];
+type Step = "payment" | "confirm";
 
 function formatCpf(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -84,34 +60,16 @@ export default function CheckoutPage() {
   const fee = event ? Math.round(subtotal * (event.serviceFeePercent / 100)) : 0;
   const total = subtotal + fee;
 
-  if (stripePromise) {
-    return (
-      <Elements stripe={stripePromise}>
-        <CheckoutForm
-          seats={seats}
-          event={event}
-          subtotal={subtotal}
-          fee={fee}
-          total={total}
-          router={router}
-          clearCart={clearCart}
-        />
-      </Elements>
-    );
-  }
-
   return (
-    <Elements stripe={null}>
-      <CheckoutForm
-        seats={seats}
-        event={event}
-        subtotal={subtotal}
-        fee={fee}
-        total={total}
-        router={router}
-        clearCart={clearCart}
-      />
-    </Elements>
+    <CheckoutForm
+      seats={seats}
+      event={event}
+      subtotal={subtotal}
+      fee={fee}
+      total={total}
+      router={router}
+      clearCart={clearCart}
+    />
   );
 }
 
@@ -126,16 +84,9 @@ interface CheckoutFormProps {
 }
 
 function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }: CheckoutFormProps) {
-  const stripe = useStripe();
-  const elements = useElements();
-
   const [step, setStep] = useState<Step>("payment");
   const [method, setMethod] = useState<PaymentMethod>("pix");
   const [loading, setLoading] = useState(false);
-  const [pixCopied, setPixCopied] = useState(false);
-  const [installments, setInstallments] = useState(1);
-  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
-  const [pixDisplay, setPixDisplay] = useState<PixDisplay | null>(null);
 
   const reservationIds = useCartStore((s) => s.reservationIds);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -150,7 +101,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     neighborhood: "",
     city: "",
     state: "",
-    cardName: "",
   });
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [cepLoading, setCepLoading] = useState(false);
@@ -206,150 +156,49 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     return Object.keys(next).length === 0;
   }
 
-  /** Poll order until PIX webhook marks it PAID */
-  useEffect(() => {
-    if (step !== "pix_awaiting" || !confirmedOrderId || !accessToken) return;
-    const t = setInterval(async () => {
-      try {
-        const o = await apiFetch<{ status: string }>(`/me/orders/${confirmedOrderId}`, {
-          accessToken,
-        });
-        if (o.status === "PAID") {
-          clearCart();
-          setPixDisplay(null);
-          setStep("success");
-        }
-      } catch {
-        /* ignore transient errors */
-      }
-    }, 3000);
-    return () => clearInterval(t);
-  }, [step, confirmedOrderId, accessToken, clearCart]);
-
   async function handleConfirm() {
     setLoading(true);
     try {
-      const orderRes = await apiFetch<{ orderId: string; clientSecret: string; totalCents: number }>(
-        "/orders",
-        {
-          method: "POST",
-          accessToken,
-          body: JSON.stringify({
-            reservationIds,
-            paymentMethod: method,
-            installments: method === "card" ? installments : 1,
-          }),
-        }
-      );
-      setConfirmedOrderId(orderRes.orderId);
+      const orderRes = await apiFetch<{
+        orderId: string;
+        totalCents: number;
+        stripeEnabled: boolean;
+      }>("/orders", {
+        method: "POST",
+        accessToken,
+        body: JSON.stringify({ reservationIds }),
+      });
 
-      const isDevPayment = orderRes.clientSecret?.startsWith("pi_dev_");
-      if (isDevPayment) {
+      if (!orderRes.stripeEnabled) {
+        sessionStorage.setItem(PENDING_CHECKOUT_ORDER_ID_KEY, orderRes.orderId);
         try {
           await apiFetch(`/dev/orders/${orderRes.orderId}/pay`, {
             method: "POST",
             accessToken,
           });
         } catch {
-          /* non-fatal */
-        }
-        clearCart();
-        setStep("success");
-        return;
-      }
-
-      if (!stripe) {
-        toast.error("Configure NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY para pagar com Stripe.");
-        return;
-      }
-
-      if (method === "card" && elements) {
-        const cardElement = elements.getElement(CardElement);
-        if (!cardElement || !orderRes.clientSecret) {
-          toast.error("Dados do cartão incompletos.");
-          return;
-        }
-        const cardPayload: Parameters<typeof stripe.confirmCardPayment>[1] = {
-          payment_method: {
-            card: cardElement,
-            billing_details: { name: form.cardName || form.name, email: form.email },
-          },
-        };
-        if (installments > 1) {
-          Object.assign(cardPayload as object, {
-            payment_method_options: {
-              card: {
-                installments: {
-                  plan: {
-                    count: installments,
-                    interval: "month",
-                    type: "fixed_count",
-                  },
-                },
-              },
-            },
-          });
-        }
-        const { error } = await stripe.confirmCardPayment(orderRes.clientSecret, cardPayload);
-        if (error) {
-          toast.error(error.message ?? "Pagamento recusado pelo cartão");
+          toast.error("Não foi possível simular o pagamento (dev).");
           return;
         }
         clearCart();
-        setStep("success");
+        router.push("/checkout/success");
         return;
       }
 
-      if (method === "pix" && orderRes.clientSecret) {
-        const phoneDigits = form.phone.replace(/\D/g, "");
-        const { error, paymentIntent } = await stripe.confirmPixPayment(
-          orderRes.clientSecret,
-          {
-            payment_method: {
-              billing_details: {
-                name: form.name,
-                email: form.email,
-                ...(phoneDigits.length >= 10
-                  ? { phone: `+55${phoneDigits}` }
-                  : {}),
-              },
-            },
-          },
-          { handleActions: false }
-        );
-        if (error) {
-          toast.error(error.message ?? "Não foi possível gerar o PIX.");
-          return;
+      const sessionRes = await apiFetch<{ url: string }>(
+        `/orders/${orderRes.orderId}/checkout-session`,
+        {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({ paymentMethod: method }),
         }
-
-        const na = paymentIntent?.next_action as
-          | {
-              type?: string;
-              pix_display_qr_code?: { image_url_png?: string; data?: string };
-              pixDisplayQrCode?: { image_url_png?: string; imageUrlPng?: string; data?: string };
-            }
-          | undefined;
-        let display: PixDisplay | null = null;
-        if (na?.type === "pix_display_qr_code") {
-          const p = na.pix_display_qr_code ?? na.pixDisplayQrCode;
-          const pAny = p as { image_url_png?: string; imageUrlPng?: string; data?: string } | undefined;
-          display = {
-            imageUrlPng: pAny?.image_url_png ?? pAny?.imageUrlPng,
-            copyPaste: pAny?.data,
-          };
-        }
-        setPixDisplay(display);
-        clearCart();
-        if (paymentIntent?.status === "succeeded") {
-          setPixDisplay(null);
-          setStep("success");
-        } else {
-          setStep("pix_awaiting");
-        }
+      );
+      if (!sessionRes.url) {
+        toast.error("Resposta inválida do servidor.");
         return;
       }
-
-      toast.error("Fluxo de pagamento inválido.");
+      sessionStorage.setItem(PENDING_CHECKOUT_ORDER_ID_KEY, orderRes.orderId);
+      window.location.href = sessionRes.url;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao processar pagamento. Tente novamente.";
       toast.error(msg);
@@ -358,125 +207,9 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     }
   }
 
-  function copyPixPayload(text: string) {
-    navigator.clipboard.writeText(text);
-    setPixCopied(true);
-    setTimeout(() => setPixCopied(false), 2000);
-  }
-
-  const installmentAmount = total / installments;
-
-  if (step === "success") {
-    return (
-      <MainLayout>
-        <div className="max-w-lg mx-auto px-6 py-20 text-center">
-          <div className="w-16 h-16 bg-accent rounded-sm flex items-center justify-center mx-auto mb-6">
-            <CheckIcon />
-          </div>
-          <h1 className="font-display font-black text-3xl uppercase tracking-tight text-on-surface mb-2">
-            Pedido confirmado!
-          </h1>
-          <p className="text-sm font-body text-on-surface/50 mb-8">
-            Seus ingressos foram enviados para{" "}
-            <span className="text-on-surface font-medium">{form.email || "seu e-mail"}</span>.
-          </p>
-          {event && (
-            <div className="bg-surface-lowest rounded-md p-5 text-left mb-8">
-              <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-3">
-                Resumo
-              </p>
-              <p className="font-display font-bold text-sm text-on-surface tracking-tight">
-                {event.homeTeam} vs {event.awayTeam}
-              </p>
-              <p className="text-xs text-on-surface/40 font-body mt-1">
-                {formatDate(event.startsAt)}
-              </p>
-              <div className="mt-4 pt-4 border-t border-outline-variant flex justify-between">
-                <span className="font-display font-bold uppercase tracking-tight text-on-surface text-sm">
-                  Total pago
-                </span>
-                <span className="font-display font-black text-on-surface tracking-tight">
-                  {formatCurrency(total)}
-                </span>
-              </div>
-            </div>
-          )}
-          <div className="flex flex-col gap-3">
-            <Button fullWidth onClick={() => router.push(`/orders/${confirmedOrderId ?? ""}`)}>
-              Ver detalhes do pedido
-            </Button>
-            <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
-              Meus ingressos
-            </Button>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
-
-  if (step === "pix_awaiting") {
-    return (
-      <MainLayout>
-        <div className="max-w-lg mx-auto px-6 py-12 text-center">
-          <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-2">
-            Pagamento PIX
-          </p>
-          <h1 className="font-display font-black text-2xl uppercase tracking-tight text-on-surface mb-2">
-            Escaneie ou copie o código
-          </h1>
-          <p className="text-sm font-body text-on-surface/50 mb-8">
-            Pedido #{confirmedOrderId?.slice(0, 8)}… — após o pagamento, confirmamos automaticamente (até ~1
-            min).
-          </p>
-          {pixDisplay?.imageUrlPng ? (
-            <div className="flex justify-center mb-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={pixDisplay.imageUrlPng}
-                alt="QR Code PIX"
-                className="w-52 h-52 object-contain bg-white rounded-sm p-2"
-              />
-            </div>
-          ) : pixDisplay?.copyPaste ? (
-            <div className="flex justify-center mb-6 bg-white p-4 rounded-sm">
-              <QRCode value={pixDisplay.copyPaste} size={200} />
-            </div>
-          ) : (
-            <p className="text-sm text-on-surface/50 mb-6">
-              Aguardando dados do PIX… se nada aparecer, abra o pedido em &quot;Meus pedidos&quot;.
-            </p>
-          )}
-          {pixDisplay?.copyPaste && (
-            <div className="flex items-center gap-2 bg-surface-low rounded-sm px-4 py-2.5 text-left mb-8">
-              <code className="text-xs font-body text-on-surface/80 flex-1 break-all">
-                {pixDisplay.copyPaste}
-              </code>
-              <button
-                type="button"
-                onClick={() => copyPixPayload(pixDisplay.copyPaste!)}
-                className="text-xs font-body text-accent shrink-0"
-              >
-                {pixCopied ? "Copiado!" : "Copiar"}
-              </button>
-            </div>
-          )}
-          <div className="flex flex-col gap-3">
-            <Button fullWidth onClick={() => router.push(`/orders/${confirmedOrderId ?? ""}`)}>
-              Acompanhar pedido
-            </Button>
-            <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
-              Meus ingressos
-            </Button>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
-
   return (
     <MainLayout>
       <div className="max-w-5xl mx-auto px-6 py-10">
-        {/* Header */}
         <div className="mb-8">
           <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">
             Finalizar compra
@@ -486,12 +219,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
           </h1>
         </div>
 
-        {/* Progress steps */}
         <div className="flex items-center gap-3 mb-10">
           {(["payment", "confirm"] as const).map((s, idx) => {
-            const stepOrder: Step[] = ["payment", "confirm", "pix_awaiting", "success"];
             const isActive = step === s;
-            const isDone = stepOrder.indexOf(step) > stepOrder.indexOf(s);
+            const isDone = (step === "confirm" && s === "payment") || false;
             return (
               <div key={s} className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
@@ -519,20 +250,16 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                     {s === "payment" ? "Pagamento" : "Confirmação"}
                   </span>
                 </div>
-                {idx < 1 && (
-                  <div className="w-8 h-px bg-outline-variant" />
-                )}
+                {idx < 1 && <div className="w-8 h-px bg-outline-variant" />}
               </div>
             );
           })}
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* ── Form ────────────────────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
             {step === "payment" && (
               <div className="flex flex-col gap-8">
-                {/* Buyer info */}
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Dados do comprador
@@ -545,7 +272,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                         value={form.name}
                         onChange={(e) => updateField("name", e.target.value)}
                         error={errors.name}
-                        aria-describedby={errors.name ? "name-error" : undefined}
                       />
                     </div>
                     <Input
@@ -555,7 +281,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                       value={form.email}
                       onChange={(e) => updateField("email", e.target.value)}
                       error={errors.email}
-                      aria-describedby={errors.email ? "email-error" : undefined}
                     />
                     <div>
                       <Input
@@ -564,7 +289,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                         value={form.cpf}
                         onChange={(e) => updateField("cpf", formatCpf(e.target.value))}
                         error={errors.cpf}
-                        aria-describedby={errors.cpf ? "cpf-error" : undefined}
                         inputMode="numeric"
                       />
                     </div>
@@ -578,7 +302,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   </div>
                 </section>
 
-                {/* Address */}
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Endereço de cobrança
@@ -621,19 +344,17 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   </div>
                 </section>
 
-                {/* Payment method */}
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Forma de pagamento
                   </h2>
-
-                  {/* Method tabs */}
                   <div className="flex gap-2 mb-6" role="tablist" aria-label="Forma de pagamento">
                     {(["pix", "card"] as PaymentMethod[]).map((m) => (
                       <button
                         key={m}
                         role="tab"
                         aria-selected={method === m}
+                        type="button"
                         onClick={() => setMethod(m)}
                         className={[
                           "flex-1 py-3 px-4 rounded-sm text-sm font-display font-semibold uppercase tracking-tight transition-colors duration-150",
@@ -648,76 +369,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                       </button>
                     ))}
                   </div>
-
-                  {method === "pix" ? (
-                    <div className="py-4 text-center px-2">
-                      <p className="text-sm font-body text-on-surface/50">
-                        O QR Code e o código copia-e-cola serão gerados pelo Stripe na etapa seguinte, após
-                        revisar e confirmar o pedido.
-                      </p>
-                      <p className="text-xs text-on-surface/30 font-body mt-3">
-                        Pagamento seguro processado pela Stripe (PIX).
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      <Input
-                        label="Nome no cartão"
-                        placeholder="RAFAEL A SOUZA"
-                        value={form.cardName}
-                        onChange={(e) => updateField("cardName", e.target.value.toUpperCase())}
-                      />
-
-                      {/* Stripe CardElement or fallback */}
-                      {stripePromise ? (
-                        <div>
-                          <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
-                            Dados do cartão
-                          </label>
-                          <div className="bg-surface px-4 py-3 rounded-sm border border-outline-variant focus-within:border-accent transition-colors duration-150">
-                            <CardElement
-                              options={{
-                                style: {
-                                  base: {
-                                    fontSize: "14px",
-                                    fontFamily: "Inter, sans-serif",
-                                    color: "var(--color-on-surface, #1a1a1a)",
-                                    "::placeholder": { color: "rgba(0,0,0,0.3)" },
-                                  },
-                                  invalid: { color: "var(--color-error, #c00)" },
-                                },
-                                hidePostalCode: true,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-on-surface/40 font-body bg-surface-low rounded-sm px-4 py-3">
-                          Configure <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> para habilitar pagamento por cartão.
-                        </p>
-                      )}
-
-                      {/* Installments */}
-                      <div>
-                        <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
-                          Parcelamento
-                        </label>
-                        <select
-                          value={installments}
-                          onChange={(e) => setInstallments(Number(e.target.value))}
-                          className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant focus:outline-none focus:border-accent transition-colors duration-150"
-                        >
-                          {INSTALLMENT_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.value === 1
-                                ? `À vista — ${formatCurrency(total)}`
-                                : `${opt.label} de ${formatCurrency(installmentAmount)} (sem juros)`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
+                  <p className="text-sm font-body text-on-surface/50">
+                    Você será redirecionado para o checkout seguro da Stripe para concluir o pagamento
+                    {method === "pix" ? " via PIX" : " com cartão"}.
+                  </p>
                 </section>
 
                 <Button
@@ -750,11 +405,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                     <div className="flex justify-between text-sm">
                       <span className="font-body text-on-surface/50">Pagamento</span>
                       <span className="font-body text-on-surface uppercase">
-                        {method === "pix"
-                          ? "PIX"
-                          : installments === 1
-                          ? "Cartão — à vista"
-                          : `Cartão — ${installments}x de ${formatCurrency(installmentAmount)}`}
+                        {method === "pix" ? "PIX (Stripe)" : "Cartão (Stripe)"}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm border-t border-outline-variant pt-3 mt-1">
@@ -769,27 +420,17 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                 </section>
 
                 <div className="flex gap-3">
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    onClick={() => setStep("payment")}
-                  >
+                  <Button variant="secondary" size="lg" onClick={() => setStep("payment")}>
                     ← Voltar
                   </Button>
-                  <Button
-                    fullWidth
-                    size="lg"
-                    onClick={handleConfirm}
-                    disabled={loading}
-                  >
-                    {loading ? "Processando…" : "Confirmar pagamento"}
+                  <Button fullWidth size="lg" onClick={handleConfirm} disabled={loading}>
+                    {loading ? "Redirecionando…" : "Ir para o pagamento"}
                   </Button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* ── Order Summary Sidebar ───────────────────────────────────── */}
           <aside className="w-full lg:w-72 shrink-0">
             <div className="bg-surface-lowest rounded-md p-6 sticky top-20">
               <h3 className="font-display font-bold text-xs uppercase tracking-tight text-on-surface/50 mb-4">
@@ -810,11 +451,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                 {seats.map((seat) => (
                   <div key={seat.id} className="flex justify-between text-sm">
                     <span className="font-body text-on-surface/60">
-                      {seat.section} · {seat.row}{seat.number}
+                      {seat.section} · {seat.row}
+                      {seat.number}
                     </span>
-                    <span className="font-body text-on-surface">
-                      {formatCurrency(seat.priceCents)}
-                    </span>
+                    <span className="font-body text-on-surface">{formatCurrency(seat.priceCents)}</span>
                   </div>
                 ))}
               </div>
@@ -842,13 +482,5 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
         </div>
       </div>
     </MainLayout>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
   );
 }

@@ -27,7 +27,25 @@ type CreatePaymentIntentInput struct {
 	Installments  int // 1 = à vista; only used when Mode is card
 }
 
+// CheckoutSessionInput configures a Stripe-hosted Checkout Session (redirect).
+type CheckoutSessionInput struct {
+	AmountCents           int64
+	Currency              string
+	SuccessURL            string
+	CancelURL             string
+	PaymentMethodTypes    []string
+	PaymentIntentMetadata map[string]string
+}
+
+// CheckoutSessionResult is the hosted Checkout Session URL for redirect.
+type CheckoutSessionResult struct {
+	ID  string
+	URL string
+}
+
 type PaymentGateway interface {
+	IsConfigured() bool
 	CreatePaymentIntent(ctx context.Context, in CreatePaymentIntentInput) (*PaymentIntentResult, error)
+	CreateCheckoutSession(ctx context.Context, in CheckoutSessionInput) (*CheckoutSessionResult, error)
 	ValidateWebhook(payload []byte, signature string) (eventType string, data []byte, err error)
 }

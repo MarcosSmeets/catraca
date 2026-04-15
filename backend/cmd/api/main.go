@@ -105,7 +105,8 @@ func main() {
 	reserveSeatUC := reservationuc.NewReserveSeatUseCase(seatRepo, reservationRepo, seatLocker)
 	releaseSeatUC := reservationuc.NewReleaseSeatUseCase(reservationRepo, seatRepo, seatLocker)
 
-	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo, paymentGateway)
+	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo)
+	createCheckoutSessionUC := orderuc.NewCreateCheckoutSessionUseCase(orderRepo, paymentGateway)
 	getOrderUC := orderuc.NewGetOrderUseCase(orderRepo)
 	listOrdersUC := orderuc.NewListOrdersUseCase(orderRepo)
 
@@ -127,16 +128,20 @@ func main() {
 	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo)
 	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
-		UserRepo:      userRepo,
-		SSEHub:        sseHub,
-		ReserveSeatUC: reserveSeatUC,
-		ReleaseSeatUC: releaseSeatUC,
-		CreateOrderUC: createOrderUC,
-		GetOrderUC:    getOrderUC,
-		ListOrdersUC:  listOrdersUC,
-		ListTicketsUC:  listTicketsUC,
-		GetTicketUC:    getTicketUC,
-		UseOwnTicketUC: useOwnTicketUC,
+		UserRepo:                userRepo,
+		SSEHub:                  sseHub,
+		ReserveSeatUC:           reserveSeatUC,
+		ReleaseSeatUC:           releaseSeatUC,
+		CreateOrderUC:           createOrderUC,
+		CreateCheckoutSessionUC: createCheckoutSessionUC,
+		GetOrderUC:              getOrderUC,
+		ListOrdersUC:            listOrdersUC,
+		ListTicketsUC:           listTicketsUC,
+		GetTicketUC:             getTicketUC,
+		UseOwnTicketUC:          useOwnTicketUC,
+		StripeEnabled:           paymentGateway.IsConfigured(),
+		CheckoutSuccessURL:      cfg.StripeCheckoutSuccessURL,
+		CheckoutCancelURL:       cfg.StripeCheckoutCancelURL,
 	})
 
 	// --- Router ---
@@ -220,6 +225,7 @@ func main() {
 
 		// Orders
 		r.Post("/orders", userHandler.CreateOrder)
+		r.Post("/orders/{id}/checkout-session", userHandler.CreateCheckoutSession)
 		r.Get("/me/orders", userHandler.ListOrders)
 		r.Get("/me/orders/{id}", userHandler.GetOrder)
 
