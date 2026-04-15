@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
@@ -13,14 +14,23 @@ import (
 )
 
 var (
-	ErrReservationNotFound  = errors.New("reservation not found")
-	ErrReservationExpired   = errors.New("reservation has expired")
-	ErrReservationWrongUser = errors.New("reservation does not belong to this user")
+	ErrReservationNotFound     = errors.New("reservation not found")
+	ErrReservationExpired      = errors.New("reservation has expired")
+	ErrReservationWrongUser    = errors.New("reservation does not belong to this user")
+	ErrInvalidPaymentMethod    = errors.New("invalid payment method")
+	ErrInvalidInstallments     = errors.New("invalid installments for card")
 )
 
+// allowedInstallmentCounts matches the checkout UI options.
+var allowedInstallmentCounts = map[int]struct{}{
+	1: {}, 2: {}, 3: {}, 6: {}, 12: {},
+}
+
 type CreateOrderInput struct {
-	UserID         uuid.UUID
-	ReservationIDs []uuid.UUID
+	UserID           uuid.UUID
+	ReservationIDs   []uuid.UUID
+	PaymentMethod    string // "card" | "pix"
+	Installments     int    // 1 = à vista; only meaningful for card
 }
 
 type CreateOrderOutput struct {
@@ -55,6 +65,31 @@ func NewCreateOrderUseCase(
 func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInput) (*CreateOrderOutput, error) {
 	if len(input.ReservationIDs) == 0 {
 		return nil, errors.New("at least one reservation is required")
+	}
+
+	pm := strings.ToLower(strings.TrimSpace(input.PaymentMethod))
+	if pm != "card" && pm != "pix" {
+		return nil, ErrInvalidPaymentMethod
+	}
+	installments := input.Installments
+	if installments <= 0 {
+		installments = 1
+	}
+	if pm == "pix" {
+		installments = 1
+	}
+	if pm == "card" {
+		if _, ok := allowedInstallmentCounts[installments]; !ok {
+			return nil, ErrInvalidInstallments
+		}
+	}
+
+	var piMode service.PaymentIntentMode
+	switch pm {
+	case "card":
+		piMode = service.PaymentIntentModeCard
+	case "pix":
+		piMode = service.PaymentIntentModePix
 	}
 
 	// Load and validate all reservations
@@ -108,9 +143,15 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 	}
 
 	// Create Stripe PaymentIntent with order_id so the webhook can look up the order
-	pi, err := uc.paymentGateway.CreatePaymentIntent(ctx, totalCents, "BRL", map[string]string{
-		"user_id":  input.UserID.String(),
-		"order_id": order.ID.String(),
+	pi, err := uc.paymentGateway.CreatePaymentIntent(ctx, service.CreatePaymentIntentInput{
+		AmountCents:  totalCents,
+		Currency:     "BRL",
+		Metadata: map[string]string{
+			"user_id":  input.UserID.String(),
+			"order_id": order.ID.String(),
+		},
+		Mode:         piMode,
+		Installments: installments,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create order: payment intent: %w", err)

@@ -27,7 +27,9 @@ type OrderResponse struct {
 }
 
 type CreateOrderRequest struct {
-	ReservationIDs []string `json:"reservationIds"`
+	ReservationIDs  []string `json:"reservationIds"`
+	PaymentMethod   string   `json:"paymentMethod"`             // "card" | "pix"
+	Installments    int      `json:"installments,omitempty"` // 1 = à vista; only for card
 }
 
 type CreateOrderResponse struct {

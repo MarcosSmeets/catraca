@@ -5,7 +5,8 @@ import type { Order } from "./mock-data";
 
 export interface CreateOrderRequest {
   reservationIds: string[];
-  paymentIntentId: string;
+  paymentMethod: "card" | "pix";
+  installments?: number;
 }
 
 // List orders for the authenticated user — backend: GET /me/orders
@@ -20,13 +21,20 @@ async function fetchOrder(id: string): Promise<Order> {
   return apiFetch<Order>(`/me/orders/${id}`, { accessToken: token });
 }
 
-async function createOrder(data: CreateOrderRequest): Promise<Order> {
+async function createOrder(data: CreateOrderRequest): Promise<CreateOrderResponse> {
   const token = useAuthStore.getState().accessToken;
-  return apiFetch<Order>("/orders", {
+  return apiFetch<CreateOrderResponse>("/orders", {
     method: "POST",
     body: JSON.stringify(data),
     accessToken: token,
   });
+}
+
+/** Response shape from POST /orders (create order + PaymentIntent). */
+export interface CreateOrderResponse {
+  orderId: string;
+  clientSecret: string;
+  totalCents: number;
 }
 
 export function useOrders() {

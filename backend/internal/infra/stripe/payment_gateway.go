@@ -39,14 +39,9 @@ func (g *PaymentGateway) IsConfigured() bool {
 // checkout flow can be tested end-to-end without a real Stripe account.
 func (g *PaymentGateway) CreatePaymentIntent(
 	ctx context.Context,
-	amountCents int64,
-	currency string,
-	metadata map[string]string,
+	in service.CreatePaymentIntentInput,
 ) (*service.PaymentIntentResult, error) {
 	if !g.IsConfigured() {
-		// Development/test mode: return a deterministic stub payment intent.
-		// The webhook worker will never fire for this, so orders stay PENDING
-		// until manually marked paid (or use the test webhook endpoint).
 		stubID := "pi_dev_" + uuid.New().String()[:8]
 		return &service.PaymentIntentResult{
 			ID:           stubID,
@@ -55,19 +50,37 @@ func (g *PaymentGateway) CreatePaymentIntent(
 		}, nil
 	}
 
-	meta := make(map[string]string, len(metadata))
-	for k, v := range metadata {
+	meta := make(map[string]string, len(in.Metadata))
+	for k, v := range in.Metadata {
 		meta[k] = v
 	}
 
+	var pmTypes []string
+	switch in.Mode {
+	case service.PaymentIntentModePix:
+		pmTypes = []string{"pix"}
+	case service.PaymentIntentModeCard:
+		pmTypes = []string{"card"}
+	default:
+		return nil, fmt.Errorf("stripe.CreatePaymentIntent: invalid payment mode %q", in.Mode)
+	}
+
 	params := &stripelib.PaymentIntentParams{
-		Amount:   stripelib.Int64(amountCents),
-		Currency: stripelib.String(string(stripelib.CurrencyBRL)),
-		PaymentMethodTypes: stripelib.StringSlice([]string{
-			"card",
-			"pix",
-		}),
-		Metadata: meta,
+		Amount:             stripelib.Int64(in.AmountCents),
+		Currency:           stripelib.String(string(stripelib.CurrencyBRL)),
+		PaymentMethodTypes: stripelib.StringSlice(pmTypes),
+		Metadata:           meta,
+	}
+
+	// Enable card installments (plan is chosen at confirm time on the client).
+	if in.Mode == service.PaymentIntentModeCard && in.Installments > 1 {
+		params.PaymentMethodOptions = &stripelib.PaymentIntentPaymentMethodOptionsParams{
+			Card: &stripelib.PaymentIntentPaymentMethodOptionsCardParams{
+				Installments: &stripelib.PaymentIntentPaymentMethodOptionsCardInstallmentsParams{
+					Enabled: stripelib.Bool(true),
+				},
+			},
+		}
 	}
 
 	pi, err := paymentintent.New(params)

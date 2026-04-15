@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Elements,
@@ -17,13 +17,19 @@ import { useCartStore } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
 import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
+import QRCode from "react-qr-code";
 
 const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
   : null;
 
 type PaymentMethod = "pix" | "card";
-type Step = "payment" | "confirm" | "success";
+type Step = "payment" | "confirm" | "pix_awaiting" | "success";
+
+type PixDisplay = {
+  imageUrlPng?: string;
+  copyPaste?: string;
+};
 
 const INSTALLMENT_OPTIONS = [
   { value: 1, label: "À vista" },
@@ -129,6 +135,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
   const [pixCopied, setPixCopied] = useState(false);
   const [installments, setInstallments] = useState(1);
   const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
+  const [pixDisplay, setPixDisplay] = useState<PixDisplay | null>(null);
 
   const reservationIds = useCartStore((s) => s.reservationIds);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -199,39 +206,43 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     return Object.keys(next).length === 0;
   }
 
+  /** Poll order until PIX webhook marks it PAID */
+  useEffect(() => {
+    if (step !== "pix_awaiting" || !confirmedOrderId || !accessToken) return;
+    const t = setInterval(async () => {
+      try {
+        const o = await apiFetch<{ status: string }>(`/me/orders/${confirmedOrderId}`, {
+          accessToken,
+        });
+        if (o.status === "PAID") {
+          clearCart();
+          setPixDisplay(null);
+          setStep("success");
+        }
+      } catch {
+        /* ignore transient errors */
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [step, confirmedOrderId, accessToken, clearCart]);
+
   async function handleConfirm() {
     setLoading(true);
     try {
-      // 1. Create order on the backend → get clientSecret
       const orderRes = await apiFetch<{ orderId: string; clientSecret: string; totalCents: number }>(
         "/orders",
         {
           method: "POST",
           accessToken,
-          body: JSON.stringify({ reservationIds }),
+          body: JSON.stringify({
+            reservationIds,
+            paymentMethod: method,
+            installments: method === "card" ? installments : 1,
+          }),
         }
       );
       setConfirmedOrderId(orderRes.orderId);
 
-      // 2. Confirm payment with Stripe (card) or wait for PIX webhook
-      if (method === "card" && stripe && elements) {
-        const cardElement = elements.getElement(CardElement);
-        if (cardElement && orderRes.clientSecret) {
-          const { error } = await stripe.confirmCardPayment(orderRes.clientSecret, {
-            payment_method: {
-              card: cardElement,
-              billing_details: { name: form.cardName || form.name, email: form.email },
-            },
-          });
-          if (error) {
-            toast.error(error.message ?? "Pagamento recusado pelo cartão");
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      // In dev mode (no Stripe key), auto-confirm via dev endpoint
       const isDevPayment = orderRes.clientSecret?.startsWith("pi_dev_");
       if (isDevPayment) {
         try {
@@ -240,12 +251,105 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
             accessToken,
           });
         } catch {
-          // dev endpoint failure is non-fatal; order will stay PENDING but we still show success
+          /* non-fatal */
         }
+        clearCart();
+        setStep("success");
+        return;
       }
 
-      clearCart();
-      setStep("success");
+      if (!stripe) {
+        toast.error("Configure NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY para pagar com Stripe.");
+        return;
+      }
+
+      if (method === "card" && elements) {
+        const cardElement = elements.getElement(CardElement);
+        if (!cardElement || !orderRes.clientSecret) {
+          toast.error("Dados do cartão incompletos.");
+          return;
+        }
+        const cardPayload: Parameters<typeof stripe.confirmCardPayment>[1] = {
+          payment_method: {
+            card: cardElement,
+            billing_details: { name: form.cardName || form.name, email: form.email },
+          },
+        };
+        if (installments > 1) {
+          Object.assign(cardPayload as object, {
+            payment_method_options: {
+              card: {
+                installments: {
+                  plan: {
+                    count: installments,
+                    interval: "month",
+                    type: "fixed_count",
+                  },
+                },
+              },
+            },
+          });
+        }
+        const { error } = await stripe.confirmCardPayment(orderRes.clientSecret, cardPayload);
+        if (error) {
+          toast.error(error.message ?? "Pagamento recusado pelo cartão");
+          return;
+        }
+        clearCart();
+        setStep("success");
+        return;
+      }
+
+      if (method === "pix" && orderRes.clientSecret) {
+        const phoneDigits = form.phone.replace(/\D/g, "");
+        const { error, paymentIntent } = await stripe.confirmPixPayment(
+          orderRes.clientSecret,
+          {
+            payment_method: {
+              billing_details: {
+                name: form.name,
+                email: form.email,
+                ...(phoneDigits.length >= 10
+                  ? { phone: `+55${phoneDigits}` }
+                  : {}),
+              },
+            },
+          },
+          { handleActions: false }
+        );
+        if (error) {
+          toast.error(error.message ?? "Não foi possível gerar o PIX.");
+          return;
+        }
+
+        const na = paymentIntent?.next_action as
+          | {
+              type?: string;
+              pix_display_qr_code?: { image_url_png?: string; data?: string };
+              pixDisplayQrCode?: { image_url_png?: string; imageUrlPng?: string; data?: string };
+            }
+          | undefined;
+        let display: PixDisplay | null = null;
+        if (na?.type === "pix_display_qr_code") {
+          const p = na.pix_display_qr_code ?? na.pixDisplayQrCode;
+          const pAny = p as { image_url_png?: string; imageUrlPng?: string; data?: string } | undefined;
+          display = {
+            imageUrlPng: pAny?.image_url_png ?? pAny?.imageUrlPng,
+            copyPaste: pAny?.data,
+          };
+        }
+        setPixDisplay(display);
+        clearCart();
+        if (paymentIntent?.status === "succeeded") {
+          setPixDisplay(null);
+          setStep("success");
+        } else {
+          setStep("pix_awaiting");
+        }
+        return;
+      }
+
+      toast.error("Fluxo de pagamento inválido.");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao processar pagamento. Tente novamente.";
       toast.error(msg);
@@ -254,8 +358,8 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     }
   }
 
-  function copyPixKey() {
-    navigator.clipboard.writeText("catraca@pagamentos.com.br");
+  function copyPixPayload(text: string) {
+    navigator.clipboard.writeText(text);
     setPixCopied(true);
     setTimeout(() => setPixCopied(false), 2000);
   }
@@ -310,6 +414,65 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     );
   }
 
+  if (step === "pix_awaiting") {
+    return (
+      <MainLayout>
+        <div className="max-w-lg mx-auto px-6 py-12 text-center">
+          <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-2">
+            Pagamento PIX
+          </p>
+          <h1 className="font-display font-black text-2xl uppercase tracking-tight text-on-surface mb-2">
+            Escaneie ou copie o código
+          </h1>
+          <p className="text-sm font-body text-on-surface/50 mb-8">
+            Pedido #{confirmedOrderId?.slice(0, 8)}… — após o pagamento, confirmamos automaticamente (até ~1
+            min).
+          </p>
+          {pixDisplay?.imageUrlPng ? (
+            <div className="flex justify-center mb-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pixDisplay.imageUrlPng}
+                alt="QR Code PIX"
+                className="w-52 h-52 object-contain bg-white rounded-sm p-2"
+              />
+            </div>
+          ) : pixDisplay?.copyPaste ? (
+            <div className="flex justify-center mb-6 bg-white p-4 rounded-sm">
+              <QRCode value={pixDisplay.copyPaste} size={200} />
+            </div>
+          ) : (
+            <p className="text-sm text-on-surface/50 mb-6">
+              Aguardando dados do PIX… se nada aparecer, abra o pedido em &quot;Meus pedidos&quot;.
+            </p>
+          )}
+          {pixDisplay?.copyPaste && (
+            <div className="flex items-center gap-2 bg-surface-low rounded-sm px-4 py-2.5 text-left mb-8">
+              <code className="text-xs font-body text-on-surface/80 flex-1 break-all">
+                {pixDisplay.copyPaste}
+              </code>
+              <button
+                type="button"
+                onClick={() => copyPixPayload(pixDisplay.copyPaste!)}
+                className="text-xs font-body text-accent shrink-0"
+              >
+                {pixCopied ? "Copiado!" : "Copiar"}
+              </button>
+            </div>
+          )}
+          <div className="flex flex-col gap-3">
+            <Button fullWidth onClick={() => router.push(`/orders/${confirmedOrderId ?? ""}`)}>
+              Acompanhar pedido
+            </Button>
+            <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
+              Meus ingressos
+            </Button>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="max-w-5xl mx-auto px-6 py-10">
@@ -326,7 +489,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
         {/* Progress steps */}
         <div className="flex items-center gap-3 mb-10">
           {(["payment", "confirm"] as const).map((s, idx) => {
-            const stepOrder: Step[] = ["payment", "confirm", "success"];
+            const stepOrder: Step[] = ["payment", "confirm", "pix_awaiting", "success"];
             const isActive = step === s;
             const isDone = stepOrder.indexOf(step) > stepOrder.indexOf(s);
             return (
@@ -487,39 +650,13 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   </div>
 
                   {method === "pix" ? (
-                    <div className="flex flex-col items-center gap-4 py-6 text-center">
-                      <div className="w-40 h-40 bg-surface-low rounded-sm flex items-center justify-center">
-                        <div className="w-32 h-32 bg-surface-dim rounded-none grid grid-cols-8 gap-0.5 p-2" aria-label="QR Code PIX placeholder">
-                          {Array.from({ length: 64 }).map((_, i) => (
-                            <div
-                              key={i}
-                              className={
-                                (i * 13 + i * 7) % 3 === 0
-                                  ? "bg-primary"
-                                  : "bg-surface-lowest"
-                              }
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-body text-on-surface/50 mb-1">
-                          Escaneie o QR Code ou copie a chave PIX
-                        </p>
-                        <div className="flex items-center gap-2 bg-surface-low rounded-sm px-4 py-2.5">
-                          <code className="text-xs font-body text-on-surface/70 flex-1 truncate">
-                            catraca@pagamentos.com.br
-                          </code>
-                          <button
-                            onClick={copyPixKey}
-                            className="text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors shrink-0"
-                          >
-                            {pixCopied ? "Copiado!" : "Copiar"}
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs text-on-surface/30 font-body">
-                        Após o pagamento, a confirmação é automática em até 1 minuto.
+                    <div className="py-4 text-center px-2">
+                      <p className="text-sm font-body text-on-surface/50">
+                        O QR Code e o código copia-e-cola serão gerados pelo Stripe na etapa seguinte, após
+                        revisar e confirmar o pedido.
+                      </p>
+                      <p className="text-xs text-on-surface/30 font-body mt-3">
+                        Pagamento seguro processado pela Stripe (PIX).
                       </p>
                     </div>
                   ) : (

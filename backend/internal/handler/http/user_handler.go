@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -258,6 +259,10 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one reservationId is required")
 		return
 	}
+	if strings.TrimSpace(req.PaymentMethod) == "" {
+		writeError(w, http.StatusBadRequest, "paymentMethod is required (card or pix)")
+		return
+	}
 
 	resIDs := make([]uuid.UUID, 0, len(req.ReservationIDs))
 	for _, s := range req.ReservationIDs {
@@ -270,8 +275,10 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	output, err := h.createOrderUC.Execute(r.Context(), orderuc.CreateOrderInput{
-		UserID:         claims.UserID,
+		UserID:           claims.UserID,
 		ReservationIDs: resIDs,
+		PaymentMethod:    req.PaymentMethod,
+		Installments:     req.Installments,
 	})
 	if err != nil {
 		switch {
@@ -281,6 +288,10 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusGone, "reservation has expired")
 		case errors.Is(err, orderuc.ErrReservationWrongUser):
 			writeError(w, http.StatusForbidden, "reservation does not belong to you")
+		case errors.Is(err, orderuc.ErrInvalidPaymentMethod):
+			writeError(w, http.StatusBadRequest, "paymentMethod must be card or pix")
+		case errors.Is(err, orderuc.ErrInvalidInstallments):
+			writeError(w, http.StatusBadRequest, "invalid installments (allowed: 1, 2, 3, 6, 12)")
 		default:
 			writeError(w, http.StatusInternalServerError, "failed to create order")
 		}
