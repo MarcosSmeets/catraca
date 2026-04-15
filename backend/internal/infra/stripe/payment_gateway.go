@@ -17,8 +17,8 @@ import (
 
 var _ service.PaymentGateway = (*PaymentGateway)(nil)
 
-// CheckoutSessionError is returned when the Stripe API rejects Checkout Session creation
-// (e.g. Pix not enabled in the Dashboard, invalid parameters). The Message is safe to show to API clients.
+// CheckoutSessionError is returned when the Stripe API rejects Checkout Session creation.
+// The Message is safe to show to API clients.
 type CheckoutSessionError struct {
 	Message string
 }
@@ -47,7 +47,7 @@ func (g *PaymentGateway) IsConfigured() bool {
 	return g.secretKey != ""
 }
 
-// CreateCheckoutSession creates a hosted Checkout Session (PIX or card only).
+// CreateCheckoutSession creates a hosted Checkout Session for card payments.
 func (g *PaymentGateway) CreateCheckoutSession(
 	ctx context.Context,
 	in service.CheckoutSessionInput,
@@ -90,27 +90,19 @@ func (g *PaymentGateway) CreateCheckoutSession(
 		params.ClientReferenceID = stripelib.String(in.ClientReferenceID)
 	}
 
-	// Unified payment_method_options: Pix expiry + card installments (BR credit) per Stripe Checkout docs.
-	pmOpts := &stripelib.CheckoutSessionPaymentMethodOptionsParams{}
-	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") {
-		pmOpts.Pix = &stripelib.CheckoutSessionPaymentMethodOptionsPixParams{
-			ExpiresAfterSeconds: stripelib.Int64(14_400), // 4 hours — Pix pending window default
-		}
-	}
+	// Card installments (BR credit) per Stripe Checkout docs.
 	if paymentMethodTypesInclude(in.PaymentMethodTypes, "card") {
-		pmOpts.Card = &stripelib.CheckoutSessionPaymentMethodOptionsCardParams{
-			Installments: &stripelib.CheckoutSessionPaymentMethodOptionsCardInstallmentsParams{
-				Enabled: stripelib.Bool(true),
+		params.PaymentMethodOptions = &stripelib.CheckoutSessionPaymentMethodOptionsParams{
+			Card: &stripelib.CheckoutSessionPaymentMethodOptionsCardParams{
+				Installments: &stripelib.CheckoutSessionPaymentMethodOptionsCardInstallmentsParams{
+					Enabled: stripelib.Bool(true),
+				},
 			},
 		}
 	}
-	if pmOpts.Pix != nil || pmOpts.Card != nil {
-		params.PaymentMethodOptions = pmOpts
-	}
 
-	// Portuguese Checkout for Pix and for BRL card sessions (debit à vista / crédito parcelado escolhido na rede).
-	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") ||
-		(paymentMethodTypesInclude(in.PaymentMethodTypes, "card") && strings.EqualFold(strings.TrimSpace(in.Currency), "brl")) {
+	// Portuguese Checkout for BRL card sessions (debit à vista / crédito parcelado escolhido na rede).
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "card") && strings.EqualFold(strings.TrimSpace(in.Currency), "brl") {
 		params.Locale = stripelib.String("pt-BR")
 	}
 

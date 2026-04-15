@@ -33,7 +33,7 @@ export default function CheckoutSuccessPage() {
       if (cancelled) return;
       attempts += 1;
       try {
-        // Omit accessToken so apiFetch always uses the latest store token (fixes 401 after long Stripe/PIX sessions).
+        // Omit accessToken so apiFetch always uses the latest store token (fixes 401 after long Stripe sessions).
         const o = await apiFetch<Order>(`/me/orders/${id}`);
         if (o.status === "PAID") {
           sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);

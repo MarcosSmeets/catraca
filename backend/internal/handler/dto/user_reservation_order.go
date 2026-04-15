@@ -38,7 +38,7 @@ type CreateOrderResponse struct {
 }
 
 type CreateCheckoutSessionRequest struct {
-	PaymentMethod string `json:"paymentMethod"` // "card" | "pix"
+	PaymentMethod string `json:"paymentMethod"` // must be "card"
 }
 
 type CreateCheckoutSessionResponse struct {

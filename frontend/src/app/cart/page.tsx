@@ -273,7 +273,7 @@ export default function CartPage() {
                 </Button>
 
                 <p className="text-[11px] text-on-surface/30 font-body text-center mt-3 leading-relaxed">
-                  Aceitamos PIX e cartão de crédito. Pagamento seguro via Stripe.
+                  Pagamento com cartão de crédito. Pagamento seguro via Stripe.
                 </p>
               </div>
             </aside>

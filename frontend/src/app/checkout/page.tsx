@@ -12,7 +12,9 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
 import { toast } from "sonner";
 
-type PaymentMethod = "pix" | "card";
+/** Backend only accepts card for Stripe Checkout. */
+const CHECKOUT_PAYMENT_METHOD = "card" as const;
+
 type Step = "payment" | "confirm";
 
 function formatCpf(value: string): string {
@@ -117,7 +119,6 @@ function CheckoutForm({
   clearCart,
 }: CheckoutFormProps) {
   const [step, setStep] = useState<Step>("payment");
-  const [method, setMethod] = useState<PaymentMethod>("pix");
   const [loading, setLoading] = useState(false);
   const canceledToastShown = useRef(false);
 
@@ -219,7 +220,7 @@ function CheckoutForm({
                 {
                   method: "POST",
                   accessToken,
-                  body: JSON.stringify({ paymentMethod: method }),
+                  body: JSON.stringify({ paymentMethod: CHECKOUT_PAYMENT_METHOD }),
                 }
               );
               if (sessionRes.url) {
@@ -282,7 +283,7 @@ function CheckoutForm({
         {
           method: "POST",
           accessToken,
-          body: JSON.stringify({ paymentMethod: method }),
+          body: JSON.stringify({ paymentMethod: CHECKOUT_PAYMENT_METHOD }),
         }
       );
       if (!sessionRes.url) {
@@ -440,30 +441,9 @@ function CheckoutForm({
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Forma de pagamento
                   </h2>
-                  <div className="flex gap-2 mb-6" role="tablist" aria-label="Forma de pagamento">
-                    {(["pix", "card"] as PaymentMethod[]).map((m) => (
-                      <button
-                        key={m}
-                        role="tab"
-                        aria-selected={method === m}
-                        type="button"
-                        onClick={() => setMethod(m)}
-                        className={[
-                          "flex-1 py-3 px-4 rounded-sm text-sm font-display font-semibold uppercase tracking-tight transition-colors duration-150",
-                          method === m
-                            ? "bg-accent text-on-accent"
-                            : "bg-surface border border-outline-variant text-on-surface/50 hover:border-accent hover:text-on-surface",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        {m === "pix" ? "PIX" : "Cartão"}
-                      </button>
-                    ))}
-                  </div>
                   <p className="text-sm font-body text-on-surface/50">
-                    Você será redirecionado para o checkout seguro da Stripe para concluir o pagamento
-                    {method === "pix" ? " via PIX" : " com cartão"}.
+                    Você será redirecionado para o checkout seguro da Stripe para concluir o pagamento com cartão de
+                    crédito.
                   </p>
                 </section>
 
@@ -496,9 +476,7 @@ function CheckoutForm({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="font-body text-on-surface/50">Pagamento</span>
-                      <span className="font-body text-on-surface uppercase">
-                        {method === "pix" ? "PIX (Stripe)" : "Cartão (Stripe)"}
-                      </span>
+                      <span className="font-body text-on-surface uppercase">Cartão (Stripe)</span>
                     </div>
                     <div className="flex justify-between text-sm border-t border-outline-variant pt-3 mt-1">
                       <span className="font-display font-bold uppercase tracking-tight text-on-surface">

@@ -346,9 +346,7 @@ func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, orderuc.ErrOrderNotPending):
 			writeError(w, http.StatusConflict, "order is not pending payment")
 		case errors.Is(err, orderuc.ErrInvalidCheckoutMethod):
-			writeError(w, http.StatusBadRequest, "paymentMethod must be card or pix")
-		case errors.Is(err, orderuc.ErrPixAmountOutOfRange):
-			writeError(w, http.StatusBadRequest, "Pix order total must be between R$ 0,50 and R$ 3.000,00")
+			writeError(w, http.StatusBadRequest, "paymentMethod must be card")
 		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
 			writeError(w, http.StatusServiceUnavailable, "stripe checkout is not configured")
 		default:
