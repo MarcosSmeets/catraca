@@ -54,7 +54,7 @@ export default function AdminLoginPage() {
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12">
         <Link href="/" className="flex items-center group">
-          <Logo variant="lockup" className="max-h-16 w-auto group-hover:opacity-90 transition-opacity duration-150" />
+          <Logo variant="lockup" className="group-hover:opacity-90 transition-opacity duration-150" />
         </Link>
         <div>
           <h1 className="font-display font-black text-5xl text-on-primary tracking-tight leading-tight mb-6">

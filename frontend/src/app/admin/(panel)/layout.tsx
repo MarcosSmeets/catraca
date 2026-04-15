@@ -39,7 +39,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Mobile top bar */}
       <header className="lg:hidden flex items-center justify-between px-4 h-14 bg-surface-low border-b border-outline-variant shrink-0">
         <Link href="/" className="flex items-center group">
-          <Logo variant="wordmark" className="h-7 max-w-[160px] group-hover:opacity-90 transition-opacity duration-150" />
+          <Logo variant="wordmark" className="max-h-10 max-w-[min(100%,260px)] group-hover:opacity-90 transition-opacity duration-150" />
         </Link>
         <button
           onClick={() => setSidebarOpen((v) => !v)}

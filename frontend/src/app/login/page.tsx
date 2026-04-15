@@ -55,7 +55,7 @@ export default function LoginPage() {
       {/* Left panel — branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12">
         <Link href="/" className="flex items-center group">
-          <Logo variant="lockup" className="max-h-16 w-auto group-hover:opacity-90 transition-opacity duration-150" />
+          <Logo variant="lockup" className="group-hover:opacity-90 transition-opacity duration-150" />
         </Link>
 
         <div>

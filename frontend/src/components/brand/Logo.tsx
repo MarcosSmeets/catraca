@@ -12,9 +12,9 @@ const SOURCES: Record<
 };
 
 const SIZE_CLASSES: Record<LogoVariant, string> = {
-  wordmark: "h-8 w-auto max-w-[200px]",
-  lockup: "h-auto max-h-16 w-auto max-w-[min(100%,280px)]",
-  mark: "h-9 w-9 shrink-0",
+  wordmark: "h-12 w-auto max-w-[min(100%,320px)]",
+  lockup: "h-auto max-h-32 w-auto max-w-[min(100%,360px)]",
+  mark: "h-10 w-10 shrink-0",
 };
 
 export default function Logo({
