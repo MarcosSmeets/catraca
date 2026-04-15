@@ -27,7 +27,7 @@ function StatCard({
       </div>
       <Link
         href={href}
-        className="text-sm font-display font-semibold text-primary hover:underline underline-offset-2"
+        className="text-sm font-display font-semibold text-accent hover:underline underline-offset-2"
       >
         {cta} →
       </Link>
@@ -90,23 +90,23 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link
           href="/admin/venues/new"
-          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-primary transition-colors duration-150 flex flex-col gap-2"
+          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-accent transition-colors duration-150 flex flex-col gap-2"
         >
           <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
             Ação rápida
           </p>
-          <p className="font-display font-black text-lg text-on-surface group-hover:text-primary transition-colors duration-150">
+          <p className="font-display font-black text-lg text-on-surface group-hover:text-accent transition-colors duration-150">
             Cadastrar estádio →
           </p>
         </Link>
         <Link
           href="/admin/events/new"
-          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-primary transition-colors duration-150 flex flex-col gap-2"
+          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-accent transition-colors duration-150 flex flex-col gap-2"
         >
           <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
             Ação rápida
           </p>
-          <p className="font-display font-black text-lg text-on-surface group-hover:text-primary transition-colors duration-150">
+          <p className="font-display font-black text-lg text-on-surface group-hover:text-accent transition-colors duration-150">
             Criar novo evento →
           </p>
         </Link>

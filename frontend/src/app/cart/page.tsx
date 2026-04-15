@@ -149,7 +149,7 @@ export default function CartPage() {
                           i < Math.ceil((countdown.secondsLeft / (countdown.total || RESERVATION_SECONDS)) * 5)
                             ? countdown.isUrgent
                               ? "bg-error w-8"
-                              : "bg-primary w-8"
+                              : "bg-accent w-8"
                             : "bg-surface-dim w-4",
                         ]
                           .filter(Boolean)

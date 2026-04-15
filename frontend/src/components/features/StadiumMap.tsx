@@ -560,7 +560,7 @@ function SectionHoverCard({
                 {formatCurrency(info.minPriceCents)}
               </span>
             </p>
-            <p className="text-[10px] font-body text-primary font-semibold mt-0.5">
+            <p className="text-[10px] font-body text-accent font-semibold mt-0.5">
               Clique para ver assentos →
             </p>
           </>
@@ -639,7 +639,7 @@ function TapPreviewCard({
             </div>
             <button
               onClick={onConfirm}
-              className="w-full py-2.5 bg-primary text-on-primary text-xs font-display font-bold uppercase tracking-tight rounded-sm"
+              className="w-full py-2.5 bg-accent text-on-accent text-xs font-display font-bold uppercase tracking-tight rounded-sm"
             >
               Ver assentos →
             </button>
@@ -730,7 +730,7 @@ function SectionDetailView({
                 {TIER_LABEL[tier]}
               </span>
               {isAmazingDeal && (
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold bg-primary text-on-primary">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold bg-accent text-on-accent">
                   Ótimo negócio
                 </span>
               )}
@@ -928,7 +928,7 @@ function SeatGrid({
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2" role="listitem">
             <div
-              className={`w-3.5 h-3.5 rounded-full shrink-0${item.isPrimary ? " bg-primary" : ""}`}
+              className={`w-3.5 h-3.5 rounded-full shrink-0${item.isPrimary ? " bg-accent" : ""}`}
               style={item.color ? { background: item.color } : undefined}
               aria-hidden="true"
             />
@@ -1006,7 +1006,7 @@ function SeatButton({
         className={[
           // Larger invisible tap area for touch accessibility
           "w-7 h-7 flex items-center justify-center",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1",
           "touch-manipulation",
           isAvailable ? "cursor-pointer active:scale-95" : "cursor-not-allowed",
         ]
@@ -1024,7 +1024,7 @@ function SeatButton({
           }
           className={[
             "block w-4 h-4 rounded-full transition-all duration-100",
-            isSelected ? "bg-primary scale-125 shadow-sm shadow-primary/40" : "",
+            isSelected ? "bg-accent scale-125 shadow-sm shadow-accent/40" : "",
           ]
             .filter(Boolean)
             .join(" ")}

@@ -49,7 +49,7 @@ export default function AdminVenuesPage() {
       {!isLoading && !isError && venues && venues.length === 0 && (
         <div className="text-center py-16 text-on-surface/40 font-body text-sm">
           Nenhum estádio cadastrado.{" "}
-          <Link href="/admin/venues/new" className="text-primary hover:underline">
+          <Link href="/admin/venues/new" className="text-accent hover:underline">
             Cadastrar agora
           </Link>
           .

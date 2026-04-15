@@ -77,7 +77,7 @@ export default function ProfilePage() {
               className={[
                 "px-5 py-3 text-sm font-display font-semibold uppercase tracking-tight transition-colors duration-150 -mb-px border-b-2",
                 tab === t
-                  ? "border-primary text-on-surface"
+                  ? "border-accent text-on-surface"
                   : "border-transparent text-on-surface/40 hover:text-on-surface",
               ]
                 .filter(Boolean)

@@ -99,13 +99,13 @@ export default function ScanTicketPage() {
             onKeyDown={handleKeyDown}
             disabled={isLoading}
             placeholder="CATRACA-TK-XXXXXXXX"
-            className="flex-1 px-4 py-3 bg-surface-lowest border border-outline-variant rounded-sm font-body text-sm text-on-surface placeholder:text-on-surface/30 focus:outline-none focus:border-primary disabled:opacity-50 tracking-widest"
+            className="flex-1 px-4 py-3 bg-surface-lowest border border-outline-variant rounded-sm font-body text-sm text-on-surface placeholder:text-on-surface/30 focus:outline-none focus:border-accent disabled:opacity-50 tracking-widest"
             spellCheck={false}
           />
           <button
             onClick={handleScan}
             disabled={isLoading || !qrCode.trim()}
-            className="px-5 py-3 bg-gradient-to-br from-primary to-primary-container text-on-primary font-display font-semibold text-sm rounded-sm disabled:opacity-40 transition-opacity duration-150"
+            className="px-5 py-3 bg-gradient-to-br from-accent to-accent/85 text-on-accent font-display font-semibold text-sm rounded-sm disabled:opacity-40 transition-opacity duration-150"
           >
             {isLoading ? "..." : "Validar"}
           </button>
@@ -116,13 +116,13 @@ export default function ScanTicketPage() {
       {state.kind === "ok" && (
         <div className="bg-surface-low rounded-sm overflow-hidden">
           {/* Status banner */}
-          <div className="px-5 py-3 bg-primary flex items-center gap-3">
-            <span className="text-on-primary text-lg">✓</span>
+          <div className="px-5 py-3 bg-accent flex items-center gap-3">
+            <span className="text-on-accent text-lg">✓</span>
             <div>
-              <p className="font-display font-black text-on-primary text-sm uppercase tracking-tight">
+              <p className="font-display font-black text-on-accent text-sm uppercase tracking-tight">
                 Ingresso Válido
               </p>
-              <p className="text-on-primary/70 text-xs font-body">
+              <p className="text-on-accent/80 text-xs font-body">
                 Acesso liberado
               </p>
             </div>
@@ -187,7 +187,7 @@ export default function ScanTicketPage() {
           <div className="px-5 pb-4">
             <button
               onClick={handleReset}
-              className="text-xs font-display font-semibold text-on-surface/50 hover:text-primary transition-colors duration-150"
+              className="text-xs font-display font-semibold text-on-surface/50 hover:text-accent transition-colors duration-150"
             >
               ← Validar outro ingresso
             </button>
@@ -211,7 +211,7 @@ export default function ScanTicketPage() {
           <div className="px-5 py-4">
             <button
               onClick={handleReset}
-              className="text-xs font-display font-semibold text-on-surface/50 hover:text-primary transition-colors duration-150"
+              className="text-xs font-display font-semibold text-on-surface/50 hover:text-accent transition-colors duration-150"
             >
               ← Tentar novamente
             </button>
@@ -235,7 +235,7 @@ export default function ScanTicketPage() {
           <div className="px-5 py-4">
             <button
               onClick={handleReset}
-              className="text-xs font-display font-semibold text-on-surface/50 hover:text-primary transition-colors duration-150"
+              className="text-xs font-display font-semibold text-on-surface/50 hover:text-accent transition-colors duration-150"
             >
               ← Tentar novamente
             </button>
@@ -259,7 +259,7 @@ export default function ScanTicketPage() {
           <div className="px-5 py-4">
             <button
               onClick={handleReset}
-              className="text-xs font-display font-semibold text-on-surface/50 hover:text-primary transition-colors duration-150"
+              className="text-xs font-display font-semibold text-on-surface/50 hover:text-accent transition-colors duration-150"
             >
               ← Tentar novamente
             </button>
@@ -272,7 +272,7 @@ export default function ScanTicketPage() {
           <p className="text-sm font-body text-error">{state.message}</p>
           <button
             onClick={handleReset}
-            className="text-xs font-display font-semibold text-on-surface/50 hover:text-primary transition-colors duration-150 mt-2 block"
+            className="text-xs font-display font-semibold text-on-surface/50 hover:text-accent transition-colors duration-150 mt-2 block"
           >
             ← Tentar novamente
           </button>

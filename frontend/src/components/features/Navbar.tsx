@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/auth";
 import { logout } from "@/lib/auth-api";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import Logo from "@/components/brand/Logo";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -63,11 +64,8 @@ export default function Navbar() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-surface-lowest/80 backdrop-blur-[20px] border-b border-outline-variant">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="font-display font-black text-xl tracking-tight text-primary uppercase">
-              Catraca
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:scale-125 transition-transform duration-150" />
+          <Link href="/" className="flex items-center group">
+            <Logo variant="wordmark" priority className="group-hover:opacity-90 transition-opacity duration-150" />
           </Link>
 
           {/* Nav links — desktop only */}
@@ -84,7 +82,7 @@ export default function Navbar() {
                   className={[
                     "text-sm font-body transition-colors duration-150",
                     isActive
-                      ? "text-primary font-semibold"
+                      ? "text-accent font-semibold"
                       : "text-on-surface/50 hover:text-on-surface",
                   ]
                     .filter(Boolean)
@@ -135,7 +133,7 @@ export default function Navbar() {
                   </Link>
                   <Link
                     href="/cadastro"
-                    className="px-4 py-2 text-sm font-display font-semibold tracking-tight bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-sm hover:opacity-90 transition-opacity duration-150"
+                    className="px-4 py-2 text-sm font-display font-semibold tracking-tight bg-gradient-to-br from-accent to-accent/85 text-on-accent rounded-sm hover:opacity-90 transition-opacity duration-150"
                   >
                     Criar conta
                   </Link>
@@ -178,7 +176,7 @@ export default function Navbar() {
                   className={[
                     "flex items-center gap-4 px-4 py-4 rounded-sm text-base font-display font-semibold tracking-tight transition-colors duration-150",
                     isActive
-                      ? "bg-primary text-on-primary"
+                      ? "bg-accent text-on-accent"
                       : "text-on-surface/70 hover:bg-surface-low hover:text-on-surface",
                   ]
                     .filter(Boolean)
@@ -222,7 +220,7 @@ export default function Navbar() {
                 <Link
                   href="/cadastro"
                   onClick={() => setMenuOpen(false)}
-                  className="w-full py-3 text-center text-base font-display font-semibold tracking-tight bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-sm hover:opacity-90 transition-opacity duration-150"
+                  className="w-full py-3 text-center text-base font-display font-semibold tracking-tight bg-gradient-to-br from-accent to-accent/85 text-on-accent rounded-sm hover:opacity-90 transition-opacity duration-150"
                 >
                   Criar conta
                 </Link>

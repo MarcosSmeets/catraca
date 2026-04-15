@@ -19,7 +19,7 @@ const STATUS_LABELS: Record<EventStatus, string> = {
 
 const STATUS_COLORS: Record<EventStatus, string> = {
   DRAFT: "bg-surface-high text-on-surface/60",
-  ON_SALE: "bg-primary/10 text-primary",
+  ON_SALE: "bg-accent/10 text-accent",
   SOLD_OUT: "bg-error/10 text-error",
   CANCELLED: "bg-surface-dim text-on-surface/40",
 };

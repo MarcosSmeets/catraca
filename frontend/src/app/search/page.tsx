@@ -153,7 +153,7 @@ function SearchPageContent() {
             <FilterIcon />
             Filtros
             {activeFilterCount > 0 && (
-              <span className="ml-0.5 w-5 h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold flex items-center justify-center">
+              <span className="ml-0.5 w-5 h-5 rounded-full bg-accent text-on-accent text-[10px] font-bold flex items-center justify-center">
                 {activeFilterCount}
               </span>
             )}
@@ -184,7 +184,7 @@ function SearchPageContent() {
                   placeholder="Time, cidade, torneio…"
                   value={query}
                   onChange={(e) => handleFilterChange(() => setQuery(e.target.value))}
-                  className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-primary transition-colors duration-150"
+                  className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-accent transition-colors duration-150"
                 />
               </div>
 
@@ -407,7 +407,7 @@ function FilterSelect({
           triggerPadding,
           textSize,
           "font-body text-on-surface rounded-sm border",
-          isActive ? "border-primary" : "border-outline-variant",
+          isActive ? "border-accent" : "border-outline-variant",
           "focus:outline-none transition-colors duration-150 cursor-pointer",
         ].join(" ")}
       >
@@ -585,7 +585,7 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
           className={[
             "flex-1 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors duration-150",
             picking === "from"
-              ? "border-primary bg-surface text-on-surface"
+              ? "border-accent bg-surface text-on-surface"
               : "border-outline-variant bg-surface text-on-surface/60",
           ].join(" ")}
           onClick={() => setPicking("from")}
@@ -600,7 +600,7 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
           className={[
             "flex-1 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors duration-150",
             picking === "to"
-              ? "border-primary bg-surface text-on-surface"
+              ? "border-accent bg-surface text-on-surface"
               : "border-outline-variant bg-surface text-on-surface/60",
           ].join(" ")}
           onClick={() => setPicking("to")}
@@ -698,7 +698,7 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
                 {showRangeBand && (
                   <div
                     className={[
-                      "absolute inset-y-0 bg-primary/10",
+                      "absolute inset-y-0 bg-accent/10",
                       "left-0 right-0",
                       bandRoundLeft ? "rounded-l-full ml-1" : "",
                       bandRoundRight ? "rounded-r-full mr-1" : "",
@@ -714,12 +714,12 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
                     "relative z-10 w-7 h-7 flex items-center justify-center rounded-full",
                     "text-[11px] font-body transition-colors duration-100",
                     isFrom || isTo || isRangeStart || isRangeEnd
-                      ? "bg-primary text-on-primary font-semibold"
+                      ? "bg-accent text-on-accent font-semibold"
                       : inRange
-                        ? "text-on-surface hover:bg-primary/20"
+                        ? "text-on-surface hover:bg-accent/20"
                         : "text-on-surface/60 hover:bg-surface-high hover:text-on-surface",
                     isToday && !isFrom && !isTo && !isRangeStart && !isRangeEnd
-                      ? "ring-1 ring-primary/40"
+                      ? "ring-1 ring-accent/40"
                       : "",
                   ].join(" ")}
                   aria-label={`${day.getDate()} de ${MONTH_NAMES_PT[day.getMonth()]} de ${day.getFullYear()}`}

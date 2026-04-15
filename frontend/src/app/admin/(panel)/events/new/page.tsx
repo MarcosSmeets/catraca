@@ -115,7 +115,7 @@ export default function NewEventPage() {
             className={[
               "w-full bg-surface-lowest px-4 py-3 text-sm text-on-surface font-body",
               "rounded-sm border border-outline-variant",
-              "focus:outline-none focus:border-primary transition-colors duration-150",
+              "focus:outline-none focus:border-accent transition-colors duration-150",
               errors.sport ? "border-error" : "",
             ]
               .filter(Boolean)
@@ -149,7 +149,7 @@ export default function NewEventPage() {
             className={[
               "w-full bg-surface-lowest px-4 py-3 text-sm text-on-surface font-body",
               "rounded-sm border border-outline-variant",
-              "focus:outline-none focus:border-primary transition-colors duration-150",
+              "focus:outline-none focus:border-accent transition-colors duration-150",
               errors.venueId ? "border-error" : "",
             ]
               .filter(Boolean)

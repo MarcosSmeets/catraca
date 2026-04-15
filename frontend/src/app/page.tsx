@@ -104,7 +104,7 @@ export default function HomePage() {
               <Link
                 key={sport}
                 href={sport === "ALL" ? "/search" : `/search?sport=${sport}`}
-                className="shrink-0 px-4 py-2 rounded-full text-xs font-display font-semibold uppercase tracking-tight transition-colors duration-150 bg-surface-lowest text-on-surface hover:bg-primary hover:text-on-primary"
+                className="shrink-0 px-4 py-2 rounded-full text-xs font-display font-semibold uppercase tracking-tight transition-colors duration-150 bg-surface-lowest text-on-surface hover:bg-accent hover:text-on-accent"
               >
                 {label}
               </Link>

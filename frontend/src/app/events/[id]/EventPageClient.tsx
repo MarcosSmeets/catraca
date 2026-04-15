@@ -358,7 +358,7 @@ function EventPageInner({
                           placeholder="seu@email.com.br"
                           value={waitlistEmail}
                           onChange={(e) => setWaitlistEmail(e.target.value)}
-                          className="flex-1 bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-primary transition-colors duration-150"
+                          className="flex-1 bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-accent transition-colors duration-150"
                           aria-label="E-mail para lista de espera"
                         />
                         <Button type="submit" size="sm">Entrar</Button>
@@ -476,7 +476,7 @@ function EventPageInner({
           </div>
           <button
             onClick={handleAddToCart}
-            className="shrink-0 px-5 py-3 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-display font-bold tracking-tight rounded-sm hover:opacity-90 transition-opacity duration-150"
+            className="shrink-0 px-5 py-3 bg-gradient-to-br from-accent to-accent/85 text-on-accent text-sm font-display font-bold tracking-tight rounded-sm hover:opacity-90 transition-opacity duration-150"
           >
             Adicionar ao carrinho
           </button>

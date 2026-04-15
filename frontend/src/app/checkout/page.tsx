@@ -266,7 +266,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     return (
       <MainLayout>
         <div className="max-w-lg mx-auto px-6 py-20 text-center">
-          <div className="w-16 h-16 bg-primary rounded-sm flex items-center justify-center mx-auto mb-6">
+          <div className="w-16 h-16 bg-accent rounded-sm flex items-center justify-center mx-auto mb-6">
             <CheckIcon />
           </div>
           <h1 className="font-display font-black text-3xl uppercase tracking-tight text-on-surface mb-2">
@@ -336,7 +336,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                     className={[
                       "w-6 h-6 rounded-sm flex items-center justify-center text-xs font-display font-bold transition-colors duration-200",
                       isDone || isActive
-                        ? "bg-primary text-on-primary"
+                        ? "bg-accent text-on-accent"
                         : "bg-surface-dim text-on-surface/30",
                     ]
                       .filter(Boolean)
@@ -475,8 +475,8 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                         className={[
                           "flex-1 py-3 px-4 rounded-sm text-sm font-display font-semibold uppercase tracking-tight transition-colors duration-150",
                           method === m
-                            ? "bg-primary text-on-primary"
-                            : "bg-surface border border-outline-variant text-on-surface/50 hover:border-primary hover:text-on-surface",
+                            ? "bg-accent text-on-accent"
+                            : "bg-surface border border-outline-variant text-on-surface/50 hover:border-accent hover:text-on-surface",
                         ]
                           .filter(Boolean)
                           .join(" ")}
@@ -537,7 +537,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                           <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
                             Dados do cartão
                           </label>
-                          <div className="bg-surface px-4 py-3 rounded-sm border border-outline-variant focus-within:border-primary transition-colors duration-150">
+                          <div className="bg-surface px-4 py-3 rounded-sm border border-outline-variant focus-within:border-accent transition-colors duration-150">
                             <CardElement
                               options={{
                                 style: {
@@ -568,7 +568,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                         <select
                           value={installments}
                           onChange={(e) => setInstallments(Number(e.target.value))}
-                          className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant focus:outline-none focus:border-primary transition-colors duration-150"
+                          className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant focus:outline-none focus:border-accent transition-colors duration-150"
                         >
                           {INSTALLMENT_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>

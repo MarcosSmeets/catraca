@@ -74,7 +74,7 @@ export default function PrivacidadePage() {
             </ul>
             <p className="mt-3">
               Para exercer estes direitos, entre em contato pelo e-mail{" "}
-              <a href="mailto:privacidade@catraca.com.br" className="text-primary hover:underline">
+              <a href="mailto:privacidade@catraca.com.br" className="text-accent hover:underline">
                 privacidade@catraca.com.br
               </a>.
             </p>
@@ -97,7 +97,7 @@ export default function PrivacidadePage() {
             </h2>
             <p>
               Nosso Encarregado de Proteção de Dados (DPO) pode ser contactado pelo e-mail{" "}
-              <a href="mailto:dpo@catraca.com.br" className="text-primary hover:underline">
+              <a href="mailto:dpo@catraca.com.br" className="text-accent hover:underline">
                 dpo@catraca.com.br
               </a>.
             </p>

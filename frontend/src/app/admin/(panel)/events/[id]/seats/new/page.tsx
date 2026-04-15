@@ -141,7 +141,7 @@ export default function NewSeatsPage() {
               className={[
                 "w-full bg-surface-lowest px-4 py-3 text-sm text-on-surface font-body",
                 "rounded-sm border border-outline-variant",
-                "focus:outline-none focus:border-primary transition-colors duration-150",
+                "focus:outline-none focus:border-accent transition-colors duration-150",
                 errors.section ? "border-error" : "",
               ]
                 .filter(Boolean)
@@ -161,7 +161,7 @@ export default function NewSeatsPage() {
                 <button
                   type="button"
                   onClick={() => router.push(`/admin/events/${eventId}/sections/new`)}
-                  className="text-primary hover:underline"
+                  className="text-accent hover:underline"
                 >
                   Criar seção primeiro
                 </button>
@@ -249,8 +249,8 @@ export default function NewSeatsPage() {
         )}
 
         {previewSeats && (
-          <div className="bg-primary/5 border border-primary/20 rounded-sm px-4 py-3">
-            <p className="text-xs font-display font-semibold uppercase tracking-tight text-primary">
+          <div className="bg-accent/5 border border-accent/20 rounded-sm px-4 py-3">
+            <p className="text-xs font-display font-semibold uppercase tracking-tight text-accent">
               Pré-visualização gerada
             </p>
             <p className="text-sm font-body text-on-surface mt-1">

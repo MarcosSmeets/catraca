@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAdminAuthStore } from "@/store/admin-auth";
 import { adminAuthLogout } from "@/lib/admin-auth-api";
+import Logo from "@/components/brand/Logo";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: "⬛" },
@@ -37,11 +38,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen flex flex-col lg:flex-row bg-surface-lowest">
       {/* Mobile top bar */}
       <header className="lg:hidden flex items-center justify-between px-4 h-14 bg-surface-low border-b border-outline-variant shrink-0">
-        <Link href="/" className="flex items-center gap-2 group">
-          <span className="font-display font-black text-lg tracking-tight text-primary uppercase">
-            Catraca
-          </span>
-          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+        <Link href="/" className="flex items-center group">
+          <Logo variant="wordmark" className="h-7 max-w-[160px] group-hover:opacity-90 transition-opacity duration-150" />
         </Link>
         <button
           onClick={() => setSidebarOpen((v) => !v)}
@@ -73,11 +71,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       >
         {/* Sidebar header — desktop */}
         <div className="hidden lg:flex px-6 py-5 border-b border-outline-variant flex-col">
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="font-display font-black text-xl tracking-tight text-primary uppercase">
-              Catraca
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:scale-125 transition-transform duration-150" />
+          <Link href="/" className="flex items-center group">
+            <Logo variant="wordmark" className="group-hover:opacity-90 transition-opacity duration-150" />
           </Link>
           <p className="text-xs font-body text-on-surface/40 mt-1">Painel Administrativo</p>
         </div>
@@ -100,7 +95,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 className={[
                   "flex items-center gap-3 px-3 py-2.5 rounded-sm text-sm font-display font-semibold transition-colors duration-150",
                   isActive
-                    ? "bg-primary text-on-primary"
+                    ? "bg-accent text-on-accent"
                     : "text-on-surface/60 hover:bg-surface-high hover:text-on-surface",
                 ]
                   .filter(Boolean)

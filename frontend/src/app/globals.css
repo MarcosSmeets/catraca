@@ -6,8 +6,10 @@
 @theme {
   /* Arena Monochrome — Color Tokens (light defaults) */
   --color-primary: #000000;
-  --color-primary-container: #3b3b3b;
+  --color-primary-container: #333333;
   --color-on-primary: #e2e2e2;
+  --color-accent: #ff0066;
+  --color-on-accent: #ffffff;
   --color-surface: #f9f9f9;
   --color-surface-low: #f3f3f4;
   --color-surface-lowest: #ffffff;
@@ -41,6 +43,9 @@
   --color-on-surface: #e2e2e2;
   --color-outline-variant: rgba(226, 226, 226, 0.12);
   --color-error: #ff7070;
+  /* Accent stays consistent in dark mode */
+  --color-accent: #ff0066;
+  --color-on-accent: #ffffff;
 }
 
 * {
