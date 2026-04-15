@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { TicketQr } from "@/components/features/tickets/TicketQr";
 import MainLayout from "@/components/features/MainLayout";
 import Badge from "@/components/ui/Badge";
@@ -36,6 +38,21 @@ function effectiveStatus(ticket: Ticket): string {
   return ticket.status;
 }
 
+function TicketsPaidToast() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (searchParams.get("paid") !== "1" || handled.current) return;
+    handled.current = true;
+    toast.success("Compra confirmada.");
+    router.replace("/tickets", { scroll: false });
+  }, [searchParams, router]);
+
+  return null;
+}
+
 export default function TicketsPage() {
   const { data: tickets = [], isLoading } = useTickets();
   const upcoming = tickets.filter((t) => effectiveStatus(t) === "VALID");
@@ -43,6 +60,9 @@ export default function TicketsPage() {
 
   return (
     <MainLayout>
+      <Suspense fallback={null}>
+        <TicketsPaidToast />
+      </Suspense>
       <div className="max-w-4xl mx-auto px-6 py-10">
         {/* Header */}
         <div className="mb-10">

@@ -9,7 +9,7 @@ import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
 import { useAuthStore } from "@/store/auth";
 import type { Order } from "@/lib/mock-data";
 
-type Phase = "loading" | "paid" | "timeout" | "missing";
+type Phase = "loading" | "timeout" | "missing";
 
 export default function CheckoutSuccessPage() {
   const router = useRouter();
@@ -38,7 +38,7 @@ export default function CheckoutSuccessPage() {
         const o = await apiFetch<Order>(`/me/orders/${id}`, { accessToken });
         if (o.status === "PAID") {
           sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
-          setPhase("paid");
+          router.replace("/tickets?paid=1");
           return;
         }
       } catch {
@@ -55,7 +55,7 @@ export default function CheckoutSuccessPage() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, router]);
 
   if (phase === "missing") {
     return (
@@ -67,9 +67,14 @@ export default function CheckoutSuccessPage() {
           <p className="text-sm font-body text-on-surface/50 mb-8">
             Abra esta página após concluir o pagamento no Stripe, ou acesse seus pedidos no perfil.
           </p>
-          <Button fullWidth onClick={() => router.push("/profile?tab=orders")}>
-            Meus pedidos
-          </Button>
+          <div className="flex flex-col gap-3">
+            <Button fullWidth onClick={() => router.push("/tickets")}>
+              Meus ingressos
+            </Button>
+            <Button fullWidth variant="secondary" onClick={() => router.push("/profile?tab=orders")}>
+              Meus pedidos
+            </Button>
+          </div>
         </div>
       </MainLayout>
     );
@@ -93,7 +98,7 @@ export default function CheckoutSuccessPage() {
     );
   }
 
-  if (phase === "timeout" && orderId) {
+  if (phase === "timeout") {
     return (
       <MainLayout>
         <div className="max-w-lg mx-auto px-6 py-20 text-center">
@@ -105,53 +110,19 @@ export default function CheckoutSuccessPage() {
             pedidos&quot;.
           </p>
           <div className="flex flex-col gap-3">
-            <Button fullWidth onClick={() => router.push(`/orders/${orderId}`)}>
-              Ver pedido
-            </Button>
-            <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
+            <Button fullWidth onClick={() => router.push("/tickets")}>
               Meus ingressos
             </Button>
+            {orderId && (
+              <Button fullWidth variant="secondary" onClick={() => router.push(`/orders/${orderId}`)}>
+                Ver pedido
+              </Button>
+            )}
           </div>
         </div>
       </MainLayout>
     );
   }
 
-  return (
-    <MainLayout>
-      <div className="max-w-lg mx-auto px-6 py-20 text-center">
-        <div className="w-16 h-16 bg-accent rounded-sm flex items-center justify-center mx-auto mb-6">
-          <svg
-            width="28"
-            height="28"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </div>
-        <h1 className="font-display font-black text-3xl uppercase tracking-tight text-on-surface mb-2">
-          Pagamento confirmado!
-        </h1>
-        <p className="text-sm font-body text-on-surface/50 mb-8">
-          Seus ingressos estão disponíveis em &quot;Meus ingressos&quot;.
-        </p>
-        <div className="flex flex-col gap-3">
-          {orderId && (
-            <Button fullWidth onClick={() => router.push(`/orders/${orderId}`)}>
-              Detalhes do pedido
-            </Button>
-          )}
-          <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
-            Meus ingressos
-          </Button>
-        </div>
-      </div>
-    </MainLayout>
-  );
+  return null;
 }

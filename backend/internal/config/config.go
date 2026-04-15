@@ -43,7 +43,7 @@ func Load() (*Config, error) {
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeCheckoutSuccessURL: getEnv("STRIPE_CHECKOUT_SUCCESS_URL", "http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
-		StripeCheckoutCancelURL:  getEnv("STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:3000/checkout"),
+		StripeCheckoutCancelURL:  getEnv("STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:3000/checkout?canceled=1"),
 		AppEnv:              getEnv("APP_ENV", "development"),
 		Port:                port,
 		AppSeed:             getEnvBool("APP_SEED", false),

@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { formatCurrency, formatDate, type Seat, type Event } from "@/lib/mock-data";
+import { formatCurrency, formatDate, type Seat, type Event, type Order } from "@/lib/mock-data";
 import { useCartStore } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
 import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
 import { toast } from "sonner";
 
@@ -51,8 +51,29 @@ interface AddressData {
   erro?: boolean;
 }
 
+function CheckoutPageFallback() {
+  return (
+    <MainLayout>
+      <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="h-8 w-48 bg-surface-dim rounded-sm mb-6 animate-pulse" />
+        <div className="h-64 bg-surface-lowest rounded-md animate-pulse" />
+      </div>
+    </MainLayout>
+  );
+}
+
 export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<CheckoutPageFallback />}>
+      <CheckoutPageInner />
+    </Suspense>
+  );
+}
+
+function CheckoutPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const canceled = searchParams.get("canceled") === "1";
   const { items, event, clearCart } = useCartStore();
 
   const seats = items.map((i) => i.seat);
@@ -62,6 +83,7 @@ export default function CheckoutPage() {
 
   return (
     <CheckoutForm
+      canceled={canceled}
       seats={seats}
       event={event}
       subtotal={subtotal}
@@ -74,6 +96,7 @@ export default function CheckoutPage() {
 }
 
 interface CheckoutFormProps {
+  canceled: boolean;
   seats: Seat[];
   event: Event | null;
   subtotal: number;
@@ -83,13 +106,30 @@ interface CheckoutFormProps {
   clearCart: () => void;
 }
 
-function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }: CheckoutFormProps) {
+function CheckoutForm({
+  canceled,
+  seats,
+  event,
+  subtotal,
+  fee,
+  total,
+  router,
+  clearCart,
+}: CheckoutFormProps) {
   const [step, setStep] = useState<Step>("payment");
   const [method, setMethod] = useState<PaymentMethod>("pix");
   const [loading, setLoading] = useState(false);
+  const canceledToastShown = useRef(false);
 
   const reservationIds = useCartStore((s) => s.reservationIds);
   const accessToken = useAuthStore((s) => s.accessToken);
+
+  useEffect(() => {
+    if (!canceled || canceledToastShown.current) return;
+    canceledToastShown.current = true;
+    setStep("confirm");
+    toast.message("Pagamento cancelado. Revise o pedido e tente novamente.");
+  }, [canceled]);
 
   const [form, setForm] = useState({
     name: "",
@@ -159,6 +199,58 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
   async function handleConfirm() {
     setLoading(true);
     try {
+      const pendingId =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem(PENDING_CHECKOUT_ORDER_ID_KEY)
+          : null;
+
+      if (pendingId && accessToken) {
+        try {
+          const existing = await apiFetch<Order>(`/me/orders/${pendingId}`, { accessToken });
+          if (existing.status === "PAID") {
+            sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+            router.replace("/tickets?paid=1");
+            return;
+          }
+          if (existing.status === "PENDING") {
+            try {
+              const sessionRes = await apiFetch<{ url: string }>(
+                `/orders/${pendingId}/checkout-session`,
+                {
+                  method: "POST",
+                  accessToken,
+                  body: JSON.stringify({ paymentMethod: method }),
+                }
+              );
+              if (sessionRes.url) {
+                sessionStorage.setItem(PENDING_CHECKOUT_ORDER_ID_KEY, pendingId);
+                window.location.href = sessionRes.url;
+                return;
+              }
+            } catch (e) {
+              if (e instanceof ApiError && e.status === 503) {
+                sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+              } else {
+                const msg =
+                  e instanceof Error ? e.message : "Não foi possível abrir o pagamento. Tente novamente.";
+                toast.error(msg);
+                return;
+              }
+            }
+          } else {
+            sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+          }
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+          } else {
+            const msg = e instanceof Error ? e.message : "Erro ao verificar o pedido.";
+            toast.error(msg);
+            return;
+          }
+        }
+      }
+
       const orderRes = await apiFetch<{
         orderId: string;
         totalCents: number;
