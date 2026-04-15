@@ -89,13 +89,29 @@ func (g *PaymentGateway) CreateCheckoutSession(
 	if in.ClientReferenceID != "" {
 		params.ClientReferenceID = stripelib.String(in.ClientReferenceID)
 	}
+
+	// Unified payment_method_options: Pix expiry + card installments (BR credit) per Stripe Checkout docs.
+	pmOpts := &stripelib.CheckoutSessionPaymentMethodOptionsParams{}
 	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") {
-		params.Locale = stripelib.String("pt-BR")
-		params.PaymentMethodOptions = &stripelib.CheckoutSessionPaymentMethodOptionsParams{
-			Pix: &stripelib.CheckoutSessionPaymentMethodOptionsPixParams{
-				ExpiresAfterSeconds: stripelib.Int64(14_400), // 4 hours — Stripe Pix pending window default
+		pmOpts.Pix = &stripelib.CheckoutSessionPaymentMethodOptionsPixParams{
+			ExpiresAfterSeconds: stripelib.Int64(14_400), // 4 hours — Pix pending window default
+		}
+	}
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "card") {
+		pmOpts.Card = &stripelib.CheckoutSessionPaymentMethodOptionsCardParams{
+			Installments: &stripelib.CheckoutSessionPaymentMethodOptionsCardInstallmentsParams{
+				Enabled: stripelib.Bool(true),
 			},
 		}
+	}
+	if pmOpts.Pix != nil || pmOpts.Card != nil {
+		params.PaymentMethodOptions = pmOpts
+	}
+
+	// Portuguese Checkout for Pix and for BRL card sessions (debit à vista / crédito parcelado escolhido na rede).
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") ||
+		(paymentMethodTypesInclude(in.PaymentMethodTypes, "card") && strings.EqualFold(strings.TrimSpace(in.Currency), "brl")) {
+		params.Locale = stripelib.String("pt-BR")
 	}
 
 	sess, err := checkoutsession.New(params)
