@@ -24,12 +24,12 @@ import (
 	jwtinfra "github.com/marcos-smeets/catraca/backend/internal/infra/jwt"
 	pginfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
 	redisinfra "github.com/marcos-smeets/catraca/backend/internal/infra/redis"
-	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
 	"github.com/marcos-smeets/catraca/backend/internal/infra/seed"
+	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
+	userevents "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
 	ticketuc "github.com/marcos-smeets/catraca/backend/internal/usecase/ticket"
-	userevents "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
 	useruc "github.com/marcos-smeets/catraca/backend/internal/usecase/user"
 	"github.com/marcos-smeets/catraca/backend/internal/worker"
 )
@@ -106,7 +106,7 @@ func main() {
 	releaseSeatUC := reservationuc.NewReleaseSeatUseCase(reservationRepo, seatRepo, seatLocker)
 
 	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo)
-	createCheckoutSessionUC := orderuc.NewCreateCheckoutSessionUseCase(orderRepo, paymentGateway)
+	createCheckoutSessionUC := orderuc.NewCreateCheckoutSessionUseCase(orderRepo, paymentGateway, cfg.StripeCheckoutEnablePix)
 	getOrderUC := orderuc.NewGetOrderUseCase(orderRepo)
 	listOrdersUC := orderuc.NewListOrdersUseCase(orderRepo)
 

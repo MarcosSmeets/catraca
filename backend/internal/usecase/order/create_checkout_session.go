@@ -36,17 +36,20 @@ type CreateCheckoutSessionOutput struct {
 }
 
 type CreateCheckoutSessionUseCase struct {
-	orderRepo      repository.OrderRepository
-	paymentGateway service.PaymentGateway
+	orderRepo         repository.OrderRepository
+	paymentGateway    service.PaymentGateway
+	checkoutEnablePix bool
 }
 
 func NewCreateCheckoutSessionUseCase(
 	orderRepo repository.OrderRepository,
 	paymentGateway service.PaymentGateway,
+	checkoutEnablePix bool,
 ) *CreateCheckoutSessionUseCase {
 	return &CreateCheckoutSessionUseCase{
-		orderRepo:      orderRepo,
-		paymentGateway: paymentGateway,
+		orderRepo:         orderRepo,
+		paymentGateway:    paymentGateway,
+		checkoutEnablePix: checkoutEnablePix,
 	}
 }
 
@@ -75,9 +78,10 @@ func (uc *CreateCheckoutSessionUseCase) Execute(ctx context.Context, in CreateCh
 		return nil, ErrStripeCheckoutDisabled
 	}
 
-	// Hosted Checkout shows card (debit/credit on the network) and PIX when the order total allows PIX in BRL.
+	// Hosted Checkout always includes card. PIX is added only when STRIPE_CHECKOUT_ENABLE_PIX is true and the total is in BRL Pix limits (PIX must be enabled in the Stripe Dashboard).
 	pmTypes := []string{"card"}
-	if order.TotalCents >= PixMinAmountCentsBRL && order.TotalCents <= PixMaxAmountCentsBRL {
+	if uc.checkoutEnablePix &&
+		order.TotalCents >= PixMinAmountCentsBRL && order.TotalCents <= PixMaxAmountCentsBRL {
 		pmTypes = []string{"card", "pix"}
 	}
 

@@ -439,8 +439,8 @@ function CheckoutForm({
                     Forma de pagamento
                   </h2>
                   <p className="text-sm font-body text-on-surface/50">
-                    Na página segura da Stripe você escolhe como pagar: cartão (débito ou crédito na rede) ou PIX, quando
-                    o valor do pedido permitir PIX em reais.
+                    Na página segura da Stripe você paga com cartão (débito ou crédito na rede). PIX pode aparecer como
+                    opção quando estiver habilitado para a loja e o valor do pedido permitir em reais.
                   </p>
                 </section>
 
@@ -474,7 +474,7 @@ function CheckoutForm({
                     <div className="flex justify-between text-sm">
                       <span className="font-body text-on-surface/50">Pagamento</span>
                       <span className="font-body text-on-surface text-right max-w-[14rem]">
-                        Cartão ou PIX na Stripe (conforme valor)
+                        Stripe: cartão; PIX se disponível
                       </span>
                     </div>
                     <div className="flex justify-between text-sm border-t border-outline-variant pt-3 mt-1">
