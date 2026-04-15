@@ -62,16 +62,15 @@ export default function Navbar() {
   return (
     <>
       <header className="fixed top-0 left-0 right-0 z-50 bg-surface-lowest/80 backdrop-blur-[20px] border-b border-outline-variant">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-stretch justify-between">
-          {/* Logo — wordmark at ~max height inside h-16 without changing bar height */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex min-h-16 items-center justify-between gap-4 py-2 lg:min-h-80 lg:py-4">
           <Link
             href="/"
-            className="flex h-full min-h-0 min-w-0 shrink-0 items-center self-stretch group"
+            className="flex min-h-0 min-w-0 shrink-0 items-center group"
           >
             <Logo
               variant="wordmark"
               priority
-              className="!h-[60px] !w-auto max-w-[min(100%,320px)] object-contain object-left group-hover:opacity-90 transition-opacity duration-150"
+              className="object-contain object-left group-hover:opacity-90 transition-opacity duration-150"
             />
           </Link>
 

@@ -39,7 +39,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Mobile top bar */}
       <header className="lg:hidden flex items-center justify-between px-4 h-14 bg-surface-low border-b border-outline-variant shrink-0">
         <Link href="/" className="flex items-center group">
-          <Logo variant="wordmark" className="max-h-10 max-w-[min(100%,260px)] group-hover:opacity-90 transition-opacity duration-150" />
+          <Logo
+            variant="wordmark"
+            className="!h-9 !max-h-10 max-w-[min(100%,260px)] sm:!h-10 group-hover:opacity-90 transition-opacity duration-150"
+          />
         </Link>
         <button
           onClick={() => setSidebarOpen((v) => !v)}
@@ -72,7 +75,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Sidebar header — desktop */}
         <div className="hidden lg:flex px-6 py-5 border-b border-outline-variant flex-col">
           <Link href="/" className="flex items-center group">
-            <Logo variant="wordmark" className="group-hover:opacity-90 transition-opacity duration-150" />
+            <Logo
+              variant="wordmark"
+              className="!h-10 !max-h-11 max-w-[220px] shrink-0 lg:!h-11 lg:!max-h-11 lg:max-w-[240px] group-hover:opacity-90 transition-opacity duration-150"
+            />
           </Link>
           <p className="text-xs font-body text-on-surface/40 mt-1">Painel Administrativo</p>
         </div>
