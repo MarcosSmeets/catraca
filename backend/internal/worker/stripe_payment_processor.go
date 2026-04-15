@@ -43,15 +43,17 @@ func NewStripePaymentProcessor(
 	}
 }
 
-// ProcessStripeEvent handles a validated Stripe event type and JSON data (PaymentIntent object).
+// ProcessStripeEvent handles a validated Stripe event type and JSON data (PaymentIntent or Checkout Session object).
 func (p *StripePaymentProcessor) ProcessStripeEvent(ctx context.Context, eventType string, payload []byte) error {
 	switch eventType {
 	case string(stripelib.EventTypePaymentIntentSucceeded):
 		return p.handlePaymentIntentSucceeded(ctx, payload)
+	case string(stripelib.EventTypeCheckoutSessionCompleted):
+		return p.handleCheckoutSessionCompleted(ctx, payload)
 	case string(stripelib.EventTypePaymentIntentPaymentFailed):
 		return p.handlePaymentIntentFailed(ctx, payload)
 	default:
-		log.Debug().Str("type", eventType).Msg("unhandled stripe event type")
+		log.Warn().Str("type", eventType).Msg("unhandled stripe event type")
 	}
 	return nil
 }
@@ -75,18 +77,48 @@ func (p *StripePaymentProcessor) handlePaymentIntentSucceeded(ctx context.Contex
 		return fmt.Errorf("handlePaymentIntentSucceeded parse order_id: %w", err)
 	}
 
+	return p.fulfillPaidOrder(ctx, orderID)
+}
+
+// handleCheckoutSessionCompleted fulfills when Checkout completes with a paid session and order_id on session metadata.
+func (p *StripePaymentProcessor) handleCheckoutSessionCompleted(ctx context.Context, payload []byte) error {
+	var sess struct {
+		ID            string            `json:"id"`
+		PaymentStatus string            `json:"payment_status"`
+		Metadata      map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal(payload, &sess); err != nil {
+		return fmt.Errorf("handleCheckoutSessionCompleted unmarshal: %w", err)
+	}
+	if sess.PaymentStatus != "paid" {
+		log.Debug().Str("session_id", sess.ID).Str("payment_status", sess.PaymentStatus).Msg("checkout.session.completed not paid; skipping fulfillment")
+		return nil
+	}
+	orderIDStr, ok := sess.Metadata["order_id"]
+	if !ok {
+		log.Warn().Str("session_id", sess.ID).Msg("checkout.session.completed missing order_id metadata")
+		return nil
+	}
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		return fmt.Errorf("handleCheckoutSessionCompleted parse order_id: %w", err)
+	}
+	return p.fulfillPaidOrder(ctx, orderID)
+}
+
+func (p *StripePaymentProcessor) fulfillPaidOrder(ctx context.Context, orderID uuid.UUID) error {
 	order, err := p.orderRepo.GetByID(ctx, orderID)
 	if err != nil {
-		return fmt.Errorf("handlePaymentIntentSucceeded get order: %w", err)
+		return fmt.Errorf("fulfillPaidOrder get order: %w", err)
 	}
 	if order.Status == entity.OrderStatusPaid {
 		return nil
 	}
 	if err := order.MarkPaid(); err != nil {
-		return fmt.Errorf("handlePaymentIntentSucceeded mark paid: %w", err)
+		return fmt.Errorf("fulfillPaidOrder mark paid: %w", err)
 	}
 	if err := p.orderRepo.UpdateStatus(ctx, order.ID, order.Status); err != nil {
-		return fmt.Errorf("handlePaymentIntentSucceeded update order status: %w", err)
+		return fmt.Errorf("fulfillPaidOrder update order status: %w", err)
 	}
 
 	for _, resID := range order.ReservationIDs {

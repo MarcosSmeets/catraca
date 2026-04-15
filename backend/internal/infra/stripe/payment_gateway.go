@@ -68,6 +68,8 @@ func (g *PaymentGateway) CreateCheckoutSession(
 		SuccessURL: stripelib.String(in.SuccessURL),
 		CancelURL:  stripelib.String(in.CancelURL),
 		LineItems:  lineItems,
+		// Session metadata lets checkout.session.completed webhooks carry order_id without an extra PI fetch.
+		Metadata: meta,
 		PaymentIntentData: &stripelib.CheckoutSessionPaymentIntentDataParams{
 			Metadata: meta,
 		},
