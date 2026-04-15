@@ -33,6 +33,17 @@ async function parseError(res: Response): Promise<{ message: string; data?: unkn
   return { message, data };
 }
 
+/** Bearer token for the request. Omit to use the latest token from the auth store (avoids stale closures after refresh). Pass null to skip Authorization. */
+function resolveAccessToken(accessToken: string | null | undefined): string | null {
+  if (accessToken === null) {
+    return null;
+  }
+  if (accessToken !== undefined) {
+    return accessToken;
+  }
+  return useAuthStore.getState().accessToken;
+}
+
 export async function apiFetch<T>(
   path: string,
   { accessToken, _retry, ...options }: RequestOptions = {}
@@ -42,8 +53,9 @@ export async function apiFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (accessToken) {
-    headers["Authorization"] = `Bearer ${accessToken}`;
+  const bearer = resolveAccessToken(accessToken);
+  if (bearer) {
+    headers["Authorization"] = `Bearer ${bearer}`;
   }
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -65,11 +77,13 @@ export async function apiFetch<T>(
         const store = useAuthStore.getState();
         if (store.user) {
           store.setAuth(store.user, data.accessToken);
+        } else {
+          useAuthStore.setState({ accessToken: data.accessToken });
         }
-        // Retry original request with new token
+        // Retry with fresh token; omit accessToken so later polls use updated store
         return apiFetch<T>(path, {
           ...options,
-          accessToken: data.accessToken,
+          accessToken: undefined,
           _retry: true,
         });
       }

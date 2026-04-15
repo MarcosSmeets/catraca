@@ -6,19 +6,17 @@ import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
 import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
-import { useAuthStore } from "@/store/auth";
 import type { Order } from "@/lib/mock-data";
 
 type Phase = "loading" | "timeout" | "missing";
 
 export default function CheckoutSuccessPage() {
   const router = useRouter();
-  const accessToken = useAuthStore((s) => s.accessToken);
   const [phase, setPhase] = useState<Phase>("loading");
   const [orderId, setOrderId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !accessToken) return;
+    if (typeof window === "undefined") return;
 
     const id = sessionStorage.getItem(PENDING_CHECKOUT_ORDER_ID_KEY);
     if (!id) {
@@ -35,7 +33,8 @@ export default function CheckoutSuccessPage() {
       if (cancelled) return;
       attempts += 1;
       try {
-        const o = await apiFetch<Order>(`/me/orders/${id}`, { accessToken });
+        // Omit accessToken so apiFetch always uses the latest store token (fixes 401 after long Stripe/PIX sessions).
+        const o = await apiFetch<Order>(`/me/orders/${id}`);
         if (o.status === "PAID") {
           sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
           router.replace("/tickets?paid=1");
@@ -55,7 +54,7 @@ export default function CheckoutSuccessPage() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, router]);
+  }, [router]);
 
   if (phase === "missing") {
     return (
