@@ -276,6 +276,10 @@ func main() {
 	})
 
 	g.Go(func() error {
+		return expiryWorker.RunSweeper(gCtx, time.Minute)
+	})
+
+	g.Go(func() error {
 		log.Info().Str("addr", cfg.Addr()).Msg("server starting")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			return err

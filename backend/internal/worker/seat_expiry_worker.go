@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"strings"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
@@ -78,9 +79,38 @@ func (w *SeatExpiryWorker) Run(ctx context.Context) error {
 	}
 }
 
+// RunSweeper periodically releases seats whose reservation is still ACTIVE but past expires_at
+// (e.g. Redis keyspace notifications disabled or expiry event missed).
+func (w *SeatExpiryWorker) RunSweeper(ctx context.Context, interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	log.Info().Dur("interval", interval).Msg("reservation expiry sweeper started")
+	w.sweepExpiredActive(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("reservation expiry sweeper stopped")
+			return nil
+		case <-ticker.C:
+			w.sweepExpiredActive(ctx)
+		}
+	}
+}
+
+func (w *SeatExpiryWorker) sweepExpiredActive(ctx context.Context) {
+	rows, err := w.reservationRepo.ListExpiredActive(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("list expired active reservations")
+		return
+	}
+	for _, row := range rows {
+		w.handleExpiry(ctx, row.EventID, row.SeatID)
+	}
+}
+
 func (w *SeatExpiryWorker) handleExpiry(ctx context.Context, eventID, seatID uuid.UUID) {
 	// Find the active reservation for this seat
-	res, err := w.reservationRepo.GetActiveBySeatID(ctx, seatID)
+	res, err := w.reservationRepo.GetActiveStatusBySeatID(ctx, seatID)
 	if err != nil {
 		if err != repository.ErrNotFound {
 			log.Error().Err(err).Stringer("seat_id", seatID).Msg("get active reservation for expired seat")

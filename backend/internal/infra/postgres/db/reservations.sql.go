@@ -68,6 +68,28 @@ func (q *Queries) GetActiveReservationBySeatID(ctx context.Context, seatID uuid.
 	return i, err
 }
 
+const getActiveStatusReservationBySeatID = `-- name: GetActiveStatusReservationBySeatID :one
+SELECT id, seat_id, user_id, expires_at, status, created_at, updated_at FROM reservations
+WHERE seat_id = $1 AND status = 'ACTIVE'
+LIMIT 1
+`
+
+// Used when Redis lock TTL expires: DB expires_at may already be <= NOW(), so we must not filter on expires_at.
+func (q *Queries) GetActiveStatusReservationBySeatID(ctx context.Context, seatID uuid.UUID) (Reservation, error) {
+	row := q.db.QueryRow(ctx, getActiveStatusReservationBySeatID, seatID)
+	var i Reservation
+	err := row.Scan(
+		&i.ID,
+		&i.SeatID,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getReservationByID = `-- name: GetReservationByID :one
 SELECT id, seat_id, user_id, expires_at, status, created_at, updated_at FROM reservations WHERE id = $1
 `
@@ -85,6 +107,39 @@ func (q *Queries) GetReservationByID(ctx context.Context, id uuid.UUID) (Reserva
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listExpiredActiveReservations = `-- name: ListExpiredActiveReservations :many
+SELECT r.id AS reservation_id, r.seat_id, s.event_id
+FROM reservations r
+INNER JOIN seats s ON s.id = r.seat_id
+WHERE r.status = 'ACTIVE' AND r.expires_at < NOW()
+`
+
+type ListExpiredActiveReservationsRow struct {
+	ReservationID uuid.UUID `json:"reservation_id"`
+	SeatID        uuid.UUID `json:"seat_id"`
+	EventID       uuid.UUID `json:"event_id"`
+}
+
+func (q *Queries) ListExpiredActiveReservations(ctx context.Context) ([]ListExpiredActiveReservationsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredActiveReservations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredActiveReservationsRow{}
+	for rows.Next() {
+		var i ListExpiredActiveReservationsRow
+		if err := rows.Scan(&i.ReservationID, &i.SeatID, &i.EventID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listReservationsByUserID = `-- name: ListReservationsByUserID :many
