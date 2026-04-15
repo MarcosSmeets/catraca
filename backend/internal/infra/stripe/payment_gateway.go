@@ -111,3 +111,23 @@ func (g *PaymentGateway) ValidateWebhook(payload []byte, signature string) (stri
 	}
 	return string(event.Type), data, nil
 }
+
+// ParseStoredWebhook verifies the Stripe signature on a previously persisted payload (async worker).
+// Timestamp tolerance is not enforced so backlog is safe; API version mismatches are ignored.
+func (g *PaymentGateway) ParseStoredWebhook(payload []byte, signature string) (eventID, eventType string, data []byte, err error) {
+	if g.webhookSecret == "" {
+		return "", "", nil, fmt.Errorf("stripe webhook secret not configured")
+	}
+	ev, err := webhook.ConstructEventWithOptions(payload, signature, g.webhookSecret, webhook.ConstructEventOptions{
+		IgnoreTolerance:          true,
+		IgnoreAPIVersionMismatch: true,
+	})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("stripe.ParseStoredWebhook: %w", err)
+	}
+	raw, err := ev.Data.Raw.MarshalJSON()
+	if err != nil {
+		return "", "", nil, err
+	}
+	return ev.ID, string(ev.Type), raw, nil
+}

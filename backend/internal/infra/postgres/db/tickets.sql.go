@@ -15,7 +15,7 @@ import (
 const createTicket = `-- name: CreateTicket :one
 INSERT INTO tickets (id, order_id, event_id, seat_id, qr_code, status, purchased_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at
+RETURNING id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at
 `
 
 type CreateTicketParams struct {
@@ -49,12 +49,13 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 		&i.PurchasedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UsedAt,
 	)
 	return i, err
 }
 
 const getTicketByID = `-- name: GetTicketByID :one
-SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at FROM tickets WHERE id = $1
+SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at FROM tickets WHERE id = $1
 `
 
 func (q *Queries) GetTicketByID(ctx context.Context, id uuid.UUID) (Ticket, error) {
@@ -70,12 +71,13 @@ func (q *Queries) GetTicketByID(ctx context.Context, id uuid.UUID) (Ticket, erro
 		&i.PurchasedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UsedAt,
 	)
 	return i, err
 }
 
 const listTicketsByOrderID = `-- name: ListTicketsByOrderID :many
-SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at FROM tickets WHERE order_id = $1 ORDER BY created_at
+SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at FROM tickets WHERE order_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListTicketsByOrderID(ctx context.Context, orderID uuid.UUID) ([]Ticket, error) {
@@ -97,6 +99,7 @@ func (q *Queries) ListTicketsByOrderID(ctx context.Context, orderID uuid.UUID) (
 			&i.PurchasedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UsedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -109,7 +112,7 @@ func (q *Queries) ListTicketsByOrderID(ctx context.Context, orderID uuid.UUID) (
 }
 
 const listTicketsByUserID = `-- name: ListTicketsByUserID :many
-SELECT t.id, t.order_id, t.event_id, t.seat_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at FROM tickets t
+SELECT t.id, t.order_id, t.event_id, t.seat_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at, t.used_at FROM tickets t
 JOIN orders o ON o.id = t.order_id
 WHERE o.user_id = $1
 ORDER BY t.purchased_at DESC
@@ -134,6 +137,7 @@ func (q *Queries) ListTicketsByUserID(ctx context.Context, userID uuid.UUID) ([]
 			&i.PurchasedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UsedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	stripelib "github.com/stripe/stripe-go/v76"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/marcos-smeets/catraca/backend/internal/config"
@@ -69,6 +70,7 @@ func main() {
 	reservationRepo := pginfra.NewReservationRepository(pool)
 	orderRepo := pginfra.NewOrderRepository(pool)
 	ticketRepo := pginfra.NewTicketRepository(pool)
+	stripeWebhookInboxRepo := pginfra.NewStripeWebhookInboxRepository(pool)
 
 	// --- Seed demo data (idempotent) ---
 	if cfg.AppSeed {
@@ -113,14 +115,15 @@ func main() {
 	scanTicketUC := ticketuc.NewScanTicketUseCase(ticketRepo)
 
 	// --- Workers ---
-	webhookWorker := worker.NewPaymentWebhookWorker(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub)
+	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub)
+	stripeInboxWorker := worker.NewStripeInboxWorker(pool, stripeWebhookInboxRepo, paymentGateway, stripePaymentProcessor)
 	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, sseHub)
 
 	// --- Handlers ---
 	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AppEnv)
 	eventHandler := httphandler.NewEventHandler(listEventsUC, getEventUC, listSeatsUC)
 	sseHandler := httphandler.NewSSEHandler(sseHub)
-	webhookHandler := httphandler.NewWebhookHandler(paymentGateway, webhookWorker)
+	webhookHandler := httphandler.NewWebhookHandler(stripeWebhookInboxRepo)
 	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo)
 	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
@@ -192,10 +195,11 @@ func main() {
 				http.Error(w, `{"error":"order not found"}`, http.StatusNotFound)
 				return
 			}
-			webhookWorker.Enqueue(worker.WebhookEvent{
-				Type:    "payment_intent.succeeded",
-				Payload: []byte(`{"id":"` + order.StripePaymentID + `","metadata":{"order_id":"` + order.ID.String() + `","user_id":"` + order.UserID.String() + `"}}`),
-			})
+			payload := []byte(`{"id":"` + order.StripePaymentID + `","metadata":{"order_id":"` + order.ID.String() + `","user_id":"` + order.UserID.String() + `"}}`)
+			if err := stripePaymentProcessor.ProcessStripeEvent(r.Context(), string(stripelib.EventTypePaymentIntentSucceeded), payload); err != nil {
+				http.Error(w, `{"error":"simulated payment failed"}`, http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"message":"payment simulated","orderId":"` + orderID.String() + `"}`))
@@ -264,7 +268,7 @@ func main() {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return webhookWorker.Run(gCtx)
+		return stripeInboxWorker.Run(gCtx)
 	})
 
 	g.Go(func() error {

@@ -68,16 +68,44 @@ type Seat struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type Section struct {
+	ID        uuid.UUID   `json:"id"`
+	EventID   uuid.UUID   `json:"event_id"`
+	Name      string      `json:"name"`
+	ImageUrl  pgtype.Text `json:"image_url"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+type StripeProcessedWebhookEvent struct {
+	StripeEventID string    `json:"stripe_event_id"`
+	InboxID       uuid.UUID `json:"inbox_id"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type StripeWebhookInbox struct {
+	ID              uuid.UUID          `json:"id"`
+	CreatedAt       time.Time          `json:"created_at"`
+	RawBody         []byte             `json:"raw_body"`
+	StripeSignature string             `json:"stripe_signature"`
+	Status          string             `json:"status"`
+	StripeEventID   pgtype.Text        `json:"stripe_event_id"`
+	EventType       pgtype.Text        `json:"event_type"`
+	ErrorMessage    pgtype.Text        `json:"error_message"`
+	ProcessedAt     pgtype.Timestamptz `json:"processed_at"`
+}
+
 type Ticket struct {
-	ID          uuid.UUID `json:"id"`
-	OrderID     uuid.UUID `json:"order_id"`
-	EventID     uuid.UUID `json:"event_id"`
-	SeatID      uuid.UUID `json:"seat_id"`
-	QrCode      string    `json:"qr_code"`
-	Status      string    `json:"status"`
-	PurchasedAt time.Time `json:"purchased_at"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uuid.UUID          `json:"id"`
+	OrderID     uuid.UUID          `json:"order_id"`
+	EventID     uuid.UUID          `json:"event_id"`
+	SeatID      uuid.UUID          `json:"seat_id"`
+	QrCode      string             `json:"qr_code"`
+	Status      string             `json:"status"`
+	PurchasedAt time.Time          `json:"purchased_at"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	UsedAt      pgtype.Timestamptz `json:"used_at"`
 }
 
 type User struct {

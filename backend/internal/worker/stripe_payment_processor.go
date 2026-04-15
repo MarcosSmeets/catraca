@@ -15,15 +15,8 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/handler/http/sse"
 )
 
-// WebhookEvent is an internal representation of a parsed Stripe webhook.
-type WebhookEvent struct {
-	Type    string
-	Payload []byte
-}
-
-// PaymentWebhookWorker processes Stripe webhook events asynchronously.
-type PaymentWebhookWorker struct {
-	events          chan WebhookEvent
+// StripePaymentProcessor runs domain side-effects for Stripe webhook event payloads.
+type StripePaymentProcessor struct {
 	orderRepo       repository.OrderRepository
 	reservationRepo repository.ReservationRepository
 	seatRepo        repository.SeatRepository
@@ -32,16 +25,15 @@ type PaymentWebhookWorker struct {
 	sseHub          *sse.Hub
 }
 
-func NewPaymentWebhookWorker(
+func NewStripePaymentProcessor(
 	orderRepo repository.OrderRepository,
 	reservationRepo repository.ReservationRepository,
 	seatRepo repository.SeatRepository,
 	ticketRepo repository.TicketRepository,
 	seatLocker service.SeatLockerService,
 	sseHub *sse.Hub,
-) *PaymentWebhookWorker {
-	return &PaymentWebhookWorker{
-		events:          make(chan WebhookEvent, 128),
+) *StripePaymentProcessor {
+	return &StripePaymentProcessor{
 		orderRepo:       orderRepo,
 		reservationRepo: reservationRepo,
 		seatRepo:        seatRepo,
@@ -51,50 +43,26 @@ func NewPaymentWebhookWorker(
 	}
 }
 
-// Enqueue queues a parsed webhook event for processing.
-func (w *PaymentWebhookWorker) Enqueue(evt WebhookEvent) {
-	select {
-	case w.events <- evt:
-	default:
-		log.Warn().Str("type", evt.Type).Msg("webhook queue full, dropping event")
-	}
-}
-
-// Run starts the worker loop. It blocks until ctx is cancelled.
-func (w *PaymentWebhookWorker) Run(ctx context.Context) error {
-	log.Info().Msg("payment webhook worker started")
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info().Msg("payment webhook worker stopped")
-			return nil
-		case evt := <-w.events:
-			if err := w.process(ctx, evt); err != nil {
-				log.Error().Err(err).Str("type", evt.Type).Msg("failed to process webhook event")
-			}
-		}
-	}
-}
-
-func (w *PaymentWebhookWorker) process(ctx context.Context, evt WebhookEvent) error {
-	switch evt.Type {
+// ProcessStripeEvent handles a validated Stripe event type and JSON data (PaymentIntent object).
+func (p *StripePaymentProcessor) ProcessStripeEvent(ctx context.Context, eventType string, payload []byte) error {
+	switch eventType {
 	case string(stripelib.EventTypePaymentIntentSucceeded):
-		return w.handleSucceeded(ctx, evt.Payload)
+		return p.handlePaymentIntentSucceeded(ctx, payload)
 	case string(stripelib.EventTypePaymentIntentPaymentFailed):
-		return w.handleFailed(ctx, evt.Payload)
+		return p.handlePaymentIntentFailed(ctx, payload)
 	default:
-		log.Debug().Str("type", evt.Type).Msg("unhandled stripe event type")
+		log.Debug().Str("type", eventType).Msg("unhandled stripe event type")
 	}
 	return nil
 }
 
-func (w *PaymentWebhookWorker) handleSucceeded(ctx context.Context, payload []byte) error {
+func (p *StripePaymentProcessor) handlePaymentIntentSucceeded(ctx context.Context, payload []byte) error {
 	var pi struct {
 		ID       string            `json:"id"`
 		Metadata map[string]string `json:"metadata"`
 	}
 	if err := json.Unmarshal(payload, &pi); err != nil {
-		return fmt.Errorf("handleSucceeded unmarshal: %w", err)
+		return fmt.Errorf("handlePaymentIntentSucceeded unmarshal: %w", err)
 	}
 
 	orderIDStr, ok := pi.Metadata["order_id"]
@@ -104,26 +72,25 @@ func (w *PaymentWebhookWorker) handleSucceeded(ctx context.Context, payload []by
 	}
 	orderID, err := uuid.Parse(orderIDStr)
 	if err != nil {
-		return fmt.Errorf("handleSucceeded parse order_id: %w", err)
+		return fmt.Errorf("handlePaymentIntentSucceeded parse order_id: %w", err)
 	}
 
-	order, err := w.orderRepo.GetByID(ctx, orderID)
+	order, err := p.orderRepo.GetByID(ctx, orderID)
 	if err != nil {
-		return fmt.Errorf("handleSucceeded get order: %w", err)
+		return fmt.Errorf("handlePaymentIntentSucceeded get order: %w", err)
 	}
 	if order.Status == entity.OrderStatusPaid {
-		return nil // idempotent
+		return nil
 	}
 	if err := order.MarkPaid(); err != nil {
-		return fmt.Errorf("handleSucceeded mark paid: %w", err)
+		return fmt.Errorf("handlePaymentIntentSucceeded mark paid: %w", err)
 	}
-	if err := w.orderRepo.UpdateStatus(ctx, order.ID, order.Status); err != nil {
-		return fmt.Errorf("handleSucceeded update order status: %w", err)
+	if err := p.orderRepo.UpdateStatus(ctx, order.ID, order.Status); err != nil {
+		return fmt.Errorf("handlePaymentIntentSucceeded update order status: %w", err)
 	}
 
-	// Process each reservation → sell seat → create ticket
 	for _, resID := range order.ReservationIDs {
-		res, err := w.reservationRepo.GetByID(ctx, resID)
+		res, err := p.reservationRepo.GetByID(ctx, resID)
 		if err != nil {
 			log.Error().Err(err).Stringer("reservation_id", resID).Msg("get reservation failed")
 			continue
@@ -132,9 +99,9 @@ func (w *PaymentWebhookWorker) handleSucceeded(ctx context.Context, payload []by
 			log.Warn().Err(err).Stringer("reservation_id", resID).Msg("convert reservation failed")
 			continue
 		}
-		_ = w.reservationRepo.UpdateStatus(ctx, res.ID, res.Status)
+		_ = p.reservationRepo.UpdateStatus(ctx, res.ID, res.Status)
 
-		seat, err := w.seatRepo.GetByID(ctx, res.SeatID)
+		seat, err := p.seatRepo.GetByID(ctx, res.SeatID)
 		if err != nil {
 			log.Error().Err(err).Stringer("seat_id", res.SeatID).Msg("get seat failed")
 			continue
@@ -142,20 +109,19 @@ func (w *PaymentWebhookWorker) handleSucceeded(ctx context.Context, payload []by
 		if err := seat.Sell(); err != nil {
 			log.Warn().Err(err).Stringer("seat_id", seat.ID).Msg("sell seat failed")
 		}
-		_ = w.seatRepo.UpdateStatus(ctx, seat.ID, entity.SeatStatusSold)
+		_ = p.seatRepo.UpdateStatus(ctx, seat.ID, entity.SeatStatusSold)
 
 		ticket, err := entity.NewTicket(order.ID, seat.EventID, seat.ID)
 		if err != nil {
 			log.Error().Err(err).Msg("new ticket failed")
 			continue
 		}
-		if err := w.ticketRepo.Create(ctx, ticket); err != nil {
+		if err := p.ticketRepo.Create(ctx, ticket); err != nil {
 			log.Error().Err(err).Msg("create ticket failed")
 			continue
 		}
 
-		// Broadcast SSE update
-		w.sseHub.Broadcast(seat.EventID, sse.SeatUpdateEvent{
+		p.sseHub.Broadcast(seat.EventID, sse.SeatUpdateEvent{
 			Type:    "seat_update",
 			SeatID:  seat.ID.String(),
 			Status:  entity.SeatStatusSold.String(),
@@ -167,13 +133,13 @@ func (w *PaymentWebhookWorker) handleSucceeded(ctx context.Context, payload []by
 	return nil
 }
 
-func (w *PaymentWebhookWorker) handleFailed(ctx context.Context, payload []byte) error {
+func (p *StripePaymentProcessor) handlePaymentIntentFailed(ctx context.Context, payload []byte) error {
 	var pi struct {
 		ID       string            `json:"id"`
 		Metadata map[string]string `json:"metadata"`
 	}
 	if err := json.Unmarshal(payload, &pi); err != nil {
-		return fmt.Errorf("handleFailed unmarshal: %w", err)
+		return fmt.Errorf("handlePaymentIntentFailed unmarshal: %w", err)
 	}
 
 	orderIDStr, ok := pi.Metadata["order_id"]
@@ -182,12 +148,12 @@ func (w *PaymentWebhookWorker) handleFailed(ctx context.Context, payload []byte)
 	}
 	orderID, err := uuid.Parse(orderIDStr)
 	if err != nil {
-		return fmt.Errorf("handleFailed parse order_id: %w", err)
+		return fmt.Errorf("handlePaymentIntentFailed parse order_id: %w", err)
 	}
 
-	order, err := w.orderRepo.GetByID(ctx, orderID)
+	order, err := p.orderRepo.GetByID(ctx, orderID)
 	if err != nil {
-		return fmt.Errorf("handleFailed get order: %w", err)
+		return fmt.Errorf("handlePaymentIntentFailed get order: %w", err)
 	}
 	if order.Status != entity.OrderStatusPending {
 		return nil
@@ -195,24 +161,24 @@ func (w *PaymentWebhookWorker) handleFailed(ctx context.Context, payload []byte)
 	if err := order.MarkFailed(); err != nil {
 		return err
 	}
-	_ = w.orderRepo.UpdateStatus(ctx, order.ID, order.Status)
+	_ = p.orderRepo.UpdateStatus(ctx, order.ID, order.Status)
 
 	for _, resID := range order.ReservationIDs {
-		res, err := w.reservationRepo.GetByID(ctx, resID)
+		res, err := p.reservationRepo.GetByID(ctx, resID)
 		if err != nil {
 			continue
 		}
-		seat, err := w.seatRepo.GetByID(ctx, res.SeatID)
+		seat, err := p.seatRepo.GetByID(ctx, res.SeatID)
 		if err != nil {
 			continue
 		}
 		_ = res.Expire()
-		_ = w.reservationRepo.UpdateStatus(ctx, res.ID, res.Status)
+		_ = p.reservationRepo.UpdateStatus(ctx, res.ID, res.Status)
 		_ = seat.Release()
-		_ = w.seatRepo.UpdateStatus(ctx, seat.ID, entity.SeatStatusAvailable)
-		_ = w.seatLocker.Unlock(ctx, seat.EventID, seat.ID)
+		_ = p.seatRepo.UpdateStatus(ctx, seat.ID, entity.SeatStatusAvailable)
+		_ = p.seatLocker.Unlock(ctx, seat.EventID, seat.ID)
 
-		w.sseHub.Broadcast(seat.EventID, sse.SeatUpdateEvent{
+		p.sseHub.Broadcast(seat.EventID, sse.SeatUpdateEvent{
 			Type:    "seat_update",
 			SeatID:  seat.ID.String(),
 			Status:  entity.SeatStatusAvailable.String(),
