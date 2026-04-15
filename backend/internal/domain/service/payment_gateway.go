@@ -35,6 +35,8 @@ type CheckoutSessionInput struct {
 	CancelURL             string
 	PaymentMethodTypes    []string
 	PaymentIntentMetadata map[string]string
+	// ClientReferenceID is stored on the Checkout Session (e.g. internal order id for Dashboard reconciliation).
+	ClientReferenceID string
 }
 
 // CheckoutSessionResult is the hosted Checkout Session URL for redirect.

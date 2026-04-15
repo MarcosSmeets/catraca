@@ -13,6 +13,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/handler/dto"
 	"github.com/marcos-smeets/catraca/backend/internal/handler/http/sse"
 	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
+	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
 	ticketuc "github.com/marcos-smeets/catraca/backend/internal/usecase/ticket"
@@ -334,6 +335,11 @@ func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Reque
 		CancelURLBase:  h.checkoutCancelURL,
 	})
 	if err != nil {
+		var stripeSessErr *stripeinfra.CheckoutSessionError
+		if errors.As(err, &stripeSessErr) {
+			writeError(w, http.StatusBadRequest, stripeSessErr.Message)
+			return
+		}
 		switch {
 		case errors.Is(err, repository.ErrNotFound):
 			writeError(w, http.StatusNotFound, "order not found")
@@ -341,6 +347,8 @@ func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusConflict, "order is not pending payment")
 		case errors.Is(err, orderuc.ErrInvalidCheckoutMethod):
 			writeError(w, http.StatusBadRequest, "paymentMethod must be card or pix")
+		case errors.Is(err, orderuc.ErrPixAmountOutOfRange):
+			writeError(w, http.StatusBadRequest, "Pix order total must be between R$ 0,50 and R$ 3.000,00")
 		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
 			writeError(w, http.StatusServiceUnavailable, "stripe checkout is not configured")
 		default:

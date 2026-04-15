@@ -17,6 +17,14 @@ var (
 	ErrOrderNotPending        = errors.New("order is not pending payment")
 	ErrInvalidCheckoutMethod  = errors.New("paymentMethod must be card or pix")
 	ErrStripeCheckoutDisabled = errors.New("stripe is not configured")
+	// ErrPixAmountOutOfRange is returned when the order total is outside Stripe Pix limits for BRL (R$ 0,50–R$ 3.000).
+	ErrPixAmountOutOfRange = errors.New("pix amount out of allowed range for brl")
+)
+
+// BRL Pix limits per Stripe (Brazil): https://docs.stripe.com/payments/pix
+const (
+	PixMinAmountCentsBRL int64 = 50       // R$ 0,50
+	PixMaxAmountCentsBRL int64 = 300_000 // R$ 3.000,00
 )
 
 type CreateCheckoutSessionInput struct {
@@ -83,12 +91,19 @@ func (uc *CreateCheckoutSessionUseCase) Execute(ctx context.Context, in CreateCh
 		return nil, ErrStripeCheckoutDisabled
 	}
 
+	if pm == "pix" {
+		if order.TotalCents < PixMinAmountCentsBRL || order.TotalCents > PixMaxAmountCentsBRL {
+			return nil, ErrPixAmountOutOfRange
+		}
+	}
+
 	sess, err := uc.paymentGateway.CreateCheckoutSession(ctx, service.CheckoutSessionInput{
 		AmountCents:  order.TotalCents,
 		Currency:     "brl",
 		SuccessURL:   successURL,
 		CancelURL:    cancelURL,
 		PaymentMethodTypes: pmTypes,
+		ClientReferenceID: order.ID.String(),
 		PaymentIntentMetadata: map[string]string{
 			"order_id": order.ID.String(),
 			"user_id":  order.UserID.String(),

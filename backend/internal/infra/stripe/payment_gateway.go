@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,16 @@ import (
 )
 
 var _ service.PaymentGateway = (*PaymentGateway)(nil)
+
+// CheckoutSessionError is returned when the Stripe API rejects Checkout Session creation
+// (e.g. Pix not enabled in the Dashboard, invalid parameters). The Message is safe to show to API clients.
+type CheckoutSessionError struct {
+	Message string
+}
+
+func (e *CheckoutSessionError) Error() string {
+	return e.Message
+}
 
 type PaymentGateway struct {
 	secretKey     string
@@ -75,9 +86,28 @@ func (g *PaymentGateway) CreateCheckoutSession(
 		},
 		PaymentMethodTypes: stripelib.StringSlice(in.PaymentMethodTypes),
 	}
+	if in.ClientReferenceID != "" {
+		params.ClientReferenceID = stripelib.String(in.ClientReferenceID)
+	}
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") {
+		params.Locale = stripelib.String("pt-BR")
+		params.PaymentMethodOptions = &stripelib.CheckoutSessionPaymentMethodOptionsParams{
+			Pix: &stripelib.CheckoutSessionPaymentMethodOptionsPixParams{
+				ExpiresAfterSeconds: stripelib.Int64(14_400), // 4 hours — Stripe Pix pending window default
+			},
+		}
+	}
 
 	sess, err := checkoutsession.New(params)
 	if err != nil {
+		var sErr *stripelib.Error
+		if errors.As(err, &sErr) && sErr != nil {
+			msg := sErr.Msg
+			if msg == "" {
+				msg = err.Error()
+			}
+			return nil, &CheckoutSessionError{Message: msg}
+		}
 		return nil, fmt.Errorf("stripe.CreateCheckoutSession: %w", err)
 	}
 
@@ -85,6 +115,16 @@ func (g *PaymentGateway) CreateCheckoutSession(
 		ID:  sess.ID,
 		URL: sess.URL,
 	}, nil
+}
+
+func paymentMethodTypesInclude(types []string, want string) bool {
+	w := strings.ToLower(strings.TrimSpace(want))
+	for _, t := range types {
+		if strings.ToLower(strings.TrimSpace(t)) == w {
+			return true
+		}
+	}
+	return false
 }
 
 // CreatePaymentIntent creates a Stripe PaymentIntent for the given amount in BRL.
