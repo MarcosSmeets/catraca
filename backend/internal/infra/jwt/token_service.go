@@ -33,8 +33,9 @@ func NewTokenService(accessSecret, refreshSecret string) *TokenServiceImpl {
 
 type customClaims struct {
 	jwt.RegisteredClaims
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email            string `json:"email"`
+	Role             string `json:"role"`
+	OrganizationID   string `json:"organization_id,omitempty"`
 }
 
 func (s *TokenServiceImpl) GenerateTokenPair(claims service.TokenClaims) (*service.TokenPair, error) {
@@ -65,14 +66,19 @@ func (s *TokenServiceImpl) ValidateRefreshToken(token string) (*service.TokenCla
 }
 
 func (s *TokenServiceImpl) generateToken(claims service.TokenClaims, secret []byte, expiresAt time.Time) (string, error) {
+	orgStr := ""
+	if claims.OrganizationID != nil {
+		orgStr = claims.OrganizationID.String()
+	}
 	c := customClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   claims.UserID.String(),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		Email: claims.Email,
-		Role:  claims.Role,
+		Email:          claims.Email,
+		Role:           claims.Role,
+		OrganizationID: orgStr,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
@@ -103,9 +109,17 @@ func (s *TokenServiceImpl) validateToken(tokenStr string, secret []byte) (*servi
 		return nil, ErrInvalidToken
 	}
 
-	return &service.TokenClaims{
+	out := &service.TokenClaims{
 		UserID: userID,
 		Email:  claims.Email,
 		Role:   claims.Role,
-	}, nil
+	}
+	if claims.OrganizationID != "" {
+		orgID, err := uuid.Parse(claims.OrganizationID)
+		if err != nil {
+			return nil, ErrInvalidToken
+		}
+		out.OrganizationID = &orgID
+	}
+	return out, nil
 }

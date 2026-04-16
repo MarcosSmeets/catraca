@@ -33,7 +33,7 @@ export default function Pagination({ page, total, limit, onPageChange }: Paginat
       <button
         onClick={() => onPageChange(page - 1)}
         disabled={page === 1}
-        className="w-9 h-9 flex items-center justify-center rounded-sm border border-outline-variant text-on-surface/50 hover:border-primary hover:text-on-surface disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150"
+        className="w-9 h-9 flex items-center justify-center rounded-sm border border-outline-variant text-on-surface/50 hover:border-accent hover:text-on-surface disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150"
         aria-label="Página anterior"
       >
         <ChevronLeftIcon />
@@ -52,8 +52,8 @@ export default function Pagination({ page, total, limit, onPageChange }: Paginat
             className={[
               "w-9 h-9 flex items-center justify-center rounded-sm text-sm font-display font-semibold transition-colors duration-150",
               p === page
-                ? "bg-primary text-on-primary"
-                : "border border-outline-variant text-on-surface/60 hover:border-primary hover:text-on-surface",
+                ? "bg-accent text-on-accent"
+                : "border border-outline-variant text-on-surface/60 hover:border-accent hover:text-on-surface",
             ].join(" ")}
           >
             {p}
@@ -64,7 +64,7 @@ export default function Pagination({ page, total, limit, onPageChange }: Paginat
       <button
         onClick={() => onPageChange(page + 1)}
         disabled={page === totalPages}
-        className="w-9 h-9 flex items-center justify-center rounded-sm border border-outline-variant text-on-surface/50 hover:border-primary hover:text-on-surface disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150"
+        className="w-9 h-9 flex items-center justify-center rounded-sm border border-outline-variant text-on-surface/50 hover:border-accent hover:text-on-surface disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150"
         aria-label="Próxima página"
       >
         <ChevronRightIcon />

@@ -4,12 +4,20 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Input } from "@/components/ui";
+import Logo from "@/components/brand/Logo";
 import { login } from "@/lib/auth-api";
 import { useAuthStore } from "@/store/auth";
 import { ApiError } from "@/lib/api";
 
 function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/** Same-origin path only; blocks open redirects (e.g. //evil.com). */
+function safeRedirectPath(raw: string | null): string | null {
+  if (!raw || raw.length < 2) return null;
+  if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
 }
 
 export default function LoginPage() {
@@ -37,7 +45,12 @@ export default function LoginPage() {
     try {
       const res = await login({ email, password });
       setAuth(res.user, res.accessToken);
-      router.push("/");
+      const redirect = safeRedirectPath(
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("redirect")
+          : null
+      );
+      router.push(redirect ?? "/");
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -53,11 +66,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left panel — branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12">
-        <Link href="/" className="flex items-center gap-2 group">
-          <span className="font-display font-black text-2xl tracking-tight text-on-primary uppercase">
-            Catraca
-          </span>
-          <span className="w-2 h-2 rounded-full bg-on-primary group-hover:scale-125 transition-transform duration-150" />
+        <Link href="/" className="flex items-center group">
+          <Logo variant="lockup" className="group-hover:opacity-90 transition-opacity duration-150" />
         </Link>
 
         <div>
@@ -83,11 +93,8 @@ export default function LoginPage() {
       <div className="flex-1 bg-surface-lowest flex flex-col justify-center items-center px-6 py-12">
         {/* Mobile logo */}
         <div className="lg:hidden mb-10 self-start">
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="font-display font-black text-xl tracking-tight text-primary uppercase">
-              Catraca
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:scale-125 transition-transform duration-150" />
+          <Link href="/" className="flex items-center group">
+            <Logo variant="wordmark" className="group-hover:opacity-90 transition-opacity duration-150" />
           </Link>
         </div>
 

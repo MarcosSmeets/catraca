@@ -20,11 +20,10 @@ func TestEventRepository_CreateAndGetByID(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))
@@ -64,11 +63,10 @@ func TestEventRepository_List_NoFilter(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 
 	e1 := factory.NewTestEvent(venue.ID)
 	e2 := factory.NewTestEvent(venue.ID)
@@ -88,11 +86,10 @@ func TestEventRepository_List_FilterBySport(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 
 	football := factory.NewTestEvent(venue.ID)
 	basketball := factory.NewTestEvent(venue.ID)
@@ -121,13 +118,13 @@ func TestEventRepository_List_FilterByCity(t *testing.T) {
 	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 
-	bh := factory.NewTestVenue()
-	rio := factory.NewTestVenue()
+	org := createTestOrg(t, ctx, pool)
+	bh := createTestVenue(t, ctx, pool, org.ID)
+	rio := factory.NewTestVenue(org.ID)
 	rio.ID = uuid.New()
 	rio.Name = "Maracanã"
 	rio.City = "Rio de Janeiro"
 	rio.State = "RJ"
-	require.NoError(t, venueRepo.Create(ctx, bh))
 	require.NoError(t, venueRepo.Create(ctx, rio))
 
 	eventBH := factory.NewTestEvent(bh.ID)
@@ -150,11 +147,10 @@ func TestEventRepository_List_Pagination(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 
 	for i := 0; i < 5; i++ {
 		e := factory.NewTestEvent(venue.ID)
@@ -177,11 +173,10 @@ func TestEventRepository_Update(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))

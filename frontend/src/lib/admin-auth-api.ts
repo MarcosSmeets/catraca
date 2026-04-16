@@ -1,7 +1,7 @@
 import { apiFetch } from "./api";
 import type { AdminUser } from "@/store/admin-auth";
 
-interface AdminLoginResponse {
+export interface AdminLoginResponse {
   accessToken: string;
   user: AdminUser;
 }

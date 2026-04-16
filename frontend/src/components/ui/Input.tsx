@@ -28,7 +28,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           "w-full bg-surface-lowest px-4 py-3 text-sm text-on-surface font-body",
           "rounded-sm border border-outline-variant",
           "placeholder:text-on-surface/30",
-          "focus:outline-none focus:border-primary transition-colors duration-150",
+          "focus:outline-none focus:border-accent transition-colors duration-150",
           error ? "border-error" : "",
           className,
         ]

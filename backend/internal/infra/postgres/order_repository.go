@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
@@ -28,12 +29,32 @@ func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
 }
 
 func (r *OrderRepository) Create(ctx context.Context, o *entity.Order) error {
+	var resaleListingPg pgtype.UUID
+	if o.ResaleListingID != nil {
+		resaleListingPg = pgtype.UUID{Bytes: *o.ResaleListingID, Valid: true}
+	}
+	var payoutPg pgtype.Int8
+	if o.SellerPayoutCents != nil {
+		payoutPg = pgtype.Int8{Int64: *o.SellerPayoutCents, Valid: true}
+	}
 	_, err := r.queries.CreateOrder(ctx, pgdb.CreateOrderParams{
-		ID:              o.ID,
-		UserID:          o.UserID,
-		TotalCents:      o.TotalCents,
-		StripePaymentID: o.StripePaymentID,
-		Status:          o.Status.String(),
+		ID:                o.ID,
+		UserID:            o.UserID,
+		TotalCents:        o.TotalCents,
+		StripePaymentID:   o.StripePaymentID,
+		Status:            o.Status.String(),
+		BuyerName:         o.BuyerName,
+		BuyerEmail:        o.BuyerEmail,
+		BuyerCpf:          o.BuyerCPF,
+		BuyerPhone:        o.BuyerPhone,
+		BuyerCep:          o.BuyerCEP,
+		BuyerStreet:       o.BuyerStreet,
+		BuyerNeighborhood: o.BuyerNeighborhood,
+		BuyerCity:         o.BuyerCity,
+		BuyerState:        o.BuyerState,
+		Kind:              string(o.Kind),
+		ResaleListingID:   resaleListingPg,
+		SellerPayoutCents: payoutPg,
 	})
 	if err != nil {
 		return fmt.Errorf("OrderRepository.Create: %w", err)
@@ -102,15 +123,42 @@ func (r *OrderRepository) UpdateStripePaymentID(ctx context.Context, id uuid.UUI
 	return nil
 }
 
-func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
-	return &entity.Order{
-		ID:              o.ID,
-		UserID:          o.UserID,
-		ReservationIDs:  resIDs,
-		TotalCents:      o.TotalCents,
-		StripePaymentID: o.StripePaymentID,
-		Status:          entity.OrderStatus(o.Status),
-		CreatedAt:       o.CreatedAt,
-		UpdatedAt:       o.UpdatedAt,
+func (r *OrderRepository) HasPendingOrderForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	hasPending, err := r.queries.HasPendingOrderForReservation(ctx, reservationID)
+	if err != nil {
+		return false, fmt.Errorf("OrderRepository.HasPendingOrderForReservation: %w", err)
 	}
+	return hasPending, nil
+}
+
+func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
+	out := &entity.Order{
+		ID:                o.ID,
+		UserID:            o.UserID,
+		Kind:              entity.OrderKind(o.Kind),
+		ReservationIDs:    resIDs,
+		TotalCents:        o.TotalCents,
+		StripePaymentID:   o.StripePaymentID,
+		Status:            entity.OrderStatus(o.Status),
+		CreatedAt:         o.CreatedAt,
+		UpdatedAt:         o.UpdatedAt,
+		BuyerName:         o.BuyerName,
+		BuyerEmail:        o.BuyerEmail,
+		BuyerCPF:          o.BuyerCpf,
+		BuyerPhone:        o.BuyerPhone,
+		BuyerCEP:          o.BuyerCep,
+		BuyerStreet:       o.BuyerStreet,
+		BuyerNeighborhood: o.BuyerNeighborhood,
+		BuyerCity:         o.BuyerCity,
+		BuyerState:        o.BuyerState,
+	}
+	if o.ResaleListingID.Valid {
+		u := uuid.UUID(o.ResaleListingID.Bytes)
+		out.ResaleListingID = &u
+	}
+	if o.SellerPayoutCents.Valid {
+		v := o.SellerPayoutCents.Int64
+		out.SellerPayoutCents = &v
+	}
+	return out
 }

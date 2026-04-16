@@ -10,19 +10,19 @@ import (
 )
 
 func TestNewTicket_Valid(t *testing.T) {
-	tk, err := entity.NewTicket(uuid.New(), uuid.New(), uuid.New())
+	tk, err := entity.NewTicket(uuid.New(), uuid.New(), uuid.New(), uuid.New())
 	require.NoError(t, err)
 	assert.Equal(t, entity.TicketStatusValid, tk.Status)
 	assert.Contains(t, tk.QRCode, "CATRACA-TK-")
 }
 
 func TestNewTicket_NilOrderID(t *testing.T) {
-	_, err := entity.NewTicket(uuid.Nil, uuid.New(), uuid.New())
+	_, err := entity.NewTicket(uuid.Nil, uuid.New(), uuid.New(), uuid.New())
 	assert.EqualError(t, err, "ticket order ID is required")
 }
 
 func TestTicket_Use(t *testing.T) {
-	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New())
+	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New(), uuid.New())
 
 	err := tk.Use()
 	require.NoError(t, err)
@@ -30,7 +30,7 @@ func TestTicket_Use(t *testing.T) {
 }
 
 func TestTicket_UseAlreadyUsed(t *testing.T) {
-	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New())
+	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New(), uuid.New())
 	_ = tk.Use()
 
 	err := tk.Use()
@@ -38,7 +38,7 @@ func TestTicket_UseAlreadyUsed(t *testing.T) {
 }
 
 func TestTicket_Cancel(t *testing.T) {
-	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New())
+	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New(), uuid.New())
 
 	err := tk.Cancel()
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestTicket_Cancel(t *testing.T) {
 }
 
 func TestTicket_CancelUsed(t *testing.T) {
-	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New())
+	tk, _ := entity.NewTicket(uuid.New(), uuid.New(), uuid.New(), uuid.New())
 	_ = tk.Use()
 
 	err := tk.Cancel()

@@ -1,6 +1,9 @@
 -- name: CreateOrder :one
-INSERT INTO orders (id, user_id, total_cents, stripe_payment_id, status)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO orders (id, user_id, total_cents, stripe_payment_id, status,
+  buyer_name, buyer_email, buyer_cpf, buyer_phone,
+  buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state,
+  kind, resale_listing_id, seller_payout_cents)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING *;
 
 -- name: GetOrderByID :one
@@ -21,3 +24,10 @@ VALUES ($1, $2);
 
 -- name: ListOrderReservationIDs :many
 SELECT reservation_id FROM order_reservations WHERE order_id = $1;
+
+-- name: HasPendingOrderForReservation :one
+SELECT EXISTS (
+  SELECT 1 FROM order_reservations orr
+  INNER JOIN orders o ON o.id = orr.order_id
+  WHERE orr.reservation_id = $1 AND o.status = 'PENDING'
+) AS has_pending;

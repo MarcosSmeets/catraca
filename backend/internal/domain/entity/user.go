@@ -19,23 +19,27 @@ var ErrInvalidCPF = errors.New("invalid CPF")
 type UserRole string
 
 const (
-	UserRoleUser      UserRole = "user"
-	UserRoleAdmin     UserRole = "admin"
-	UserRoleOrganizer UserRole = "organizer"
-	UserRoleStaff     UserRole = "staff"
+	UserRoleUser           UserRole = "user"
+	UserRoleAdmin          UserRole = "admin"
+	UserRoleOrganizer      UserRole = "organizer"
+	UserRoleStaff          UserRole = "staff"
+	UserRolePlatformAdmin  UserRole = "platform_admin"
 )
 
 type User struct {
-	ID           uuid.UUID
-	Name         string
-	Email        string
-	PasswordHash string
-	CPFHash      string
-	Phone        string
-	Role         UserRole
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time
+	ID                           uuid.UUID
+	Name                         string
+	Email                        string
+	PasswordHash                 string
+	CPFHash                      string
+	Phone                        string
+	Role                         UserRole
+	OrganizationID               *uuid.UUID
+	StripeConnectAccountID       string
+	StripeConnectChargesEnabled  bool
+	CreatedAt                    time.Time
+	UpdatedAt                    time.Time
+	DeletedAt                    *time.Time
 }
 
 func NewUser(name, email, passwordHash, cpf, phone, cpfPepper string) (*User, error) {

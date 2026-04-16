@@ -35,6 +35,7 @@ type TicketRepository interface {
 	GetByIDWithDetails(ctx context.Context, id uuid.UUID) (*TicketWithDetails, error)
 	GetByQRCode(ctx context.Context, qrCode string) (*entity.Ticket, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.TicketStatus, usedAt *time.Time) error
+	UpdateHolderUserID(ctx context.Context, ticketID, holderUserID uuid.UUID) error
 	ListByUserID(ctx context.Context, userID uuid.UUID) ([]*entity.Ticket, error)
 	ListByUserIDWithDetails(ctx context.Context, userID uuid.UUID) ([]*TicketWithDetails, error)
 	ListByOrderID(ctx context.Context, orderID uuid.UUID) ([]*entity.Ticket, error)

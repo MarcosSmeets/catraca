@@ -6,9 +6,11 @@ import { Suspense } from "react";
 import MainLayout from "@/components/features/MainLayout";
 import EventCard from "@/components/features/EventCard";
 import Pagination from "@/components/ui/Pagination";
+import FilterSelect from "@/components/ui/FilterSelect";
 import { EventCardSkeleton } from "@/components/ui/Skeleton";
 import { SportType, formatCurrency } from "@/lib/mock-data";
 import { useEvents } from "@/lib/events-api";
+import { DEFAULT_PUBLIC_ORG_SLUG } from "@/lib/default-org-slug";
 
 type SortOption = "date" | "price-asc" | "price-desc";
 
@@ -42,6 +44,7 @@ function endOfMonthStr(): string {
 
 function SearchPageContent() {
   const searchParams = useSearchParams();
+  const orgSlug = searchParams.get("org")?.trim() || DEFAULT_PUBLIC_ORG_SLUG;
 
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [selectedSport, setSelectedSport] = useState<SportType | "">((searchParams.get("sport") as SportType) ?? "");
@@ -63,7 +66,7 @@ function SearchPageContent() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const { data, isLoading } = useEvents({
+  const { data, isLoading } = useEvents(orgSlug, {
     q: query || undefined,
     sport: selectedSport || undefined,
     league: selectedLeague || undefined,
@@ -153,7 +156,7 @@ function SearchPageContent() {
             <FilterIcon />
             Filtros
             {activeFilterCount > 0 && (
-              <span className="ml-0.5 w-5 h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold flex items-center justify-center">
+              <span className="ml-0.5 w-5 h-5 rounded-full bg-accent text-on-accent text-[10px] font-bold flex items-center justify-center">
                 {activeFilterCount}
               </span>
             )}
@@ -184,7 +187,7 @@ function SearchPageContent() {
                   placeholder="Time, cidade, torneio…"
                   value={query}
                   onChange={(e) => handleFilterChange(() => setQuery(e.target.value))}
-                  className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-primary transition-colors duration-150"
+                  className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-accent transition-colors duration-150"
                 />
               </div>
 
@@ -327,7 +330,7 @@ function SearchPageContent() {
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                   {paginated.map((event) => (
-                    <EventCard key={event.id} event={event} />
+                    <EventCard key={event.id} event={event} orgSlug={orgSlug} />
                   ))}
                 </div>
                 <Pagination
@@ -365,108 +368,6 @@ export default function SearchPage() {
     >
       <SearchPageContent />
     </Suspense>
-  );
-}
-
-// ─── FilterSelect ────────────────────────────────────────────────────────────
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-  size = "md",
-}: {
-  label?: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  size?: "sm" | "md";
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
-  const isActive = value !== "" && value !== options[0]?.value;
-
-  const triggerPadding = size === "sm" ? "px-3 py-1.5" : "px-4 py-2.5";
-  const textSize = size === "sm" ? "text-xs" : "text-sm";
-
-  return (
-    <div className="relative">
-      {label && (
-        <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
-          {label}
-        </label>
-      )}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={[
-          "w-full flex items-center justify-between gap-2 bg-surface-lowest",
-          triggerPadding,
-          textSize,
-          "font-body text-on-surface rounded-sm border",
-          isActive ? "border-primary" : "border-outline-variant",
-          "focus:outline-none transition-colors duration-150 cursor-pointer",
-        ].join(" ")}
-      >
-        <span className={isActive ? "font-semibold" : ""}>{selected?.label}</span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          className={[
-            "shrink-0 text-on-surface/50 transition-transform duration-200",
-            open ? "rotate-180" : "",
-          ].join(" ")}
-          aria-hidden="true"
-        >
-          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-
-      {open && (
-        <ul
-          role="listbox"
-          className={[
-            "absolute z-50 left-0 right-0 mt-1",
-            "bg-surface-lowest border border-outline-variant rounded-sm",
-            "shadow-[0_4px_16px_rgba(0,0,0,0.08)]",
-            "py-1 max-h-60 overflow-y-auto",
-          ].join(" ")}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value;
-            return (
-              <li key={opt.value} role="option" aria-selected={isSelected}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange(opt.value);
-                    setOpen(false);
-                  }}
-                  className={[
-                    "w-full flex items-center gap-2.5",
-                    size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm",
-                    "font-body text-left transition-colors duration-100",
-                    isSelected
-                      ? "text-on-surface font-semibold bg-surface"
-                      : "text-on-surface/70 hover:bg-surface hover:text-on-surface",
-                  ].join(" ")}
-                >
-                  <span className={["shrink-0 text-[8px] leading-none", isSelected ? "opacity-100" : "opacity-0"].join(" ")}>
-                    ■
-                  </span>
-                  {opt.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
   );
 }
 
@@ -585,7 +486,7 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
           className={[
             "flex-1 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors duration-150",
             picking === "from"
-              ? "border-primary bg-surface text-on-surface"
+              ? "border-accent bg-surface text-on-surface"
               : "border-outline-variant bg-surface text-on-surface/60",
           ].join(" ")}
           onClick={() => setPicking("from")}
@@ -600,7 +501,7 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
           className={[
             "flex-1 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors duration-150",
             picking === "to"
-              ? "border-primary bg-surface text-on-surface"
+              ? "border-accent bg-surface text-on-surface"
               : "border-outline-variant bg-surface text-on-surface/60",
           ].join(" ")}
           onClick={() => setPicking("to")}
@@ -698,7 +599,7 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
                 {showRangeBand && (
                   <div
                     className={[
-                      "absolute inset-y-0 bg-primary/10",
+                      "absolute inset-y-0 bg-accent/10",
                       "left-0 right-0",
                       bandRoundLeft ? "rounded-l-full ml-1" : "",
                       bandRoundRight ? "rounded-r-full mr-1" : "",
@@ -714,12 +615,12 @@ function DateRangePicker({ dateFrom, dateTo, onChangeFrom, onChangeTo }: DateRan
                     "relative z-10 w-7 h-7 flex items-center justify-center rounded-full",
                     "text-[11px] font-body transition-colors duration-100",
                     isFrom || isTo || isRangeStart || isRangeEnd
-                      ? "bg-primary text-on-primary font-semibold"
+                      ? "bg-accent text-on-accent font-semibold"
                       : inRange
-                        ? "text-on-surface hover:bg-primary/20"
+                        ? "text-on-surface hover:bg-accent/20"
                         : "text-on-surface/60 hover:bg-surface-high hover:text-on-surface",
                     isToday && !isFrom && !isTo && !isRangeStart && !isRangeEnd
-                      ? "ring-1 ring-primary/40"
+                      ? "ring-1 ring-accent/40"
                       : "",
                   ].join(" ")}
                   aria-label={`${day.getDate()} de ${MONTH_NAMES_PT[day.getMonth()]} de ${day.getFullYear()}`}

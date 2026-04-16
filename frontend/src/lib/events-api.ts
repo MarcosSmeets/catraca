@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { useAuthStore } from "@/store/auth";
 import type { Event, Seat, SportType } from "./mock-data";
+import { DEFAULT_PUBLIC_ORG_SLUG } from "./default-org-slug";
 
 export interface SearchEventsParams {
   q?: string;
@@ -24,7 +25,14 @@ export interface PaginatedEvents {
   limit: number;
 }
 
-async function fetchEvents(params: SearchEventsParams): Promise<PaginatedEvents> {
+function orgEventsPath(orgSlug: string) {
+  return `/orgs/${encodeURIComponent(orgSlug)}/events`;
+}
+
+async function fetchEventsForOrg(
+  orgSlug: string,
+  params: SearchEventsParams
+): Promise<PaginatedEvents> {
   const token = useAuthStore.getState().accessToken;
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
@@ -39,39 +47,55 @@ async function fetchEvents(params: SearchEventsParams): Promise<PaginatedEvents>
   if (params.page) qs.set("page", String(params.page));
   if (params.limit) qs.set("limit", String(params.limit));
 
-  return apiFetch<PaginatedEvents>(`/events?${qs.toString()}`, { accessToken: token });
-}
-
-async function fetchEvent(id: string): Promise<Event> {
-  const token = useAuthStore.getState().accessToken;
-  return apiFetch<Event>(`/events/${id}`, { accessToken: token });
-}
-
-async function fetchEventSeats(eventId: string): Promise<Seat[]> {
-  const token = useAuthStore.getState().accessToken;
-  return apiFetch<Seat[]>(`/events/${eventId}/seats`, { accessToken: token });
-}
-
-export function useEvents(params: SearchEventsParams = {}) {
-  return useQuery({
-    queryKey: ["events", params],
-    queryFn: () => fetchEvents(params),
+  return apiFetch<PaginatedEvents>(`${orgEventsPath(orgSlug)}?${qs.toString()}`, {
+    accessToken: token,
   });
 }
 
-export function useEvent(id: string) {
-  return useQuery({
-    queryKey: ["event", id],
-    queryFn: () => fetchEvent(id),
-    enabled: !!id,
+async function fetchEventForOrg(orgSlug: string, id: string): Promise<Event> {
+  const token = useAuthStore.getState().accessToken;
+  return apiFetch<Event>(`${orgEventsPath(orgSlug)}/${encodeURIComponent(id)}`, {
+    accessToken: token,
   });
 }
 
-export function useEventSeats(eventId: string) {
+async function fetchEventSeatsForOrg(
+  orgSlug: string,
+  eventId: string
+): Promise<Seat[]> {
+  const token = useAuthStore.getState().accessToken;
+  return apiFetch<Seat[]>(
+    `${orgEventsPath(orgSlug)}/${encodeURIComponent(eventId)}/seats`,
+    { accessToken: token }
+  );
+}
+
+export function useEvents(orgSlug: string, params: SearchEventsParams = {}) {
   return useQuery({
-    queryKey: ["event-seats", eventId],
-    queryFn: () => fetchEventSeats(eventId),
-    enabled: !!eventId,
+    queryKey: ["events", orgSlug, params],
+    queryFn: () => fetchEventsForOrg(orgSlug, params),
+    enabled: !!orgSlug,
+  });
+}
+
+/** Home / search default tenant catalog. */
+export function useDefaultOrgEvents(params: SearchEventsParams = {}) {
+  return useEvents(DEFAULT_PUBLIC_ORG_SLUG, params);
+}
+
+export function useEvent(orgSlug: string, id: string) {
+  return useQuery({
+    queryKey: ["event", orgSlug, id],
+    queryFn: () => fetchEventForOrg(orgSlug, id),
+    enabled: !!id && !!orgSlug,
+  });
+}
+
+export function useEventSeats(orgSlug: string, eventId: string) {
+  return useQuery({
+    queryKey: ["event-seats", orgSlug, eventId],
+    queryFn: () => fetchEventSeatsForOrg(orgSlug, eventId),
+    enabled: !!eventId && !!orgSlug,
     refetchInterval: 15_000,
   });
 }

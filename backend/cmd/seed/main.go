@@ -33,12 +33,13 @@ func main() {
 	}
 	defer pool.Close()
 
+	orgRepo := pginfra.NewOrganizationRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	venueRepo := pginfra.NewVenueRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 
 	log.Info().Msg("loading demo data...")
-	if err := seed.LoadDemoData(ctx, eventRepo, venueRepo, seatRepo); err != nil {
+	if err := seed.LoadDemoData(ctx, orgRepo, eventRepo, venueRepo, seatRepo); err != nil {
 		log.Fatal().Err(err).Msg("seed failed")
 	}
 	log.Info().Msg("demo data loaded successfully")

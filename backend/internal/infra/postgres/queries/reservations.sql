@@ -11,8 +11,26 @@ SELECT * FROM reservations
 WHERE seat_id = $1 AND status = 'ACTIVE' AND expires_at > NOW()
 LIMIT 1;
 
+-- name: GetActiveStatusReservationBySeatID :one
+-- Used when Redis lock TTL expires: DB expires_at may already be <= NOW(), so we must not filter on expires_at.
+SELECT * FROM reservations
+WHERE seat_id = $1 AND status = 'ACTIVE'
+LIMIT 1;
+
 -- name: UpdateReservationStatus :exec
 UPDATE reservations SET status = $2 WHERE id = $1;
 
 -- name: ListReservationsByUserID :many
 SELECT * FROM reservations WHERE user_id = $1 ORDER BY created_at DESC;
+
+-- name: ListExpiredActiveReservations :many
+-- Expired reservations that are NOT tied to a PENDING order (those are being paid for).
+SELECT r.id AS reservation_id, r.seat_id, s.event_id
+FROM reservations r
+INNER JOIN seats s ON s.id = r.seat_id
+WHERE r.status = 'ACTIVE' AND r.expires_at < NOW()
+  AND NOT EXISTS (
+    SELECT 1 FROM order_reservations orr
+    INNER JOIN orders o ON o.id = orr.order_id
+    WHERE orr.reservation_id = r.id AND o.status = 'PENDING'
+  );

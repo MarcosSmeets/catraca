@@ -63,6 +63,17 @@ func (r *ReservationRepository) GetActiveBySeatID(ctx context.Context, seatID uu
 	return dbReservationToEntity(row), nil
 }
 
+func (r *ReservationRepository) GetActiveStatusBySeatID(ctx context.Context, seatID uuid.UUID) (*entity.Reservation, error) {
+	row, err := r.queries.GetActiveStatusReservationBySeatID(ctx, seatID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, repository.ErrNotFound
+		}
+		return nil, fmt.Errorf("ReservationRepository.GetActiveStatusBySeatID: %w", err)
+	}
+	return dbReservationToEntity(row), nil
+}
+
 func (r *ReservationRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.ReservationStatus) error {
 	err := r.queries.UpdateReservationStatus(ctx, pgdb.UpdateReservationStatusParams{
 		ID:     id,
@@ -72,6 +83,22 @@ func (r *ReservationRepository) UpdateStatus(ctx context.Context, id uuid.UUID, 
 		return fmt.Errorf("ReservationRepository.UpdateStatus: %w", err)
 	}
 	return nil
+}
+
+func (r *ReservationRepository) ListExpiredActive(ctx context.Context) ([]repository.ExpiredActiveReservationRow, error) {
+	rows, err := r.queries.ListExpiredActiveReservations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ReservationRepository.ListExpiredActive: %w", err)
+	}
+	out := make([]repository.ExpiredActiveReservationRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, repository.ExpiredActiveReservationRow{
+			ReservationID: row.ReservationID,
+			SeatID:        row.SeatID,
+			EventID:       row.EventID,
+		})
+	}
+	return out, nil
 }
 
 func (r *ReservationRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]*entity.Reservation, error) {

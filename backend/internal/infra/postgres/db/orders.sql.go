@@ -9,20 +9,36 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createOrder = `-- name: CreateOrder :one
-INSERT INTO orders (id, user_id, total_cents, stripe_payment_id, status)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at
+INSERT INTO orders (id, user_id, total_cents, stripe_payment_id, status,
+  buyer_name, buyer_email, buyer_cpf, buyer_phone,
+  buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state,
+  kind, resale_listing_id, seller_payout_cents)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+RETURNING id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id, seller_payout_cents
 `
 
 type CreateOrderParams struct {
-	ID              uuid.UUID `json:"id"`
-	UserID          uuid.UUID `json:"user_id"`
-	TotalCents      int64     `json:"total_cents"`
-	StripePaymentID string    `json:"stripe_payment_id"`
-	Status          string    `json:"status"`
+	ID                uuid.UUID   `json:"id"`
+	UserID            uuid.UUID   `json:"user_id"`
+	TotalCents        int64       `json:"total_cents"`
+	StripePaymentID   string      `json:"stripe_payment_id"`
+	Status            string      `json:"status"`
+	BuyerName         string      `json:"buyer_name"`
+	BuyerEmail        string      `json:"buyer_email"`
+	BuyerCpf          string      `json:"buyer_cpf"`
+	BuyerPhone        string      `json:"buyer_phone"`
+	BuyerCep          string      `json:"buyer_cep"`
+	BuyerStreet       string      `json:"buyer_street"`
+	BuyerNeighborhood string      `json:"buyer_neighborhood"`
+	BuyerCity         string      `json:"buyer_city"`
+	BuyerState        string      `json:"buyer_state"`
+	Kind              string      `json:"kind"`
+	ResaleListingID   pgtype.UUID `json:"resale_listing_id"`
+	SellerPayoutCents pgtype.Int8 `json:"seller_payout_cents"`
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
@@ -32,6 +48,18 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		arg.TotalCents,
 		arg.StripePaymentID,
 		arg.Status,
+		arg.BuyerName,
+		arg.BuyerEmail,
+		arg.BuyerCpf,
+		arg.BuyerPhone,
+		arg.BuyerCep,
+		arg.BuyerStreet,
+		arg.BuyerNeighborhood,
+		arg.BuyerCity,
+		arg.BuyerState,
+		arg.Kind,
+		arg.ResaleListingID,
+		arg.SellerPayoutCents,
 	)
 	var i Order
 	err := row.Scan(
@@ -42,6 +70,18 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BuyerName,
+		&i.BuyerEmail,
+		&i.BuyerCpf,
+		&i.BuyerPhone,
+		&i.BuyerCep,
+		&i.BuyerStreet,
+		&i.BuyerNeighborhood,
+		&i.BuyerCity,
+		&i.BuyerState,
+		&i.Kind,
+		&i.ResaleListingID,
+		&i.SellerPayoutCents,
 	)
 	return i, err
 }
@@ -62,7 +102,7 @@ func (q *Queries) CreateOrderReservation(ctx context.Context, arg CreateOrderRes
 }
 
 const getOrderByID = `-- name: GetOrderByID :one
-SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at FROM orders WHERE id = $1
+SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id, seller_payout_cents FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -76,8 +116,35 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BuyerName,
+		&i.BuyerEmail,
+		&i.BuyerCpf,
+		&i.BuyerPhone,
+		&i.BuyerCep,
+		&i.BuyerStreet,
+		&i.BuyerNeighborhood,
+		&i.BuyerCity,
+		&i.BuyerState,
+		&i.Kind,
+		&i.ResaleListingID,
+		&i.SellerPayoutCents,
 	)
 	return i, err
+}
+
+const hasPendingOrderForReservation = `-- name: HasPendingOrderForReservation :one
+SELECT EXISTS (
+  SELECT 1 FROM order_reservations orr
+  INNER JOIN orders o ON o.id = orr.order_id
+  WHERE orr.reservation_id = $1 AND o.status = 'PENDING'
+) AS has_pending
+`
+
+func (q *Queries) HasPendingOrderForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingOrderForReservation, reservationID)
+	var has_pending bool
+	err := row.Scan(&has_pending)
+	return has_pending, err
 }
 
 const listOrderReservationIDs = `-- name: ListOrderReservationIDs :many
@@ -105,7 +172,7 @@ func (q *Queries) ListOrderReservationIDs(ctx context.Context, orderID uuid.UUID
 }
 
 const listOrdersByUserID = `-- name: ListOrdersByUserID :many
-SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at FROM orders WHERE user_id = $1 ORDER BY created_at DESC
+SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id, seller_payout_cents FROM orders WHERE user_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]Order, error) {
@@ -125,6 +192,18 @@ func (q *Queries) ListOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]O
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BuyerName,
+			&i.BuyerEmail,
+			&i.BuyerCpf,
+			&i.BuyerPhone,
+			&i.BuyerCep,
+			&i.BuyerStreet,
+			&i.BuyerNeighborhood,
+			&i.BuyerCity,
+			&i.BuyerState,
+			&i.Kind,
+			&i.ResaleListingID,
+			&i.SellerPayoutCents,
 		); err != nil {
 			return nil, err
 		}

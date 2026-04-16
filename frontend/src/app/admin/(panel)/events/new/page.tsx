@@ -19,10 +19,11 @@ export default function NewEventPage() {
   const router = useRouter();
   const qc = useQueryClient();
 
-  const { data: venues } = useQuery({
-    queryKey: ["admin-venues"],
-    queryFn: adminListVenues,
+  const { data: venuesData } = useQuery({
+    queryKey: ["admin-venues", { limit: 100 }],
+    queryFn: () => adminListVenues({ limit: 100 }),
   });
+  const venues = venuesData?.venues;
 
   const [title, setTitle] = useState("");
   const [sport, setSport] = useState("");
@@ -115,7 +116,7 @@ export default function NewEventPage() {
             className={[
               "w-full bg-surface-lowest px-4 py-3 text-sm text-on-surface font-body",
               "rounded-sm border border-outline-variant",
-              "focus:outline-none focus:border-primary transition-colors duration-150",
+              "focus:outline-none focus:border-accent transition-colors duration-150",
               errors.sport ? "border-error" : "",
             ]
               .filter(Boolean)
@@ -149,7 +150,7 @@ export default function NewEventPage() {
             className={[
               "w-full bg-surface-lowest px-4 py-3 text-sm text-on-surface font-body",
               "rounded-sm border border-outline-variant",
-              "focus:outline-none focus:border-primary transition-colors duration-150",
+              "focus:outline-none focus:border-accent transition-colors duration-150",
               errors.venueId ? "border-error" : "",
             ]
               .filter(Boolean)

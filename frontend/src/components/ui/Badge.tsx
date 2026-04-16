@@ -7,7 +7,7 @@ interface BadgeProps {
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  vibe: "bg-primary text-on-primary",
+  vibe: "bg-accent text-on-accent",
   status: "bg-surface-dim text-on-surface",
   outline: "border border-outline-variant text-on-surface bg-transparent",
 };

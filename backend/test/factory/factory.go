@@ -1,21 +1,33 @@
 package factory
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 )
 
-func NewTestVenue() *entity.Venue {
+// NewTestOrganization returns a valid organization (not persisted).
+func NewTestOrganization() *entity.Organization {
+	slug := "tst-" + strings.ReplaceAll(uuid.New().String(), "-", "")
+	o, err := entity.NewOrganization("Test Org", slug)
+	if err != nil {
+		panic(err)
+	}
+	return o
+}
+
+func NewTestVenue(organizationID uuid.UUID) *entity.Venue {
 	return &entity.Venue{
-		ID:        uuid.New(),
-		Name:      "Arena MRV",
-		City:      "Belo Horizonte",
-		State:     "MG",
-		Capacity:  46000,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:             uuid.New(),
+		OrganizationID: organizationID,
+		Name:           "Arena MRV",
+		City:           "Belo Horizonte",
+		State:          "MG",
+		Capacity:       46000,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 }
 

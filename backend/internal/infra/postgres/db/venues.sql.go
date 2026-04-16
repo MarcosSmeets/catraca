@@ -12,17 +12,18 @@ import (
 )
 
 const createVenue = `-- name: CreateVenue :one
-INSERT INTO venues (id, name, city, state, capacity)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, city, state, capacity, created_at, updated_at, deleted_at
+INSERT INTO venues (id, name, city, state, capacity, organization_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, name, city, state, capacity, created_at, updated_at, deleted_at, organization_id
 `
 
 type CreateVenueParams struct {
-	ID       uuid.UUID `json:"id"`
-	Name     string    `json:"name"`
-	City     string    `json:"city"`
-	State    string    `json:"state"`
-	Capacity int32     `json:"capacity"`
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	City           string    `json:"city"`
+	State          string    `json:"state"`
+	Capacity       int32     `json:"capacity"`
+	OrganizationID uuid.UUID `json:"organization_id"`
 }
 
 func (q *Queries) CreateVenue(ctx context.Context, arg CreateVenueParams) (Venue, error) {
@@ -32,6 +33,7 @@ func (q *Queries) CreateVenue(ctx context.Context, arg CreateVenueParams) (Venue
 		arg.City,
 		arg.State,
 		arg.Capacity,
+		arg.OrganizationID,
 	)
 	var i Venue
 	err := row.Scan(
@@ -43,12 +45,13 @@ func (q *Queries) CreateVenue(ctx context.Context, arg CreateVenueParams) (Venue
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OrganizationID,
 	)
 	return i, err
 }
 
 const getVenueByID = `-- name: GetVenueByID :one
-SELECT id, name, city, state, capacity, created_at, updated_at, deleted_at FROM venues WHERE id = $1 AND deleted_at IS NULL
+SELECT id, name, city, state, capacity, created_at, updated_at, deleted_at, organization_id FROM venues WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetVenueByID(ctx context.Context, id uuid.UUID) (Venue, error) {
@@ -63,12 +66,13 @@ func (q *Queries) GetVenueByID(ctx context.Context, id uuid.UUID) (Venue, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OrganizationID,
 	)
 	return i, err
 }
 
 const listVenues = `-- name: ListVenues :many
-SELECT id, name, city, state, capacity, created_at, updated_at, deleted_at FROM venues WHERE deleted_at IS NULL ORDER BY name
+SELECT id, name, city, state, capacity, created_at, updated_at, deleted_at, organization_id FROM venues WHERE deleted_at IS NULL ORDER BY name
 `
 
 func (q *Queries) ListVenues(ctx context.Context) ([]Venue, error) {
@@ -89,6 +93,7 @@ func (q *Queries) ListVenues(ctx context.Context) ([]Venue, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OrganizationID,
 		); err != nil {
 			return nil, err
 		}

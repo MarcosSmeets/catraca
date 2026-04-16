@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +14,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/handler/dto"
 	"github.com/marcos-smeets/catraca/backend/internal/handler/http/sse"
 	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
+	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
 	ticketuc "github.com/marcos-smeets/catraca/backend/internal/usecase/ticket"
@@ -20,41 +22,59 @@ import (
 
 // UserHandler handles profile, orders, tickets, and reservation routes.
 type UserHandler struct {
-	userRepo      repository.UserRepository
-	sseHub        *sse.Hub
-	reserveSeatUC *reservationuc.ReserveSeatUseCase
-	releaseSeatUC *reservationuc.ReleaseSeatUseCase
-	createOrderUC *orderuc.CreateOrderUseCase
-	getOrderUC    *orderuc.GetOrderUseCase
-	listOrdersUC  *orderuc.ListOrdersUseCase
-	listTicketsUC *ticketuc.ListTicketsUseCase
-	getTicketUC   *ticketuc.GetTicketUseCase
+	userRepo                  repository.UserRepository
+	orgRepo                   repository.OrganizationRepository
+	sseHub                    *sse.Hub
+	reserveSeatUC             *reservationuc.ReserveSeatUseCase
+	releaseSeatUC             *reservationuc.ReleaseSeatUseCase
+	createOrderUC             *orderuc.CreateOrderUseCase
+	createCheckoutSessionUC   *orderuc.CreateCheckoutSessionUseCase
+	createPaymentIntentUC     *orderuc.CreatePaymentIntentUseCase
+	getOrderUC                *orderuc.GetOrderUseCase
+	listOrdersUC              *orderuc.ListOrdersUseCase
+	listTicketsUC             *ticketuc.ListTicketsUseCase
+	getTicketUC               *ticketuc.GetTicketUseCase
+	stripeEnabled             bool
+	checkoutSuccessURL        string
+	checkoutCancelURL         string
 }
 
 // UserDeps holds all dependencies for UserHandler.
 type UserDeps struct {
-	UserRepo      repository.UserRepository
-	SSEHub        *sse.Hub
-	ReserveSeatUC *reservationuc.ReserveSeatUseCase
-	ReleaseSeatUC *reservationuc.ReleaseSeatUseCase
-	CreateOrderUC *orderuc.CreateOrderUseCase
-	GetOrderUC    *orderuc.GetOrderUseCase
-	ListOrdersUC  *orderuc.ListOrdersUseCase
-	ListTicketsUC *ticketuc.ListTicketsUseCase
-	GetTicketUC   *ticketuc.GetTicketUseCase
+	UserRepo                  repository.UserRepository
+	OrganizationRepo          repository.OrganizationRepository
+	SSEHub                    *sse.Hub
+	ReserveSeatUC             *reservationuc.ReserveSeatUseCase
+	ReleaseSeatUC             *reservationuc.ReleaseSeatUseCase
+	CreateOrderUC             *orderuc.CreateOrderUseCase
+	CreateCheckoutSessionUC   *orderuc.CreateCheckoutSessionUseCase
+	CreatePaymentIntentUC     *orderuc.CreatePaymentIntentUseCase
+	GetOrderUC                *orderuc.GetOrderUseCase
+	ListOrdersUC              *orderuc.ListOrdersUseCase
+	ListTicketsUC             *ticketuc.ListTicketsUseCase
+	GetTicketUC               *ticketuc.GetTicketUseCase
+	StripeEnabled             bool
+	CheckoutSuccessURL        string
+	CheckoutCancelURL         string
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
-		userRepo:      deps.UserRepo,
-		sseHub:        deps.SSEHub,
-		reserveSeatUC: deps.ReserveSeatUC,
-		releaseSeatUC: deps.ReleaseSeatUC,
-		createOrderUC: deps.CreateOrderUC,
-		getOrderUC:    deps.GetOrderUC,
-		listOrdersUC:  deps.ListOrdersUC,
-		listTicketsUC: deps.ListTicketsUC,
-		getTicketUC:   deps.GetTicketUC,
+		userRepo:                  deps.UserRepo,
+		orgRepo:                   deps.OrganizationRepo,
+		sseHub:                    deps.SSEHub,
+		reserveSeatUC:             deps.ReserveSeatUC,
+		releaseSeatUC:             deps.ReleaseSeatUC,
+		createOrderUC:             deps.CreateOrderUC,
+		createCheckoutSessionUC:   deps.CreateCheckoutSessionUC,
+		createPaymentIntentUC:     deps.CreatePaymentIntentUC,
+		getOrderUC:                deps.GetOrderUC,
+		listOrdersUC:              deps.ListOrdersUC,
+		listTicketsUC:             deps.ListTicketsUC,
+		getTicketUC:               deps.GetTicketUC,
+		stripeEnabled:             deps.StripeEnabled,
+		checkoutSuccessURL:        deps.CheckoutSuccessURL,
+		checkoutCancelURL:         deps.CheckoutCancelURL,
 	}
 }
 
@@ -138,6 +158,20 @@ func (h *UserHandler) CreateReservation(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "eventId and at least one seatId are required")
 		return
 	}
+	orgSlug := strings.TrimSpace(strings.ToLower(req.OrgSlug))
+	if orgSlug == "" {
+		writeError(w, http.StatusBadRequest, "orgSlug is required")
+		return
+	}
+	org, err := h.orgRepo.GetBySlug(r.Context(), orgSlug)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "organization not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to resolve organization")
+		}
+		return
+	}
 
 	eventID, err := uuid.Parse(req.EventID)
 	if err != nil {
@@ -156,12 +190,19 @@ func (h *UserHandler) CreateReservation(w http.ResponseWriter, r *http.Request) 
 	}
 
 	output, err := h.reserveSeatUC.Execute(r.Context(), reservationuc.ReserveSeatInput{
-		UserID:  claims.UserID,
-		EventID: eventID,
-		SeatIDs: seatIDs,
+		UserID:                 claims.UserID,
+		EventID:                eventID,
+		SeatIDs:                seatIDs,
+		ExpectedOrganizationID: &org.ID,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, reservationuc.ErrOrganizationMismatch):
+			writeError(w, http.StatusForbidden, "event does not belong to this organization")
+			return
+		case errors.Is(err, reservationuc.ErrSeatWrongEvent):
+			writeError(w, http.StatusBadRequest, "seat does not belong to the event")
+			return
 		case errors.Is(err, reservationuc.ErrSeatNotAvailable):
 			writeError(w, http.StatusConflict, "one or more seats are not available")
 		case errors.Is(err, reservationuc.ErrSeatAlreadyLocked):
@@ -255,6 +296,20 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one reservationId is required")
 		return
 	}
+	orgSlug := strings.TrimSpace(strings.ToLower(req.OrgSlug))
+	if orgSlug == "" {
+		writeError(w, http.StatusBadRequest, "orgSlug is required")
+		return
+	}
+	org, err := h.orgRepo.GetBySlug(r.Context(), orgSlug)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "organization not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to resolve organization")
+		}
+		return
+	}
 
 	resIDs := make([]uuid.UUID, 0, len(req.ReservationIDs))
 	for _, s := range req.ReservationIDs {
@@ -267,11 +322,26 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	output, err := h.createOrderUC.Execute(r.Context(), orderuc.CreateOrderInput{
-		UserID:         claims.UserID,
-		ReservationIDs: resIDs,
+		UserID:                 claims.UserID,
+		ReservationIDs:         resIDs,
+		ExpectedOrganizationID: &org.ID,
+		Buyer: entity.BuyerDetails{
+			Name:         req.BuyerName,
+			Email:        req.BuyerEmail,
+			CPF:          req.BuyerCPF,
+			Phone:        req.BuyerPhone,
+			CEP:          req.BuyerCEP,
+			Street:       req.BuyerStreet,
+			Neighborhood: req.BuyerNeighborhood,
+			City:         req.BuyerCity,
+			State:        req.BuyerState,
+		},
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, orderuc.ErrOrganizationMismatch):
+			writeError(w, http.StatusForbidden, "reservations do not belong to this organization")
+			return
 		case errors.Is(err, orderuc.ErrReservationNotFound):
 			writeError(w, http.StatusNotFound, "reservation not found")
 		case errors.Is(err, orderuc.ErrReservationExpired):
@@ -285,9 +355,95 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, dto.CreateOrderResponse{
-		OrderID:      output.Order.ID.String(),
-		ClientSecret: output.ClientSecret,
-		TotalCents:   output.Order.TotalCents,
+		OrderID:       output.Order.ID.String(),
+		TotalCents:    output.Order.TotalCents,
+		StripeEnabled: h.stripeEnabled,
+	})
+}
+
+func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	orderID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid order ID")
+		return
+	}
+
+	var req dto.CreateCheckoutSessionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	out, err := h.createCheckoutSessionUC.Execute(r.Context(), orderuc.CreateCheckoutSessionInput{
+		UserID:         claims.UserID,
+		OrderID:        orderID,
+		SuccessURLBase: h.checkoutSuccessURL,
+		CancelURLBase:  h.checkoutCancelURL,
+	})
+	if err != nil {
+		var stripeSessErr *stripeinfra.CheckoutSessionError
+		if errors.As(err, &stripeSessErr) {
+			writeError(w, http.StatusBadRequest, stripeSessErr.Message)
+			return
+		}
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			writeError(w, http.StatusNotFound, "order not found")
+		case errors.Is(err, orderuc.ErrOrderNotPending):
+			writeError(w, http.StatusConflict, "order is not pending payment")
+		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
+			writeError(w, http.StatusServiceUnavailable, "stripe checkout is not configured")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to create checkout session")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dto.CreateCheckoutSessionResponse{URL: out.URL})
+}
+
+func (h *UserHandler) CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	orderID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid order ID")
+		return
+	}
+
+	out, err := h.createPaymentIntentUC.Execute(r.Context(), orderuc.CreatePaymentIntentInput{
+		UserID:  claims.UserID,
+		OrderID: orderID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			writeError(w, http.StatusNotFound, "order not found")
+		case errors.Is(err, orderuc.ErrOrderNotPending):
+			writeError(w, http.StatusConflict, "order is not pending payment")
+		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
+			writeError(w, http.StatusServiceUnavailable, "stripe is not configured")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to create payment intent")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dto.CreatePaymentIntentResponse{
+		ClientSecret: out.ClientSecret,
+		AmountCents:  out.AmountCents,
 	})
 }
 

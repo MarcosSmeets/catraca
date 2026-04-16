@@ -9,6 +9,7 @@ type ReservationResponse struct {
 }
 
 type CreateReservationRequest struct {
+	OrgSlug string   `json:"orgSlug"`
 	EventID string   `json:"eventId"`
 	SeatIDs []string `json:"seatIds"`
 }
@@ -27,13 +28,40 @@ type OrderResponse struct {
 }
 
 type CreateOrderRequest struct {
-	ReservationIDs []string `json:"reservationIds"`
+	OrgSlug           string   `json:"orgSlug"`
+	ReservationIDs    []string `json:"reservationIds"`
+	BuyerName         string   `json:"buyerName"`
+	BuyerEmail        string   `json:"buyerEmail"`
+	BuyerCPF          string   `json:"buyerCpf"`
+	BuyerPhone        string   `json:"buyerPhone"`
+	BuyerCEP          string   `json:"buyerCep"`
+	BuyerStreet       string   `json:"buyerStreet"`
+	BuyerNeighborhood string   `json:"buyerNeighborhood"`
+	BuyerCity         string   `json:"buyerCity"`
+	BuyerState        string   `json:"buyerState"`
 }
 
+// CreateOrderResponse is returned after creating a pending order. Payment happens via Stripe Checkout (redirect).
 type CreateOrderResponse struct {
-	OrderID      string `json:"orderId"`
+	OrderID       string `json:"orderId"`
+	TotalCents    int64  `json:"totalCents"`
+	StripeEnabled bool   `json:"stripeEnabled"` // false: use dev /dev/orders/:id/pay when STRIPE_SECRET_KEY is unset
+}
+
+// CreateCheckoutSessionRequest is the JSON body for POST .../checkout-session (may be {}).
+// Payment methods (card and PIX when valid for BRL) are enabled on Stripe Checkout — no field needed here.
+type CreateCheckoutSessionRequest struct{}
+
+type CreateCheckoutSessionResponse struct {
+	URL string `json:"url"`
+}
+
+// CreatePaymentIntentRequest is the JSON body for POST .../payment-intent (may be {}).
+type CreatePaymentIntentRequest struct{}
+
+type CreatePaymentIntentResponse struct {
 	ClientSecret string `json:"clientSecret"`
-	TotalCents   int64  `json:"totalCents"`
+	AmountCents  int64  `json:"amountCents"`
 }
 
 type TicketEventInfo struct {

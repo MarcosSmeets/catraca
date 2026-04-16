@@ -25,8 +25,12 @@ func isAlreadyExists(err error) bool {
 
 // LoadDemoData populates the database with demo venues, events, and seats.
 // It is idempotent: if a record already exists (unique key collision) it is skipped.
-func LoadDemoData(ctx context.Context, eventRepo repository.EventRepository, venueRepo repository.VenueRepository, seatRepo repository.SeatRepository) error {
-	venues := createVenues()
+func LoadDemoData(ctx context.Context, orgRepo repository.OrganizationRepository, eventRepo repository.EventRepository, venueRepo repository.VenueRepository, seatRepo repository.SeatRepository) error {
+	org, err := orgRepo.GetBySlug(ctx, "legado")
+	if err != nil {
+		return fmt.Errorf("seed: resolve organization slug legado: %w", err)
+	}
+	venues := createVenues(org.ID)
 	for _, v := range venues {
 		if err := venueRepo.Create(ctx, v); err != nil {
 			if isAlreadyExists(err) {
@@ -73,14 +77,14 @@ func LoadDemoData(ctx context.Context, eventRepo repository.EventRepository, ven
 	return nil
 }
 
-func createVenues() []*entity.Venue {
+func createVenues(organizationID uuid.UUID) []*entity.Venue {
 	return []*entity.Venue{
-		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Name: "Arena MRV", City: "Belo Horizonte", State: "MG", Capacity: 46000, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Name: "Neo Química Arena", City: "São Paulo", State: "SP", Capacity: 49205, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000003"), Name: "Maracanã", City: "Rio de Janeiro", State: "RJ", Capacity: 78838, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000004"), Name: "Ginásio do Ibirapuera", City: "São Paulo", State: "SP", Capacity: 8000, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000005"), Name: "Arena da Baixada", City: "Curitiba", State: "PR", Capacity: 42372, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000006"), Name: "Castelão", City: "Fortaleza", State: "CE", Capacity: 63903, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), OrganizationID: organizationID, Name: "Arena MRV", City: "Belo Horizonte", State: "MG", Capacity: 46000, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), OrganizationID: organizationID, Name: "Neo Química Arena", City: "São Paulo", State: "SP", Capacity: 49205, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000003"), OrganizationID: organizationID, Name: "Maracanã", City: "Rio de Janeiro", State: "RJ", Capacity: 78838, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000004"), OrganizationID: organizationID, Name: "Ginásio do Ibirapuera", City: "São Paulo", State: "SP", Capacity: 8000, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000005"), OrganizationID: organizationID, Name: "Arena da Baixada", City: "Curitiba", State: "PR", Capacity: 42372, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: uuid.MustParse("00000000-0000-0000-0000-000000000006"), OrganizationID: organizationID, Name: "Castelão", City: "Fortaleza", State: "CE", Capacity: 63903, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	}
 }
 

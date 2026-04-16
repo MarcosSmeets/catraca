@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	stripelib "github.com/stripe/stripe-go/v76"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/marcos-smeets/catraca/backend/internal/config"
@@ -23,13 +25,15 @@ import (
 	jwtinfra "github.com/marcos-smeets/catraca/backend/internal/infra/jwt"
 	pginfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
 	redisinfra "github.com/marcos-smeets/catraca/backend/internal/infra/redis"
-	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
 	"github.com/marcos-smeets/catraca/backend/internal/infra/seed"
+	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
+	userevents "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
+	orguc "github.com/marcos-smeets/catraca/backend/internal/usecase/organization"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
 	ticketuc "github.com/marcos-smeets/catraca/backend/internal/usecase/ticket"
-	userevents "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
 	useruc "github.com/marcos-smeets/catraca/backend/internal/usecase/user"
+	resaleuc "github.com/marcos-smeets/catraca/backend/internal/usecase/resale"
 	"github.com/marcos-smeets/catraca/backend/internal/worker"
 )
 
@@ -62,6 +66,7 @@ func main() {
 
 	// --- Repositories ---
 	userRepo := pginfra.NewUserRepository(pool, cfg.PhoneEncryptionKey)
+	orgRepo := pginfra.NewOrganizationRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 	venueRepo := pginfra.NewVenueRepository(pool)
@@ -69,11 +74,15 @@ func main() {
 	reservationRepo := pginfra.NewReservationRepository(pool)
 	orderRepo := pginfra.NewOrderRepository(pool)
 	ticketRepo := pginfra.NewTicketRepository(pool)
+	resaleListingRepo := pginfra.NewResaleListingRepository(pool)
+	resaleHoldRepo := pginfra.NewResaleListingHoldRepository(pool)
+	stripeWebhookInboxRepo := pginfra.NewStripeWebhookInboxRepository(pool)
+	adminMetricsRepo := pginfra.NewAdminMetricsRepository(pool)
 
 	// --- Seed demo data (idempotent) ---
 	if cfg.AppSeed {
 		log.Info().Msg("seeding demo data...")
-		if err := seed.LoadDemoData(ctx, eventRepo, venueRepo, seatRepo); err != nil {
+		if err := seed.LoadDemoData(ctx, orgRepo, eventRepo, venueRepo, seatRepo); err != nil {
 			log.Warn().Err(err).Msg("seed completed with warnings (data may already exist)")
 		} else {
 			log.Info().Msg("seed complete")
@@ -97,41 +106,87 @@ func main() {
 	resetPasswordUC := useruc.NewResetPasswordUseCase(userRepo, tokenStore)
 
 	listEventsUC := userevents.NewListEventsUseCase(eventRepo)
-	getEventUC := userevents.NewGetEventUseCase(eventRepo)
-	listSeatsUC := userevents.NewListSeatsUseCase(seatRepo)
+	getEventUC := userevents.NewGetEventUseCase(eventRepo, orgRepo)
+	listSeatsUC := userevents.NewListSeatsUseCase(getEventUC, seatRepo)
 
-	reserveSeatUC := reservationuc.NewReserveSeatUseCase(seatRepo, reservationRepo, seatLocker)
+	reserveSeatUC := reservationuc.NewReserveSeatUseCase(seatRepo, reservationRepo, eventRepo, seatLocker)
 	releaseSeatUC := reservationuc.NewReleaseSeatUseCase(reservationRepo, seatRepo, seatLocker)
 
-	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo, paymentGateway)
+	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo)
+	createCheckoutSessionUC := orderuc.NewCreateCheckoutSessionUseCase(orderRepo, paymentGateway, cfg.StripeCheckoutEnablePix)
+	createPaymentIntentUC := orderuc.NewCreatePaymentIntentUseCase(orderRepo, paymentGateway)
 	getOrderUC := orderuc.NewGetOrderUseCase(orderRepo)
 	listOrdersUC := orderuc.NewListOrdersUseCase(orderRepo)
 
 	listTicketsUC := ticketuc.NewListTicketsUseCase(ticketRepo)
-	getTicketUC := ticketuc.NewGetTicketUseCase(ticketRepo, orderRepo)
+	getTicketUC := ticketuc.NewGetTicketUseCase(ticketRepo)
 	scanTicketUC := ticketuc.NewScanTicketUseCase(ticketRepo)
 
+	createResaleListingUC := resaleuc.NewCreateResaleListingUseCase(ticketRepo, eventRepo, seatRepo, resaleListingRepo)
+	cancelResaleListingUC := resaleuc.NewCancelResaleListingUseCase(resaleListingRepo)
+	listMyResalesUC := resaleuc.NewListMyResaleListingsUseCase(resaleListingRepo)
+	listEventResalesUC := resaleuc.NewListEventResaleListingsUseCase(resaleListingRepo)
+	listGlobalResalesUC := resaleuc.NewListGlobalResaleListingsUseCase(resaleListingRepo)
+	reserveResaleHoldUC := resaleuc.NewReserveResaleListingUseCase(resaleListingRepo, resaleHoldRepo)
+	releaseResaleHoldUC := resaleuc.NewReleaseResaleListingHoldUseCase(resaleHoldRepo)
+	createResaleCheckoutUC := resaleuc.NewCreateResaleCheckoutUseCase(orderRepo, resaleListingRepo, resaleHoldRepo, paymentGateway)
+
 	// --- Workers ---
-	webhookWorker := worker.NewPaymentWebhookWorker(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub)
-	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, sseHub)
+	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, resaleListingRepo, orgRepo, seatLocker, sseHub, paymentGateway)
+	stripeInboxWorker := worker.NewStripeInboxWorker(pool, stripeWebhookInboxRepo, paymentGateway, stripePaymentProcessor)
+	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, orderRepo, resaleHoldRepo, sseHub)
 
 	// --- Handlers ---
-	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AppEnv)
-	eventHandler := httphandler.NewEventHandler(listEventsUC, getEventUC, listSeatsUC)
-	sseHandler := httphandler.NewSSEHandler(sseHub)
-	webhookHandler := httphandler.NewWebhookHandler(paymentGateway, webhookWorker)
-	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo)
+	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AuthCookieSecure)
+	eventHandler := httphandler.NewEventHandler(listEventsUC, getEventUC, listSeatsUC, orgRepo)
+	sseHandler := httphandler.NewSSEHandler(sseHub, orgRepo, getEventUC)
+	webhookHandler := httphandler.NewWebhookHandler(stripeWebhookInboxRepo)
+	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo, orgRepo, userRepo)
+	adminMetricsHandler := httphandler.NewAdminMetricsHandler(adminMetricsRepo)
+	var subscriptionCheckoutUC *orguc.CreateSubscriptionCheckoutUseCase
+	if strings.TrimSpace(cfg.StripeSubscriptionPriceID) != "" {
+		subscriptionCheckoutUC = orguc.NewCreateSubscriptionCheckoutUseCase(
+			orgRepo,
+			paymentGateway,
+			cfg.StripeSubscriptionPriceID,
+			cfg.StripeSubscriptionSuccessURL,
+			cfg.StripeSubscriptionCancelURL,
+		)
+	}
+	adminOrganizationsHandler := httphandler.NewAdminOrganizationsHandler(orgRepo, userRepo, subscriptionCheckoutUC)
 	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
+	resaleHandler := httphandler.NewResaleHandler(httphandler.ResaleHandlerDeps{
+		CreateListing:    createResaleListingUC,
+		CancelListing:    cancelResaleListingUC,
+		ListMine:         listMyResalesUC,
+		ListByEvent:      listEventResalesUC,
+		ListGlobal:       listGlobalResalesUC,
+		ReserveHold:      reserveResaleHoldUC,
+		ReleaseHold:      releaseResaleHoldUC,
+		CreateCheckout:   createResaleCheckoutUC,
+		OrganizationRepo: orgRepo,
+		GetEventUC:       getEventUC,
+		StripeEnabled:    paymentGateway.IsConfigured(),
+		CheckoutSuccess:  cfg.StripeCheckoutSuccessURL,
+		CheckoutCancel:   cfg.StripeCheckoutCancelURL,
+	})
+
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
-		UserRepo:      userRepo,
-		SSEHub:        sseHub,
-		ReserveSeatUC: reserveSeatUC,
-		ReleaseSeatUC: releaseSeatUC,
-		CreateOrderUC: createOrderUC,
-		GetOrderUC:    getOrderUC,
-		ListOrdersUC:  listOrdersUC,
-		ListTicketsUC: listTicketsUC,
-		GetTicketUC:   getTicketUC,
+		UserRepo:                userRepo,
+		OrganizationRepo:        orgRepo,
+		SSEHub:                  sseHub,
+		ReserveSeatUC:           reserveSeatUC,
+		ReleaseSeatUC:           releaseSeatUC,
+		CreateOrderUC:           createOrderUC,
+		CreateCheckoutSessionUC: createCheckoutSessionUC,
+		CreatePaymentIntentUC:  createPaymentIntentUC,
+		GetOrderUC:              getOrderUC,
+		ListOrdersUC:            listOrdersUC,
+		ListTicketsUC:           listTicketsUC,
+		GetTicketUC:             getTicketUC,
+		StripeEnabled:           paymentGateway.IsConfigured(),
+		CheckoutSuccessURL:      cfg.StripeCheckoutSuccessURL,
+		CheckoutCancelURL:       cfg.StripeCheckoutCancelURL,
 	})
 
 	// --- Router ---
@@ -167,11 +222,17 @@ func main() {
 	r.Post("/admin/auth/login", authHandler.AdminLogin)
 	r.Post("/admin/auth/logout", authHandler.AdminLogout)
 
-	// Events (public)
-	r.Get("/events", eventHandler.List)
-	r.Get("/events/{id}", eventHandler.Get)
-	r.Get("/events/{id}/seats", eventHandler.ListSeats)
-	r.Get("/events/{id}/seats/stream", sseHandler.SeatStream)
+	// Public resale marketplace (all organizations)
+	r.Get("/resale-listings", resaleHandler.ListGlobalResaleListings)
+
+	// Public catalog (scoped by organization slug)
+	r.Route("/orgs/{slug}", func(r chi.Router) {
+		r.Get("/events", eventHandler.ListByOrganization)
+		r.Get("/events/{id}", eventHandler.GetByOrganization)
+		r.Get("/events/{id}/resale-listings", resaleHandler.ListResaleListingsByEventForOrganization)
+		r.Get("/events/{id}/seats", eventHandler.ListSeatsByOrganization)
+		r.Get("/events/{id}/seats/stream", sseHandler.SeatStreamForOrganization)
+	})
 
 	// Stripe webhook (public — Stripe sends its own signature)
 	r.Post("/webhooks/stripe", webhookHandler.HandleStripe)
@@ -190,10 +251,11 @@ func main() {
 				http.Error(w, `{"error":"order not found"}`, http.StatusNotFound)
 				return
 			}
-			webhookWorker.Enqueue(worker.WebhookEvent{
-				Type:    "payment_intent.succeeded",
-				Payload: []byte(`{"id":"` + order.StripePaymentID + `","metadata":{"order_id":"` + order.ID.String() + `","user_id":"` + order.UserID.String() + `"}}`),
-			})
+			payload := []byte(`{"id":"` + order.StripePaymentID + `","metadata":{"order_id":"` + order.ID.String() + `","user_id":"` + order.UserID.String() + `"}}`)
+			if err := stripePaymentProcessor.ProcessStripeEvent(r.Context(), string(stripelib.EventTypePaymentIntentSucceeded), payload); err != nil {
+				http.Error(w, `{"error":"simulated payment failed"}`, http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"message":"payment simulated","orderId":"` + orderID.String() + `"}`))
@@ -214,8 +276,18 @@ func main() {
 
 		// Orders
 		r.Post("/orders", userHandler.CreateOrder)
+		r.Post("/orders/{id}/checkout-session", userHandler.CreateCheckoutSession)
+		r.Post("/orders/{id}/payment-intent", userHandler.CreatePaymentIntent)
 		r.Get("/me/orders", userHandler.ListOrders)
 		r.Get("/me/orders/{id}", userHandler.GetOrder)
+
+		// Resale listings
+		r.Post("/me/tickets/{id}/resale-listings", resaleHandler.PostTicketResaleListing)
+		r.Delete("/me/resale-listings/{id}", resaleHandler.DeleteResaleListing)
+		r.Get("/me/resale-listings", resaleHandler.ListMyResaleListings)
+		r.Post("/me/resale-listings/{id}/hold", resaleHandler.PostResaleListingHold)
+		r.Delete("/me/resale-listings/holds/{holdId}", resaleHandler.DeleteResaleListingHold)
+		r.Post("/resale-listings/{id}/checkout-session", resaleHandler.PostResaleListingCheckout)
 
 		// Tickets
 		r.Get("/me/tickets", userHandler.ListTickets)
@@ -225,13 +297,23 @@ func main() {
 	// Admin routes
 	r.Group(func(r chi.Router) {
 		r.Use(authmw.Auth(tokenService))
-		r.Use(authmw.RequireRole("admin", "organizer"))
+		r.Use(authmw.RequireRole("admin", "organizer", "platform_admin"))
+
+		r.Get("/admin/metrics", adminMetricsHandler.GetDashboard)
+		r.Get("/admin/organizations", adminOrganizationsHandler.List)
+		r.Post("/admin/organizations", adminOrganizationsHandler.Create)
+		r.Patch("/admin/organizations/{id}", adminOrganizationsHandler.Patch)
+		r.Post("/admin/organizations/{id}/billing/checkout", adminOrganizationsHandler.PostSubscriptionCheckout)
+		r.Post("/admin/organizations/{id}/members", adminOrganizationsHandler.PostMember)
 
 		r.Get("/admin/venues", adminHandler.ListVenues)
+		r.Get("/admin/venues/states", adminHandler.ListVenueStates)
 		r.Post("/admin/venues", adminHandler.CreateVenue)
 
 		r.Get("/admin/events", adminHandler.ListEvents)
 		r.Post("/admin/events", adminHandler.CreateEvent)
+		r.Get("/admin/events/{id}", adminHandler.GetEvent)
+		r.Get("/admin/events/{id}/seats", adminHandler.ListEventSeats)
 		r.Patch("/admin/events/{id}", adminHandler.UpdateEvent)
 		r.Post("/admin/events/{id}/publish", adminHandler.PublishEvent)
 
@@ -261,11 +343,15 @@ func main() {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return webhookWorker.Run(gCtx)
+		return stripeInboxWorker.Run(gCtx)
 	})
 
 	g.Go(func() error {
 		return expiryWorker.Run(gCtx)
+	})
+
+	g.Go(func() error {
+		return expiryWorker.RunSweeper(gCtx, time.Minute)
 	})
 
 	g.Go(func() error {

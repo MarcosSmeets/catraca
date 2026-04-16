@@ -5,9 +5,10 @@ import (
 )
 
 type TokenClaims struct {
-	UserID uuid.UUID
-	Email  string
-	Role   string
+	UserID           uuid.UUID
+	Email            string
+	Role             string
+	OrganizationID   *uuid.UUID
 }
 
 type TokenPair struct {

@@ -4,8 +4,8 @@ import { useAuthStore } from "@/store/auth";
 import type { Order } from "./mock-data";
 
 export interface CreateOrderRequest {
+  orgSlug: string;
   reservationIds: string[];
-  paymentIntentId: string;
 }
 
 // List orders for the authenticated user — backend: GET /me/orders
@@ -20,13 +20,24 @@ async function fetchOrder(id: string): Promise<Order> {
   return apiFetch<Order>(`/me/orders/${id}`, { accessToken: token });
 }
 
-async function createOrder(data: CreateOrderRequest): Promise<Order> {
+async function createOrder(data: CreateOrderRequest): Promise<CreateOrderResponse> {
   const token = useAuthStore.getState().accessToken;
-  return apiFetch<Order>("/orders", {
+  return apiFetch<CreateOrderResponse>("/orders", {
     method: "POST",
     body: JSON.stringify(data),
     accessToken: token,
   });
+}
+
+/** Response from POST /orders — payment continues via Stripe Checkout redirect or dev simulation. */
+export interface CreateOrderResponse {
+  orderId: string;
+  totalCents: number;
+  stripeEnabled: boolean;
+}
+
+export interface CreateCheckoutSessionResponse {
+  url: string;
 }
 
 export function useOrders() {

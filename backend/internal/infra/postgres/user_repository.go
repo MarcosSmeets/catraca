@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
@@ -36,14 +37,19 @@ func (r *UserRepository) Create(ctx context.Context, u *entity.User) error {
 	if err != nil {
 		return fmt.Errorf("UserRepository.Create: encrypt phone: %w", err)
 	}
+	var orgID pgtype.UUID
+	if u.OrganizationID != nil {
+		orgID = pgtype.UUID{Bytes: *u.OrganizationID, Valid: true}
+	}
 	_, err = r.queries.CreateUser(ctx, pgdb.CreateUserParams{
-		ID:           u.ID,
-		Name:         u.Name,
-		Email:        u.Email,
-		PasswordHash: u.PasswordHash,
-		CpfHash:      u.CPFHash,
-		Phone:        encPhone,
-		Role:         string(u.Role),
+		ID:             u.ID,
+		Name:           u.Name,
+		Email:          u.Email,
+		PasswordHash:   u.PasswordHash,
+		CpfHash:        u.CPFHash,
+		Phone:          encPhone,
+		Role:           string(u.Role),
+		OrganizationID: orgID,
 	})
 	if err != nil {
 		return fmt.Errorf("UserRepository.Create: %w", err)
@@ -98,6 +104,29 @@ func (r *UserRepository) Update(ctx context.Context, u *entity.User) error {
 	return nil
 }
 
+func (r *UserRepository) UpdateStripeConnect(ctx context.Context, userID uuid.UUID, stripeConnectAccountID string, chargesEnabled bool) error {
+	if err := r.queries.UpdateUserStripeConnect(ctx, pgdb.UpdateUserStripeConnectParams{
+		ID:                          userID,
+		StripeConnectAccountID:      stripeConnectAccountID,
+		StripeConnectChargesEnabled: chargesEnabled,
+	}); err != nil {
+		return fmt.Errorf("UserRepository.UpdateStripeConnect: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) SetOrganizationAndRole(ctx context.Context, userID, organizationID uuid.UUID, role entity.UserRole) error {
+	err := r.queries.SetUserOrganizationAndRole(ctx, pgdb.SetUserOrganizationAndRoleParams{
+		ID:             userID,
+		OrganizationID: pgtype.UUID{Bytes: organizationID, Valid: true},
+		Role:           string(role),
+	})
+	if err != nil {
+		return fmt.Errorf("UserRepository.SetOrganizationAndRole: %w", err)
+	}
+	return nil
+}
+
 func (r *UserRepository) ExistsByCPFHash(ctx context.Context, cpfHash string) (bool, error) {
 	exists, err := r.queries.ExistsByCPFHash(ctx, cpfHash)
 	if err != nil {
@@ -116,16 +145,24 @@ func (r *UserRepository) dbUserToEntity(u pgdb.User) (*entity.User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("UserRepository: decrypt phone: %w", err)
 	}
+	var orgPtr *uuid.UUID
+	if u.OrganizationID.Valid {
+		id := uuid.UUID(u.OrganizationID.Bytes)
+		orgPtr = &id
+	}
 	return &entity.User{
-		ID:           u.ID,
-		Name:         u.Name,
-		Email:        u.Email,
-		PasswordHash: u.PasswordHash,
-		CPFHash:      u.CpfHash,
-		Phone:        phone,
-		Role:         entity.UserRole(u.Role),
-		CreatedAt:    u.CreatedAt,
-		UpdatedAt:    u.UpdatedAt,
-		DeletedAt:    deletedAt,
+		ID:                          u.ID,
+		Name:                        u.Name,
+		Email:                       u.Email,
+		PasswordHash:                u.PasswordHash,
+		CPFHash:                     u.CpfHash,
+		Phone:                       phone,
+		Role:                        entity.UserRole(u.Role),
+		OrganizationID:              orgPtr,
+		StripeConnectAccountID:      u.StripeConnectAccountID,
+		StripeConnectChargesEnabled: u.StripeConnectChargesEnabled,
+		CreatedAt:                   u.CreatedAt,
+		UpdatedAt:                   u.UpdatedAt,
+		DeletedAt:                   deletedAt,
 	}, nil
 }

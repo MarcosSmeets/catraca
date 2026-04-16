@@ -9,7 +9,8 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { EventCardSkeleton } from "@/components/ui/Skeleton";
 import { sportLabel, type SportType, type Event, formatCurrency } from "@/lib/mock-data";
-import { useEvents } from "@/lib/events-api";
+import { useDefaultOrgEvents } from "@/lib/events-api";
+import { DEFAULT_PUBLIC_ORG_SLUG } from "@/lib/default-org-slug";
 
 function getImg(event: Event): string {
   return event.imageUrl || "/placeholder-event.svg";
@@ -24,7 +25,7 @@ const SPORT_FILTERS: { sport: SportType | "ALL"; label: string }[] = [
 ];
 
 export default function HomePage() {
-  const { data, isLoading } = useEvents({
+  const { data, isLoading } = useDefaultOrgEvents({
     limit: 8,
     dateFrom: new Date().toISOString().split("T")[0],
   });
@@ -76,7 +77,7 @@ export default function HomePage() {
                   {heroEvent.venue.name} · {heroEvent.venue.city},{" "}
                   {heroEvent.venue.state}
                 </p>
-                <Link href={`/events/${heroEvent.id}`}>
+                <Link href={`/e/${DEFAULT_PUBLIC_ORG_SLUG}/events/${heroEvent.id}`}>
                   <Button size="lg" variant="secondary">
                     Ver Ingressos
                   </Button>
@@ -103,8 +104,12 @@ export default function HomePage() {
             {SPORT_FILTERS.map(({ sport, label }) => (
               <Link
                 key={sport}
-                href={sport === "ALL" ? "/search" : `/search?sport=${sport}`}
-                className="shrink-0 px-4 py-2 rounded-full text-xs font-display font-semibold uppercase tracking-tight transition-colors duration-150 bg-surface-lowest text-on-surface hover:bg-primary hover:text-on-primary"
+                href={
+                  sport === "ALL"
+                    ? `/search?org=${DEFAULT_PUBLIC_ORG_SLUG}`
+                    : `/search?org=${DEFAULT_PUBLIC_ORG_SLUG}&sport=${sport}`
+                }
+                className="shrink-0 px-4 py-2 rounded-full text-xs font-display font-semibold uppercase tracking-tight transition-colors duration-150 bg-surface-lowest text-on-surface hover:bg-accent hover:text-on-accent"
               >
                 {label}
               </Link>
@@ -126,7 +131,7 @@ export default function HomePage() {
               </h2>
             </div>
             <Link
-              href="/search"
+              href={`/search?org=${DEFAULT_PUBLIC_ORG_SLUG}`}
               className="text-sm font-body text-on-surface/50 hover:text-on-surface transition-colors duration-150 underline underline-offset-4"
             >
               Ver todos
@@ -136,7 +141,13 @@ export default function HomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {isLoading
               ? Array.from({ length: 4 }).map((_, i) => <EventCardSkeleton key={i} />)
-              : featured.map((event) => <EventCard key={event.id} event={event} />)}
+              : featured.map((event) => (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    orgSlug={DEFAULT_PUBLIC_ORG_SLUG}
+                  />
+                ))}
           </div>
         </div>
       </section>
@@ -162,6 +173,7 @@ export default function HomePage() {
                 : upcoming.map((event, idx) => (
                     <UpcomingRow
                       key={event.id}
+                      orgSlug={DEFAULT_PUBLIC_ORG_SLUG}
                       event={event}
                       isLast={idx === upcoming.length - 1}
                     />
@@ -174,10 +186,18 @@ export default function HomePage() {
   );
 }
 
-function UpcomingRow({ event, isLast }: { event: Event; isLast: boolean }) {
+function UpcomingRow({
+  orgSlug,
+  event,
+  isLast,
+}: {
+  orgSlug: string;
+  event: Event;
+  isLast: boolean;
+}) {
   const [imgSrc, setImgSrc] = useState(getImg(event));
   return (
-    <Link href={`/events/${event.id}`} className="group block">
+    <Link href={`/e/${orgSlug}/events/${event.id}`} className="group block">
       <div
         className={[
           "flex items-center gap-6 py-5 transition-colors duration-150",

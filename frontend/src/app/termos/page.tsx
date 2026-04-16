@@ -92,7 +92,7 @@ export default function TermosPage() {
             </h2>
             <p>
               Em caso de dúvidas, entre em contato pelo e-mail{" "}
-              <a href="mailto:suporte@catraca.com.br" className="text-primary hover:underline">
+              <a href="mailto:suporte@catraca.com.br" className="text-accent hover:underline">
                 suporte@catraca.com.br
               </a>.
             </p>

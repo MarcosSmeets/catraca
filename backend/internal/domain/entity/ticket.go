@@ -8,30 +8,32 @@ import (
 )
 
 type Ticket struct {
-	ID          uuid.UUID
-	OrderID     uuid.UUID
-	EventID     uuid.UUID
-	SeatID      uuid.UUID
-	QRCode      string
-	Status      TicketStatus
-	UsedAt      *time.Time
-	PurchasedAt time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID           uuid.UUID
+	OrderID      uuid.UUID
+	EventID      uuid.UUID
+	SeatID       uuid.UUID
+	HolderUserID uuid.UUID
+	QRCode       string
+	Status       TicketStatus
+	UsedAt       *time.Time
+	PurchasedAt  time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
-func NewTicket(orderID, eventID, seatID uuid.UUID) (*Ticket, error) {
+func NewTicket(orderID, eventID, seatID, holderUserID uuid.UUID) (*Ticket, error) {
 	now := time.Now()
 	t := &Ticket{
-		ID:          uuid.New(),
-		OrderID:     orderID,
-		EventID:     eventID,
-		SeatID:      seatID,
-		QRCode:      generateQRData(uuid.New()),
-		Status:      TicketStatusValid,
-		PurchasedAt: now,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:           uuid.New(),
+		OrderID:      orderID,
+		EventID:      eventID,
+		SeatID:       seatID,
+		HolderUserID: holderUserID,
+		QRCode:       generateQRData(uuid.New()),
+		Status:       TicketStatusValid,
+		PurchasedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := t.Validate(); err != nil {
 		return nil, err
@@ -48,6 +50,9 @@ func (t *Ticket) Validate() error {
 	}
 	if t.SeatID == uuid.Nil {
 		return errors.New("ticket seat ID is required")
+	}
+	if t.HolderUserID == uuid.Nil {
+		return errors.New("ticket holder user ID is required")
 	}
 	return nil
 }

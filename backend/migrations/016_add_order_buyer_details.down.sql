@@ -1,0 +1,10 @@
+ALTER TABLE orders
+  DROP COLUMN buyer_name,
+  DROP COLUMN buyer_email,
+  DROP COLUMN buyer_cpf,
+  DROP COLUMN buyer_phone,
+  DROP COLUMN buyer_cep,
+  DROP COLUMN buyer_street,
+  DROP COLUMN buyer_neighborhood,
+  DROP COLUMN buyer_city,
+  DROP COLUMN buyer_state;

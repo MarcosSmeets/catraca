@@ -72,11 +72,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 		return nil, err
 	}
 
-	pair, err := uc.tokenService.GenerateTokenPair(service.TokenClaims{
-		UserID: u.ID,
-		Email:  u.Email,
-		Role:   string(u.Role),
-	})
+	pair, err := uc.tokenService.GenerateTokenPair(tokenClaimsFromUser(u))
 	if err != nil {
 		return nil, err
 	}

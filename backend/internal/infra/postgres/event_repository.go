@@ -62,7 +62,7 @@ func (r *EventRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Ev
 	return rowToEvent(row.ID, row.Title, row.Sport, row.League, row.VenueID, row.StartsAt,
 		row.Status, row.ServiceFeePercent, row.HomeTeam, row.AwayTeam, row.ImageUrl,
 		row.VibeChips, row.CreatedAt, row.UpdatedAt, row.DeletedAt,
-		row.VenueID2, row.VenueName, row.VenueCity, row.VenueState, row.VenueCapacity,
+		row.VenueID2, row.VenueOrganizationID, row.VenueName, row.VenueCity, row.VenueState, row.VenueCapacity,
 		row.MinPriceCents, row.MaxPriceCents), nil
 }
 
@@ -91,12 +91,13 @@ SELECT
     e.id, e.title, e.sport, e.league, e.venue_id, e.starts_at, e.status,
     e.service_fee_percent, e.home_team, e.away_team, e.image_url, e.vibe_chips,
     e.created_at, e.updated_at, e.deleted_at,
-    v.id AS venue_id_2, v.name AS venue_name, v.city AS venue_city,
+    v.id AS venue_id_2, v.organization_id AS venue_organization_id, v.name AS venue_name, v.city AS venue_city,
     v.state AS venue_state, v.capacity AS venue_capacity,
     COALESCE(ep.min_p, 0) AS min_price_cents,
     COALESCE(ep.max_p, 0) AS max_price_cents
 FROM events e
 JOIN venues v ON v.id = e.venue_id
+JOIN organizations o ON o.id = v.organization_id
 LEFT JOIN event_prices ep ON ep.event_id = e.id
 WHERE e.deleted_at IS NULL
   AND ($1::text IS NULL OR e.sport = $1)
@@ -112,8 +113,17 @@ WHERE e.deleted_at IS NULL
   ))
   AND ($7::bigint IS NULL OR COALESCE(ep.min_p, 0) >= $7)
   AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)
+  AND ($9::text IS NULL OR e.status = $9)
+  AND ($10::uuid IS NULL OR v.organization_id = $10)
+  AND (
+    NOT $11::bool
+    OR (
+      e.status IN ('ON_SALE', 'SOLD_OUT')
+      AND (e.status = 'SOLD_OUT' OR o.subscription_status IN ('active', 'trialing'))
+    )
+  )
 ORDER BY ` + orderBy + `
-LIMIT $9 OFFSET $10`
+LIMIT $12 OFFSET $13`
 
 	args := buildEventFilterArgs(filter)
 	args = append(args, int32(limit), int32(filter.Offset))
@@ -138,6 +148,7 @@ LIMIT $9 OFFSET $10`
 			createdAt, updatedAt time.Time
 			deletedAt         pgtype.Timestamptz
 			venueID2          uuid.UUID
+			venueOrganizationID uuid.UUID
 			venueName, venueCity, venueState string
 			venueCapacity     int32
 			minPrice, maxPrice int64
@@ -146,14 +157,14 @@ LIMIT $9 OFFSET $10`
 			&id, &title, &sport, &league, &venueID, &startsAt, &status,
 			&serviceFee, &homeTeam, &awayTeam, &imageURL, &vibeChips,
 			&createdAt, &updatedAt, &deletedAt,
-			&venueID2, &venueName, &venueCity, &venueState, &venueCapacity,
+			&venueID2, &venueOrganizationID, &venueName, &venueCity, &venueState, &venueCapacity,
 			&minPrice, &maxPrice,
 		); err != nil {
 			return nil, fmt.Errorf("EventRepository.List scan: %w", err)
 		}
 		e := rowToEvent(id, title, sport, league, venueID, startsAt, status,
 			serviceFee, homeTeam, awayTeam, imageURL, vibeChips, createdAt, updatedAt, deletedAt,
-			venueID2, venueName, venueCity, venueState, venueCapacity,
+			venueID2, venueOrganizationID, venueName, venueCity, venueState, venueCapacity,
 			minPrice, maxPrice)
 		events = append(events, e)
 	}
@@ -172,6 +183,7 @@ WITH event_prices AS (
 SELECT COUNT(*)
 FROM events e
 JOIN venues v ON v.id = e.venue_id
+JOIN organizations o ON o.id = v.organization_id
 LEFT JOIN event_prices ep ON ep.event_id = e.id
 WHERE e.deleted_at IS NULL
   AND ($1::text IS NULL OR e.sport = $1)
@@ -186,7 +198,16 @@ WHERE e.deleted_at IS NULL
         e.league ILIKE '%' || $6 || '%'
   ))
   AND ($7::bigint IS NULL OR COALESCE(ep.min_p, 0) >= $7)
-  AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)`
+  AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)
+  AND ($9::text IS NULL OR e.status = $9)
+  AND ($10::uuid IS NULL OR v.organization_id = $10)
+  AND (
+    NOT $11::bool
+    OR (
+      e.status IN ('ON_SALE', 'SOLD_OUT')
+      AND (e.status = 'SOLD_OUT' OR o.subscription_status IN ('active', 'trialing'))
+    )
+  )`
 
 	args := buildEventFilterArgs(filter)
 
@@ -197,10 +218,14 @@ WHERE e.deleted_at IS NULL
 	return total, nil
 }
 
-// buildEventFilterArgs returns the 8 positional args ($1–$8) shared by List and Count.
+// buildEventFilterArgs returns the 11 positional args ($1–$11) shared by List and Count.
 func buildEventFilterArgs(filter repository.EventFilter) []interface{} {
-	var sport, league, city, dateFrom, dateTo, q interface{}
+	var sport, league, city, dateFrom, dateTo, q, status interface{}
 	var minPrice, maxPrice interface{}
+	var orgID interface{}
+	if filter.OrganizationID != nil {
+		orgID = *filter.OrganizationID
+	}
 
 	if filter.Sport != nil {
 		sport = filter.Sport.String()
@@ -226,8 +251,14 @@ func buildEventFilterArgs(filter repository.EventFilter) []interface{} {
 	if filter.MaxPrice != nil {
 		maxPrice = *filter.MaxPrice
 	}
+	if filter.Status != nil && *filter.Status != "" {
+		status = filter.Status.String()
+	}
 
-	return []interface{}{sport, league, city, dateFrom, dateTo, q, minPrice, maxPrice}
+	return []interface{}{
+		sport, league, city, dateFrom, dateTo, q, minPrice, maxPrice, status,
+		orgID, filter.TenantBuyerCatalog,
+	}
 }
 
 func (r *EventRepository) Update(ctx context.Context, e *entity.Event) error {
@@ -256,7 +287,7 @@ func rowToEvent(
 	id uuid.UUID, title, sport, league string, venueID uuid.UUID, startsAt time.Time,
 	status string, serviceFee pgtype.Numeric, homeTeam, awayTeam, imageURL string,
 	vibeChips []string, createdAt, updatedAt time.Time, deletedAt pgtype.Timestamptz,
-	venueID2 uuid.UUID, venueName, venueCity, venueState string, venueCapacity int32,
+	venueID2, venueOrganizationID uuid.UUID, venueName, venueCity, venueState string, venueCapacity int32,
 	minPrice, maxPrice interface{},
 ) *entity.Event {
 	var deletedAtPtr *time.Time
@@ -289,11 +320,12 @@ func rowToEvent(
 		UpdatedAt:         updatedAt,
 		DeletedAt:         deletedAtPtr,
 		Venue: &entity.Venue{
-			ID:       venueID2,
-			Name:     venueName,
-			City:     venueCity,
-			State:    venueState,
-			Capacity: int(venueCapacity),
+			ID:             venueID2,
+			OrganizationID: venueOrganizationID,
+			Name:           venueName,
+			City:           venueCity,
+			State:          venueState,
+			Capacity:       int(venueCapacity),
 		},
 	}
 }

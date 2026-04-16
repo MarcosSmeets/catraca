@@ -67,3 +67,27 @@ func (r *UserRepository) ExistsByCPFHash(_ context.Context, cpfHash string) (boo
 	}
 	return false, nil
 }
+
+func (r *UserRepository) UpdateStripeConnect(_ context.Context, userID uuid.UUID, stripeConnectAccountID string, chargesEnabled bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[userID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	u.StripeConnectAccountID = stripeConnectAccountID
+	u.StripeConnectChargesEnabled = chargesEnabled
+	return nil
+}
+
+func (r *UserRepository) SetOrganizationAndRole(_ context.Context, userID, organizationID uuid.UUID, role entity.UserRole) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[userID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	u.OrganizationID = &organizationID
+	u.Role = role
+	return nil
+}

@@ -56,55 +56,77 @@ const TIER_LABEL: Record<string, string> = {
   premium: "Premium",
 };
 
-// ─── SVG layout — realistic stadium sections ───────────────────────────────────
+// ─── SVG layout — dynamic stadium sections ─────────────────────────────────────
 // ViewBox: 0 0 560 480
-// Outer ring (Cadeiras Superiores): 0,0→560,480 with inner hole 28,28→532,452
-// Norte: y=28..132, x=28..532
-// Sul:   y=348..452, x=28..532
-// Leste Premium: x=432..532, y=132..348
-// Oeste Premium: x=28..128,  y=132..348
-// Pitch: x=128..432, y=132..348
+// Pitch: x=128..432, y=132..348 (the inner rectangle).
+// Sections are arranged around this inner rectangle as outer strips. The set of
+// "slot" shapes is precomputed; the layout function picks which slots to use
+// given the number of sections that actually have seats.
 
-const SVG_SECTIONS: Record<
-  string,
-  {
-    path: string;
-    labelX: number;
-    labelY: number;
-    labelRotate?: number;
-    fillRule?: "evenodd" | "nonzero";
-  }
-> = {
-  "Cadeiras Superiores": {
-    // Outer ring using even-odd fill rule: outer rect minus inner rect
-    path: "M 0,0 L 560,0 L 560,480 L 0,480 Z M 28,28 L 532,28 L 532,452 L 28,452 Z",
+type SectionShape = {
+  path: string;
+  labelX: number;
+  labelY: number;
+  labelRotate?: number;
+  labelFontSize?: number;
+  fillRule?: "evenodd" | "nonzero";
+};
+
+const SLOT_SHAPES: Record<string, SectionShape> = {
+  // Full sides (used for 2–4 sections)
+  N: { path: "M 28,28 L 532,28 L 532,132 L 28,132 Z", labelX: 280, labelY: 80 },
+  S: { path: "M 28,348 L 532,348 L 532,452 L 28,452 Z", labelX: 280, labelY: 400 },
+  E: { path: "M 432,132 L 532,132 L 532,348 L 432,348 Z", labelX: 482, labelY: 240, labelRotate: 90 },
+  W: { path: "M 28,132 L 128,132 L 128,348 L 28,348 Z", labelX: 78, labelY: 240, labelRotate: -90 },
+  // Half sides (used for 5–8 sections)
+  "N-L": { path: "M 28,28 L 280,28 L 280,132 L 28,132 Z", labelX: 154, labelY: 80, labelFontSize: 8.5 },
+  "N-R": { path: "M 280,28 L 532,28 L 532,132 L 280,132 Z", labelX: 406, labelY: 80, labelFontSize: 8.5 },
+  "S-L": { path: "M 28,348 L 280,348 L 280,452 L 28,452 Z", labelX: 154, labelY: 400, labelFontSize: 8.5 },
+  "S-R": { path: "M 280,348 L 532,348 L 532,452 L 280,452 Z", labelX: 406, labelY: 400, labelFontSize: 8.5 },
+  "E-T": { path: "M 432,132 L 532,132 L 532,240 L 432,240 Z", labelX: 482, labelY: 186, labelRotate: 90, labelFontSize: 8 },
+  "E-B": { path: "M 432,240 L 532,240 L 532,348 L 432,348 Z", labelX: 482, labelY: 294, labelRotate: 90, labelFontSize: 8 },
+  "W-T": { path: "M 28,132 L 128,132 L 128,240 L 28,240 Z", labelX: 78, labelY: 186, labelRotate: -90, labelFontSize: 8 },
+  "W-B": { path: "M 28,240 L 128,240 L 128,348 L 28,348 Z", labelX: 78, labelY: 294, labelRotate: -90, labelFontSize: 8 },
+  // Full ring — single-section fallback (outer rect minus pitch rect, evenodd)
+  RING: {
+    path: "M 0,0 L 560,0 L 560,480 L 0,480 Z M 128,132 L 432,132 L 432,348 L 128,348 Z",
     labelX: 280,
-    labelY: 14,
+    labelY: 24,
     fillRule: "evenodd",
   },
-  Norte: {
-    path: "M 28,28 L 532,28 L 532,132 L 28,132 Z",
-    labelX: 280,
-    labelY: 80,
-  },
-  Sul: {
-    path: "M 28,348 L 532,348 L 532,452 L 28,452 Z",
-    labelX: 280,
-    labelY: 400,
-  },
-  "Leste Premium": {
-    path: "M 432,132 L 532,132 L 532,348 L 432,348 Z",
-    labelX: 482,
-    labelY: 240,
-    labelRotate: 90,
-  },
-  "Oeste Premium": {
-    path: "M 28,132 L 128,132 L 128,348 L 28,348 Z",
-    labelX: 78,
-    labelY: 240,
-    labelRotate: -90,
-  },
 };
+
+function slotsForCount(n: number): string[] {
+  if (n <= 0) return [];
+  if (n === 1) return ["RING"];
+  if (n === 2) return ["N", "S"];
+  if (n === 3) return ["N", "S", "E"];
+  if (n === 4) return ["N", "S", "E", "W"];
+  if (n === 5) return ["N-L", "N-R", "S", "E", "W"];
+  if (n === 6) return ["N-L", "N-R", "S-L", "S-R", "E", "W"];
+  if (n === 7) return ["N-L", "N-R", "S-L", "S-R", "E-T", "E-B", "W"];
+  return ["N-L", "N-R", "S-L", "S-R", "E-T", "E-B", "W-T", "W-B"]; // 8+ (extras merged)
+}
+
+function buildSectionShapes(sectionNames: string[]): Record<string, SectionShape> {
+  // For counts > 8 we fold the tail into the last slot (simple fallback).
+  const capped = sectionNames.slice(0, 8);
+  const overflow = sectionNames.slice(8);
+  const slots = slotsForCount(capped.length);
+  const map: Record<string, SectionShape> = {};
+  capped.forEach((name, i) => {
+    const shape = SLOT_SHAPES[slots[i]];
+    if (shape) map[name] = shape;
+  });
+  // Attach overflow names to the last shape so at least they render as one block
+  if (overflow.length && capped.length) {
+    const lastShape = SLOT_SHAPES[slots[capped.length - 1]];
+    overflow.forEach((name) => {
+      if (lastShape) map[name] = lastShape;
+    });
+  }
+  return map;
+}
 
 // ─── StadiumMap ────────────────────────────────────────────────────────────────
 
@@ -157,6 +179,13 @@ export default function StadiumMap({
       .map((s) => s.minPriceCents);
     if (prices.length === 0) return 0;
     return prices.reduce((a, b) => a + b, 0) / prices.length;
+  }, [sectionInfo]);
+
+  // Build dynamic layout from the sections present in the seats data.
+  // Sort by section name so placement is stable across renders.
+  const sectionShapes = useMemo(() => {
+    const names = Object.keys(sectionInfo).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return buildSectionShapes(names);
   }, [sectionInfo]);
 
   const handleSectionClick = useCallback(
@@ -252,7 +281,7 @@ export default function StadiumMap({
             <rect width="560" height="480" fill="var(--color-surface-lowest, #f9f9f9)" rx="6" />
 
             {/* Sections */}
-            {Object.entries(SVG_SECTIONS).map(([name, shape]) => {
+            {Object.entries(sectionShapes).map(([name, shape]) => {
               const info = sectionInfo[name];
               const available = info?.availableCount ?? 0;
               const price = info?.minPriceCents ?? 0;
@@ -261,6 +290,8 @@ export default function StadiumMap({
               const fill = isSoldOut ? "#d1d5db" : TIER_FILL[tier];
               const hoverFill = isSoldOut ? "#d1d5db" : TIER_FILL_HOVER[tier];
               const isHovered = hoverCard?.section === name;
+              const labelFontSize = shape.labelFontSize ?? 10;
+              const displayName = name.length > 18 ? `${name.slice(0, 17)}…` : name;
 
               return (
                 <g key={name}>
@@ -283,30 +314,26 @@ export default function StadiumMap({
                     }}
                   />
                   {/* Section name label */}
-                  {name !== "Cadeiras Superiores" && (
-                    <text
-                      x={shape.labelX}
-                      y={shape.labelY + 4}
-                      textAnchor="middle"
-                      fill="rgba(0,0,0,0.55)"
-                      fontSize={name === "Leste Premium" || name === "Oeste Premium" ? "9" : "10"}
-                      fontWeight="700"
-                      fontFamily="inherit"
-                      letterSpacing="0.5"
-                      className="pointer-events-none uppercase"
-                      transform={
-                        shape.labelRotate
-                          ? `rotate(${shape.labelRotate}, ${shape.labelX}, ${shape.labelY})`
-                          : undefined
-                      }
-                    >
-                      {name === "Leste Premium" || name === "Oeste Premium"
-                        ? name.replace(" ", "\n")
-                        : name}
-                    </text>
-                  )}
+                  <text
+                    x={shape.labelX}
+                    y={shape.labelY + 4}
+                    textAnchor="middle"
+                    fill="rgba(0,0,0,0.55)"
+                    fontSize={labelFontSize}
+                    fontWeight="700"
+                    fontFamily="inherit"
+                    letterSpacing="0.5"
+                    className="pointer-events-none uppercase"
+                    transform={
+                      shape.labelRotate
+                        ? `rotate(${shape.labelRotate}, ${shape.labelX}, ${shape.labelY})`
+                        : undefined
+                    }
+                  >
+                    {displayName}
+                  </text>
                   {/* Price badge */}
-                  {name !== "Cadeiras Superiores" && !isSoldOut && (
+                  {!isSoldOut && (
                     <>
                       <rect
                         x={shape.labelX - 28}
@@ -342,7 +369,7 @@ export default function StadiumMap({
                     </>
                   )}
                   {/* Availability dot */}
-                  {!isSoldOut && name !== "Cadeiras Superiores" && (
+                  {!isSoldOut && (
                     <circle
                       cx={shape.labelX + 32}
                       cy={shape.labelY - 12}
@@ -560,7 +587,7 @@ function SectionHoverCard({
                 {formatCurrency(info.minPriceCents)}
               </span>
             </p>
-            <p className="text-[10px] font-body text-primary font-semibold mt-0.5">
+            <p className="text-[10px] font-body text-accent font-semibold mt-0.5">
               Clique para ver assentos →
             </p>
           </>
@@ -639,7 +666,7 @@ function TapPreviewCard({
             </div>
             <button
               onClick={onConfirm}
-              className="w-full py-2.5 bg-primary text-on-primary text-xs font-display font-bold uppercase tracking-tight rounded-sm"
+              className="w-full py-2.5 bg-accent text-on-accent text-xs font-display font-bold uppercase tracking-tight rounded-sm"
             >
               Ver assentos →
             </button>
@@ -730,7 +757,7 @@ function SectionDetailView({
                 {TIER_LABEL[tier]}
               </span>
               {isAmazingDeal && (
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold bg-primary text-on-primary">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-body font-semibold bg-accent text-on-accent">
                   Ótimo negócio
                 </span>
               )}
@@ -928,7 +955,7 @@ function SeatGrid({
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2" role="listitem">
             <div
-              className={`w-3.5 h-3.5 rounded-full shrink-0${item.isPrimary ? " bg-primary" : ""}`}
+              className={`w-3.5 h-3.5 rounded-full shrink-0${item.isPrimary ? " bg-accent" : ""}`}
               style={item.color ? { background: item.color } : undefined}
               aria-hidden="true"
             />
@@ -1006,7 +1033,7 @@ function SeatButton({
         className={[
           // Larger invisible tap area for touch accessibility
           "w-7 h-7 flex items-center justify-center",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1",
           "touch-manipulation",
           isAvailable ? "cursor-pointer active:scale-95" : "cursor-not-allowed",
         ]
@@ -1024,7 +1051,7 @@ function SeatButton({
           }
           className={[
             "block w-4 h-4 rounded-full transition-all duration-100",
-            isSelected ? "bg-primary scale-125 shadow-sm shadow-primary/40" : "",
+            isSelected ? "bg-accent scale-125 shadow-sm shadow-accent/40" : "",
           ]
             .filter(Boolean)
             .join(" ")}

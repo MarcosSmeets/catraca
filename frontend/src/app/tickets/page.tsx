@@ -2,7 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
+import { TicketQr } from "@/components/features/tickets/TicketQr";
 import MainLayout from "@/components/features/MainLayout";
 import Badge from "@/components/ui/Badge";
 import { TicketSkeleton } from "@/components/ui/Skeleton";
@@ -35,6 +38,21 @@ function effectiveStatus(ticket: Ticket): string {
   return ticket.status;
 }
 
+function TicketsPaidToast() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (searchParams.get("paid") !== "1" || handled.current) return;
+    handled.current = true;
+    toast.success("Compra confirmada.");
+    router.replace("/tickets", { scroll: false });
+  }, [searchParams, router]);
+
+  return null;
+}
+
 export default function TicketsPage() {
   const { data: tickets = [], isLoading } = useTickets();
   const upcoming = tickets.filter((t) => effectiveStatus(t) === "VALID");
@@ -42,6 +60,9 @@ export default function TicketsPage() {
 
   return (
     <MainLayout>
+      <Suspense fallback={null}>
+        <TicketsPaidToast />
+      </Suspense>
       <div className="max-w-4xl mx-auto px-6 py-10">
         {/* Header */}
         <div className="mb-10">
@@ -117,7 +138,6 @@ function TicketCard({
   const [imgSrc, setImgSrc] = useState(initialImage);
 
   const qrData = ticket.qrCode || "INVALIDO";
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=112x112&data=${encodeURIComponent(qrData)}&bgcolor=ffffff&color=000000&margin=4`;
 
   return (
     <div className="bg-surface-lowest rounded-md overflow-hidden flex flex-col sm:flex-row">
@@ -209,14 +229,8 @@ function TicketCard({
       {/* Right — QR code (only for truly upcoming valid tickets) */}
       {showQr && effStatus === "VALID" && (
         <div className="sm:border-l border-t sm:border-t-0 border-outline-variant p-5 flex flex-col items-center justify-center gap-2 shrink-0">
-          <div className="w-28 h-28 bg-white rounded-sm overflow-hidden flex items-center justify-center">
-            <Image
-              src={qrUrl}
-              alt="QR Code do ingresso"
-              width={112}
-              height={112}
-              className="object-contain"
-            />
+          <div className="w-28 h-28 rounded-sm overflow-hidden flex items-center justify-center">
+            <TicketQr value={qrData} size={112} />
           </div>
           <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/30 text-center">
             Apresente na entrada

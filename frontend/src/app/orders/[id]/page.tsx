@@ -76,8 +76,8 @@ export default function OrderPage({ params }: Props) {
 
         {/* Status banner */}
         {order.status === "PAID" && (
-          <div className="bg-primary/10 border border-primary/20 rounded-md px-5 py-4 flex items-center gap-4 mb-8">
-            <div className="w-10 h-10 bg-primary rounded-sm flex items-center justify-center shrink-0">
+          <div className="bg-accent/10 border border-accent/20 rounded-md px-5 py-4 flex items-center gap-4 mb-8">
+            <div className="w-10 h-10 bg-accent rounded-sm flex items-center justify-center shrink-0">
               <CheckIcon />
             </div>
             <div>

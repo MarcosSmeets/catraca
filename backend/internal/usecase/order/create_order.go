@@ -9,23 +9,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
-	"github.com/marcos-smeets/catraca/backend/internal/domain/service"
 )
 
 var (
 	ErrReservationNotFound  = errors.New("reservation not found")
 	ErrReservationExpired   = errors.New("reservation has expired")
 	ErrReservationWrongUser = errors.New("reservation does not belong to this user")
+	ErrOrganizationMismatch = errors.New("order does not belong to this organization")
 )
 
 type CreateOrderInput struct {
-	UserID         uuid.UUID
-	ReservationIDs []uuid.UUID
+	UserID                 uuid.UUID
+	ReservationIDs       []uuid.UUID
+	Buyer                entity.BuyerDetails
+	ExpectedOrganizationID *uuid.UUID
 }
 
 type CreateOrderOutput struct {
-	Order        *entity.Order
-	ClientSecret string
+	Order *entity.Order
 }
 
 type CreateOrderUseCase struct {
@@ -33,7 +34,6 @@ type CreateOrderUseCase struct {
 	seatRepo        repository.SeatRepository
 	eventRepo       repository.EventRepository
 	orderRepo       repository.OrderRepository
-	paymentGateway  service.PaymentGateway
 }
 
 func NewCreateOrderUseCase(
@@ -41,14 +41,12 @@ func NewCreateOrderUseCase(
 	seatRepo repository.SeatRepository,
 	eventRepo repository.EventRepository,
 	orderRepo repository.OrderRepository,
-	paymentGateway service.PaymentGateway,
 ) *CreateOrderUseCase {
 	return &CreateOrderUseCase{
 		reservationRepo: reservationRepo,
 		seatRepo:        seatRepo,
 		eventRepo:       eventRepo,
 		orderRepo:       orderRepo,
-		paymentGateway:  paymentGateway,
 	}
 }
 
@@ -57,7 +55,6 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 		return nil, errors.New("at least one reservation is required")
 	}
 
-	// Load and validate all reservations
 	reservations := make([]*entity.Reservation, 0, len(input.ReservationIDs))
 	for _, resID := range input.ReservationIDs {
 		res, err := uc.reservationRepo.GetByID(ctx, resID)
@@ -76,7 +73,6 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 		reservations = append(reservations, res)
 	}
 
-	// Calculate total (seat prices + service fee)
 	var totalCents int64
 	var serviceFeePercent float64
 	for _, res := range reservations {
@@ -84,9 +80,17 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 		if err != nil {
 			return nil, fmt.Errorf("create order: get seat: %w", err)
 		}
+		if input.ExpectedOrganizationID != nil {
+			event, err := uc.eventRepo.GetByID(ctx, seat.EventID)
+			if err != nil {
+				return nil, fmt.Errorf("create order: get event: %w", err)
+			}
+			if event.Venue == nil || event.Venue.OrganizationID != *input.ExpectedOrganizationID {
+				return nil, ErrOrganizationMismatch
+			}
+		}
 		totalCents += seat.PriceCents
 
-		// Fetch event service fee once (all seats from same event)
 		if serviceFeePercent == 0 {
 			event, err := uc.eventRepo.GetByID(ctx, seat.EventID)
 			if err != nil {
@@ -98,8 +102,7 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 	fee := int64(math.Round(float64(totalCents) * serviceFeePercent / 100))
 	totalCents += fee
 
-	// Persist order first (with empty StripePaymentID) to get the order.ID for metadata
-	order, err := entity.NewOrder(input.UserID, input.ReservationIDs, totalCents, "")
+	order, err := entity.NewOrder(input.UserID, entity.OrderKindPrimary, input.ReservationIDs, nil, totalCents, "", input.Buyer)
 	if err != nil {
 		return nil, fmt.Errorf("create order: new order: %w", err)
 	}
@@ -107,22 +110,7 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 		return nil, fmt.Errorf("create order: persist: %w", err)
 	}
 
-	// Create Stripe PaymentIntent with order_id so the webhook can look up the order
-	pi, err := uc.paymentGateway.CreatePaymentIntent(ctx, totalCents, "BRL", map[string]string{
-		"user_id":  input.UserID.String(),
-		"order_id": order.ID.String(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create order: payment intent: %w", err)
-	}
-
-	// Back-fill the Stripe PaymentIntent ID on the persisted order
-	order.StripePaymentID = pi.ID
-	if err := uc.orderRepo.UpdateStripePaymentID(ctx, order.ID, pi.ID); err != nil {
-		return nil, fmt.Errorf("create order: update stripe payment id: %w", err)
-	}
-
-	return &CreateOrderOutput{Order: order, ClientSecret: pi.ClientSecret}, nil
+	return &CreateOrderOutput{Order: order}, nil
 }
 
 // GetOrderUseCase fetches a single order by ID, enforcing ownership.

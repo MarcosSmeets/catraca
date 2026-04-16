@@ -16,7 +16,8 @@ func TestListEvents_All(t *testing.T) {
 	repo := mock.NewEventRepository()
 	uc := event.NewListEventsUseCase(repo)
 
-	venue := factory.NewTestVenue()
+	org := factory.NewTestOrganization()
+	venue := factory.NewTestVenue(org.ID)
 	e1 := factory.NewTestEvent(venue.ID)
 	e1.Venue = venue
 	e2 := factory.NewTestEvent(venue.ID)
@@ -35,7 +36,8 @@ func TestListEvents_FilterBySport(t *testing.T) {
 	repo := mock.NewEventRepository()
 	uc := event.NewListEventsUseCase(repo)
 
-	venue := factory.NewTestVenue()
+	org := factory.NewTestOrganization()
+	venue := factory.NewTestVenue(org.ID)
 
 	e1 := factory.NewTestEvent(venue.ID)
 	e1.Venue = venue

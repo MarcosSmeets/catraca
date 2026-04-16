@@ -14,12 +14,24 @@ type Config struct {
 	JWTRefreshSecret    string
 	StripeSecretKey     string
 	StripeWebhookSecret string
-	AppEnv              string
-	Port                int
-	AppSeed             bool
-	CORSAllowedOrigins  []string
-	CPFPepper           string
-	PhoneEncryptionKey  string
+	// StripeCheckoutSuccessURL must include {CHECKOUT_SESSION_ID} where Stripe substitutes the session id (see Stripe docs).
+	StripeCheckoutSuccessURL string
+	StripeCheckoutCancelURL  string
+	// StripeCheckoutEnablePix adds "pix" to Checkout Session payment_method_types when the order total is in BRL Pix limits.
+	// Requires PIX enabled in Stripe Dashboard → Settings → Payment methods; leave false if you only use cards.
+	StripeCheckoutEnablePix bool
+	// StripeSubscriptionPriceID is the Stripe Price id for the recurring BRL platform subscription (Billing).
+	StripeSubscriptionPriceID string
+	StripeSubscriptionSuccessURL string
+	StripeSubscriptionCancelURL  string
+	AppEnv                  string
+	// AuthCookieSecure sets the HttpOnly session cookies' Secure flag. When unset, derived as (AppEnv != "development"). Set AUTH_COOKIE_SECURE=false only for HTTP staging (sessions sent in cleartext).
+	AuthCookieSecure bool
+	Port             int
+	AppSeed                 bool
+	CORSAllowedOrigins      []string
+	CPFPepper               string
+	PhoneEncryptionKey      string
 }
 
 func Load() (*Config, error) {
@@ -32,19 +44,27 @@ func Load() (*Config, error) {
 		}
 	}
 
+	appEnv := getEnv("APP_ENV", "development")
 	cfg := &Config{
-		DatabaseURL:         getEnv("DATABASE_URL", "postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable"),
-		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:           getEnv("JWT_SECRET", "dev-secret-change-me"),
-		JWTRefreshSecret:    getEnv("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
-		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
-		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
-		AppEnv:              getEnv("APP_ENV", "development"),
-		Port:                port,
-		AppSeed:             getEnvBool("APP_SEED", false),
-		CORSAllowedOrigins:  getEnvSlice("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
-		CPFPepper:           getEnv("CPF_PEPPER", "dev-cpf-pepper-change-in-prod"),
-		PhoneEncryptionKey:  getEnv("PHONE_ENCRYPTION_KEY", "catraca-phone-key-change-in-prod"),
+		DatabaseURL:              getEnv("DATABASE_URL", "postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable"),
+		RedisURL:                 getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:                getEnv("JWT_SECRET", "dev-secret-change-me"),
+		JWTRefreshSecret:         getEnv("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
+		StripeSecretKey:          os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:      os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripeCheckoutSuccessURL: getEnv("STRIPE_CHECKOUT_SUCCESS_URL", "http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
+		StripeCheckoutCancelURL:  getEnv("STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:3000/checkout?canceled=1"),
+		StripeCheckoutEnablePix:  getEnvBool("STRIPE_CHECKOUT_ENABLE_PIX", false),
+		StripeSubscriptionPriceID:    os.Getenv("STRIPE_SUBSCRIPTION_PRICE_ID"),
+		StripeSubscriptionSuccessURL: getEnv("STRIPE_SUBSCRIPTION_SUCCESS_URL", "http://localhost:3000/admin/organizacoes?session_id={CHECKOUT_SESSION_ID}"),
+		StripeSubscriptionCancelURL:  getEnv("STRIPE_SUBSCRIPTION_CANCEL_URL", "http://localhost:3000/admin/organizacoes?canceled=1"),
+		AppEnv:                   appEnv,
+		AuthCookieSecure:         getEnvBool("AUTH_COOKIE_SECURE", appEnv != "development"),
+		Port:                     port,
+		AppSeed:                  getEnvBool("APP_SEED", false),
+		CORSAllowedOrigins:       getEnvSlice("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
+		CPFPepper:                getEnv("CPF_PEPPER", "dev-cpf-pepper-change-in-prod"),
+		PhoneEncryptionKey:       getEnv("PHONE_ENCRYPTION_KEY", "catraca-phone-key-change-in-prod"),
 	}
 
 	return cfg, nil

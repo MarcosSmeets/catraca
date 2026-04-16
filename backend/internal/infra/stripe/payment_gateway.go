@@ -2,10 +2,15 @@ package stripe
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	stripelib "github.com/stripe/stripe-go/v76"
+	"github.com/stripe/stripe-go/v76/account"
+	"github.com/stripe/stripe-go/v76/accountlink"
+	checkoutsession "github.com/stripe/stripe-go/v76/checkout/session"
 	"github.com/stripe/stripe-go/v76/paymentintent"
 	"github.com/stripe/stripe-go/v76/webhook"
 
@@ -13,6 +18,16 @@ import (
 )
 
 var _ service.PaymentGateway = (*PaymentGateway)(nil)
+
+// CheckoutSessionError is returned when the Stripe API rejects Checkout Session creation.
+// The Message is safe to show to API clients.
+type CheckoutSessionError struct {
+	Message string
+}
+
+func (e *CheckoutSessionError) Error() string {
+	return e.Message
+}
 
 type PaymentGateway struct {
 	secretKey     string
@@ -34,19 +49,184 @@ func (g *PaymentGateway) IsConfigured() bool {
 	return g.secretKey != ""
 }
 
+// CreateCheckoutSession creates a hosted Checkout Session (card and/or PIX per PaymentMethodTypes).
+func (g *PaymentGateway) CreateCheckoutSession(
+	ctx context.Context,
+	in service.CheckoutSessionInput,
+) (*service.CheckoutSessionResult, error) {
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+
+	meta := make(map[string]string, len(in.PaymentIntentMetadata))
+	for k, v := range in.PaymentIntentMetadata {
+		meta[k] = v
+	}
+
+	prodName := "Ingressos"
+	if n := strings.TrimSpace(in.LineItemName); n != "" {
+		prodName = n
+	}
+	lineItems := []*stripelib.CheckoutSessionLineItemParams{
+		{
+			Quantity: stripelib.Int64(1),
+			PriceData: &stripelib.CheckoutSessionLineItemPriceDataParams{
+				Currency:   stripelib.String(strings.ToLower(in.Currency)),
+				UnitAmount: stripelib.Int64(in.AmountCents),
+				ProductData: &stripelib.CheckoutSessionLineItemPriceDataProductDataParams{
+					Name: stripelib.String(prodName),
+				},
+			},
+		},
+	}
+
+	piData := &stripelib.CheckoutSessionPaymentIntentDataParams{
+		Metadata: meta,
+	}
+	if strings.TrimSpace(in.ConnectDestinationAccountID) != "" {
+		if in.ApplicationFeeCents <= 0 || in.ApplicationFeeCents >= in.AmountCents {
+			return nil, &CheckoutSessionError{Message: "invalid application fee for Connect checkout"}
+		}
+		piData.ApplicationFeeAmount = stripelib.Int64(in.ApplicationFeeCents)
+		piData.TransferData = &stripelib.CheckoutSessionPaymentIntentDataTransferDataParams{
+			Destination: stripelib.String(strings.TrimSpace(in.ConnectDestinationAccountID)),
+		}
+	}
+
+	params := &stripelib.CheckoutSessionParams{
+		Mode:               stripelib.String(string(stripelib.CheckoutSessionModePayment)),
+		SuccessURL:         stripelib.String(in.SuccessURL),
+		CancelURL:          stripelib.String(in.CancelURL),
+		LineItems:          lineItems,
+		Metadata:           meta,
+		PaymentIntentData:  piData,
+		PaymentMethodTypes: stripelib.StringSlice(in.PaymentMethodTypes),
+	}
+	if in.ClientReferenceID != "" {
+		params.ClientReferenceID = stripelib.String(in.ClientReferenceID)
+	}
+
+	// payment_method_options: Pix expiry + card installments (BR) per Stripe Checkout docs.
+	pmOpts := &stripelib.CheckoutSessionPaymentMethodOptionsParams{}
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") {
+		pmOpts.Pix = &stripelib.CheckoutSessionPaymentMethodOptionsPixParams{
+			ExpiresAfterSeconds: stripelib.Int64(14_400), // 4 hours
+		}
+	}
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "card") {
+		pmOpts.Card = &stripelib.CheckoutSessionPaymentMethodOptionsCardParams{
+			Installments: &stripelib.CheckoutSessionPaymentMethodOptionsCardInstallmentsParams{
+				Enabled: stripelib.Bool(true),
+			},
+		}
+	}
+	if pmOpts.Pix != nil || pmOpts.Card != nil {
+		params.PaymentMethodOptions = pmOpts
+	}
+
+	// Portuguese Checkout for BRL (card debit/credit + PIX on the hosted page).
+	if paymentMethodTypesInclude(in.PaymentMethodTypes, "pix") ||
+		(paymentMethodTypesInclude(in.PaymentMethodTypes, "card") && strings.EqualFold(strings.TrimSpace(in.Currency), "brl")) {
+		params.Locale = stripelib.String("pt-BR")
+	}
+
+	sess, err := checkoutsession.New(params)
+	if err != nil {
+		var sErr *stripelib.Error
+		if errors.As(err, &sErr) && sErr != nil {
+			msg := sErr.Msg
+			if msg == "" {
+				msg = err.Error()
+			}
+			return nil, &CheckoutSessionError{Message: msg}
+		}
+		return nil, fmt.Errorf("stripe.CreateCheckoutSession: %w", err)
+	}
+
+	return &service.CheckoutSessionResult{
+		ID:  sess.ID,
+		URL: sess.URL,
+	}, nil
+}
+
+// CreateOrganizationSubscriptionCheckout starts a hosted Checkout Session for a recurring subscription (Stripe Billing).
+func (g *PaymentGateway) CreateOrganizationSubscriptionCheckout(
+	ctx context.Context,
+	in service.OrganizationSubscriptionCheckoutInput,
+) (*service.CheckoutSessionResult, error) {
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+	_ = ctx
+	if strings.TrimSpace(in.PriceID) == "" {
+		return nil, &CheckoutSessionError{Message: "subscription price id is required"}
+	}
+
+	meta := map[string]string{
+		"organization_id": in.OrganizationID.String(),
+		"checkout_kind":   "organization_subscription",
+	}
+
+	params := &stripelib.CheckoutSessionParams{
+		Mode:       stripelib.String(string(stripelib.CheckoutSessionModeSubscription)),
+		SuccessURL: stripelib.String(in.SuccessURL),
+		CancelURL:  stripelib.String(in.CancelURL),
+		LineItems: []*stripelib.CheckoutSessionLineItemParams{
+			{
+				Price:    stripelib.String(strings.TrimSpace(in.PriceID)),
+				Quantity: stripelib.Int64(1),
+			},
+		},
+		Metadata: meta,
+		SubscriptionData: &stripelib.CheckoutSessionSubscriptionDataParams{
+			Metadata: meta,
+		},
+		Locale: stripelib.String("pt-BR"),
+	}
+
+	if strings.TrimSpace(in.StripeCustomerID) != "" {
+		params.Customer = stripelib.String(strings.TrimSpace(in.StripeCustomerID))
+	} else if strings.TrimSpace(in.CustomerEmail) != "" {
+		params.CustomerEmail = stripelib.String(strings.TrimSpace(in.CustomerEmail))
+	}
+
+	sess, err := checkoutsession.New(params)
+	if err != nil {
+		var sErr *stripelib.Error
+		if errors.As(err, &sErr) && sErr != nil {
+			msg := sErr.Msg
+			if msg == "" {
+				msg = err.Error()
+			}
+			return nil, &CheckoutSessionError{Message: msg}
+		}
+		return nil, fmt.Errorf("stripe.CreateOrganizationSubscriptionCheckout: %w", err)
+	}
+
+	return &service.CheckoutSessionResult{
+		ID:  sess.ID,
+		URL: sess.URL,
+	}, nil
+}
+
+func paymentMethodTypesInclude(types []string, want string) bool {
+	w := strings.ToLower(strings.TrimSpace(want))
+	for _, t := range types {
+		if strings.ToLower(strings.TrimSpace(t)) == w {
+			return true
+		}
+	}
+	return false
+}
+
 // CreatePaymentIntent creates a Stripe PaymentIntent for the given amount in BRL.
 // When no Stripe key is configured (development), returns a stub result so the
 // checkout flow can be tested end-to-end without a real Stripe account.
 func (g *PaymentGateway) CreatePaymentIntent(
 	ctx context.Context,
-	amountCents int64,
-	currency string,
-	metadata map[string]string,
+	in service.CreatePaymentIntentInput,
 ) (*service.PaymentIntentResult, error) {
 	if !g.IsConfigured() {
-		// Development/test mode: return a deterministic stub payment intent.
-		// The webhook worker will never fire for this, so orders stay PENDING
-		// until manually marked paid (or use the test webhook endpoint).
 		stubID := "pi_dev_" + uuid.New().String()[:8]
 		return &service.PaymentIntentResult{
 			ID:           stubID,
@@ -55,19 +235,37 @@ func (g *PaymentGateway) CreatePaymentIntent(
 		}, nil
 	}
 
-	meta := make(map[string]string, len(metadata))
-	for k, v := range metadata {
+	meta := make(map[string]string, len(in.Metadata))
+	for k, v := range in.Metadata {
 		meta[k] = v
 	}
 
+	var pmTypes []string
+	switch in.Mode {
+	case service.PaymentIntentModePix:
+		pmTypes = []string{"pix"}
+	case service.PaymentIntentModeCard:
+		pmTypes = []string{"card"}
+	default:
+		return nil, fmt.Errorf("stripe.CreatePaymentIntent: invalid payment mode %q", in.Mode)
+	}
+
 	params := &stripelib.PaymentIntentParams{
-		Amount:   stripelib.Int64(amountCents),
-		Currency: stripelib.String(string(stripelib.CurrencyBRL)),
-		PaymentMethodTypes: stripelib.StringSlice([]string{
-			"card",
-			"pix",
-		}),
-		Metadata: meta,
+		Amount:             stripelib.Int64(in.AmountCents),
+		Currency:           stripelib.String(string(stripelib.CurrencyBRL)),
+		PaymentMethodTypes: stripelib.StringSlice(pmTypes),
+		Metadata:           meta,
+	}
+
+	// Enable card installments (plan is chosen at confirm time on the client).
+	if in.Mode == service.PaymentIntentModeCard {
+		params.PaymentMethodOptions = &stripelib.PaymentIntentPaymentMethodOptionsParams{
+			Card: &stripelib.PaymentIntentPaymentMethodOptionsCardParams{
+				Installments: &stripelib.PaymentIntentPaymentMethodOptionsCardInstallmentsParams{
+					Enabled: stripelib.Bool(true),
+				},
+			},
+		}
 	}
 
 	pi, err := paymentintent.New(params)
@@ -79,6 +277,112 @@ func (g *PaymentGateway) CreatePaymentIntent(
 		ID:           pi.ID,
 		ClientSecret: pi.ClientSecret,
 		Status:       string(pi.Status),
+	}, nil
+}
+
+// GetPaymentIntent retrieves an existing PaymentIntent by ID, returning its client secret and status.
+func (g *PaymentGateway) GetPaymentIntent(ctx context.Context, paymentIntentID string) (*service.PaymentIntentResult, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+	id := strings.TrimSpace(paymentIntentID)
+	if id == "" {
+		return nil, fmt.Errorf("payment intent id required")
+	}
+	pi, err := paymentintent.Get(id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stripe.GetPaymentIntent: %w", err)
+	}
+	return &service.PaymentIntentResult{
+		ID:           pi.ID,
+		ClientSecret: pi.ClientSecret,
+		Status:       string(pi.Status),
+	}, nil
+}
+
+// GetPaymentIntentMetadata returns PaymentIntent metadata (e.g. order_id from Checkout-created intents).
+func (g *PaymentGateway) GetPaymentIntentMetadata(ctx context.Context, paymentIntentID string) (map[string]string, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+	id := strings.TrimSpace(paymentIntentID)
+	if id == "" {
+		return nil, fmt.Errorf("payment intent id required")
+	}
+	pi, err := paymentintent.Get(id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stripe.GetPaymentIntent: %w", err)
+	}
+	if pi.Metadata == nil {
+		return map[string]string{}, nil
+	}
+	out := make(map[string]string, len(pi.Metadata))
+	for k, v := range pi.Metadata {
+		out[k] = v
+	}
+	return out, nil
+}
+
+// CreateConnectExpressAccount creates a new Stripe Connect Express account (BR).
+func (g *PaymentGateway) CreateConnectExpressAccount(ctx context.Context, email string) (string, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return "", fmt.Errorf("stripe not configured")
+	}
+	params := &stripelib.AccountParams{
+		Type:    stripelib.String(string(stripelib.AccountTypeExpress)),
+		Country: stripelib.String("BR"),
+		Email:   stripelib.String(strings.TrimSpace(email)),
+		Capabilities: &stripelib.AccountCapabilitiesParams{
+			CardPayments: &stripelib.AccountCapabilitiesCardPaymentsParams{Requested: stripelib.Bool(true)},
+			Transfers:    &stripelib.AccountCapabilitiesTransfersParams{Requested: stripelib.Bool(true)},
+		},
+	}
+	acc, err := account.New(params)
+	if err != nil {
+		return "", fmt.Errorf("stripe.CreateConnectExpressAccount: %w", err)
+	}
+	return acc.ID, nil
+}
+
+// CreateConnectAccountLink returns a hosted onboarding URL for a Connect account.
+func (g *PaymentGateway) CreateConnectAccountLink(ctx context.Context, accountID, returnURL, refreshURL string) (string, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return "", fmt.Errorf("stripe not configured")
+	}
+	params := &stripelib.AccountLinkParams{
+		Account:    stripelib.String(strings.TrimSpace(accountID)),
+		RefreshURL: stripelib.String(refreshURL),
+		ReturnURL:  stripelib.String(returnURL),
+		Type:       stripelib.String(string(stripelib.AccountLinkTypeAccountOnboarding)),
+	}
+	link, err := accountlink.New(params)
+	if err != nil {
+		return "", fmt.Errorf("stripe.CreateConnectAccountLink: %w", err)
+	}
+	return link.URL, nil
+}
+
+// GetConnectAccountStatus loads Connect account flags from Stripe.
+func (g *PaymentGateway) GetConnectAccountStatus(ctx context.Context, accountID string) (*service.ConnectAccountStatus, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+	id := strings.TrimSpace(accountID)
+	if id == "" {
+		return nil, fmt.Errorf("connect account id required")
+	}
+	acc, err := account.GetByID(id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stripe.GetConnectAccountStatus: %w", err)
+	}
+	return &service.ConnectAccountStatus{
+		ChargesEnabled:   acc.ChargesEnabled,
+		DetailsSubmitted: acc.DetailsSubmitted,
 	}, nil
 }
 
@@ -97,4 +401,24 @@ func (g *PaymentGateway) ValidateWebhook(payload []byte, signature string) (stri
 		return "", nil, fmt.Errorf("stripe.ValidateWebhook: marshal data: %w", err)
 	}
 	return string(event.Type), data, nil
+}
+
+// ParseStoredWebhook verifies the Stripe signature on a previously persisted payload (async worker).
+// Timestamp tolerance is not enforced so backlog is safe; API version mismatches are ignored.
+func (g *PaymentGateway) ParseStoredWebhook(payload []byte, signature string) (eventID, eventType string, data []byte, err error) {
+	if g.webhookSecret == "" {
+		return "", "", nil, fmt.Errorf("stripe webhook secret not configured")
+	}
+	ev, err := webhook.ConstructEventWithOptions(payload, signature, g.webhookSecret, webhook.ConstructEventOptions{
+		IgnoreTolerance:          true,
+		IgnoreAPIVersionMismatch: true,
+	})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("stripe.ParseStoredWebhook: %w", err)
+	}
+	raw, err := ev.Data.Raw.MarshalJSON()
+	if err != nil {
+		return "", "", nil, err
+	}
+	return ev.ID, string(ev.Type), raw, nil
 }

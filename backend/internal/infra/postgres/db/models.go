@@ -30,18 +30,53 @@ type Event struct {
 }
 
 type Order struct {
-	ID              uuid.UUID `json:"id"`
-	UserID          uuid.UUID `json:"user_id"`
-	TotalCents      int64     `json:"total_cents"`
-	StripePaymentID string    `json:"stripe_payment_id"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                uuid.UUID   `json:"id"`
+	UserID            uuid.UUID   `json:"user_id"`
+	TotalCents        int64       `json:"total_cents"`
+	StripePaymentID   string      `json:"stripe_payment_id"`
+	Status            string      `json:"status"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+	BuyerName         string      `json:"buyer_name"`
+	BuyerEmail        string      `json:"buyer_email"`
+	BuyerCpf          string      `json:"buyer_cpf"`
+	BuyerPhone        string      `json:"buyer_phone"`
+	BuyerCep          string      `json:"buyer_cep"`
+	BuyerStreet       string      `json:"buyer_street"`
+	BuyerNeighborhood string      `json:"buyer_neighborhood"`
+	BuyerCity         string      `json:"buyer_city"`
+	BuyerState        string      `json:"buyer_state"`
+	Kind              string      `json:"kind"`
+	ResaleListingID   pgtype.UUID `json:"resale_listing_id"`
+	SellerPayoutCents pgtype.Int8 `json:"seller_payout_cents"`
 }
 
 type OrderReservation struct {
 	OrderID       uuid.UUID `json:"order_id"`
 	ReservationID uuid.UUID `json:"reservation_id"`
+}
+
+type Organization struct {
+	ID                   uuid.UUID          `json:"id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	StripeCustomerID     string             `json:"stripe_customer_id"`
+	StripeSubscriptionID string             `json:"stripe_subscription_id"`
+	SubscriptionStatus   string             `json:"subscription_status"`
+	CurrentPeriodEnd     pgtype.Timestamptz `json:"current_period_end"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type ResaleListingHold struct {
+	ID              uuid.UUID `json:"id"`
+	ResaleListingID uuid.UUID `json:"resale_listing_id"`
+	UserID          uuid.UUID `json:"user_id"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Reservation struct {
@@ -68,38 +103,81 @@ type Seat struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type Section struct {
+	ID        uuid.UUID   `json:"id"`
+	EventID   uuid.UUID   `json:"event_id"`
+	Name      string      `json:"name"`
+	ImageUrl  pgtype.Text `json:"image_url"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+type StripeProcessedWebhookEvent struct {
+	StripeEventID string    `json:"stripe_event_id"`
+	InboxID       uuid.UUID `json:"inbox_id"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type StripeWebhookInbox struct {
+	ID              uuid.UUID          `json:"id"`
+	CreatedAt       time.Time          `json:"created_at"`
+	RawBody         []byte             `json:"raw_body"`
+	StripeSignature string             `json:"stripe_signature"`
+	Status          string             `json:"status"`
+	StripeEventID   pgtype.Text        `json:"stripe_event_id"`
+	EventType       pgtype.Text        `json:"event_type"`
+	ErrorMessage    pgtype.Text        `json:"error_message"`
+	ProcessedAt     pgtype.Timestamptz `json:"processed_at"`
+}
+
 type Ticket struct {
-	ID          uuid.UUID `json:"id"`
-	OrderID     uuid.UUID `json:"order_id"`
-	EventID     uuid.UUID `json:"event_id"`
-	SeatID      uuid.UUID `json:"seat_id"`
-	QrCode      string    `json:"qr_code"`
-	Status      string    `json:"status"`
-	PurchasedAt time.Time `json:"purchased_at"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID           uuid.UUID          `json:"id"`
+	OrderID      uuid.UUID          `json:"order_id"`
+	EventID      uuid.UUID          `json:"event_id"`
+	SeatID       uuid.UUID          `json:"seat_id"`
+	QrCode       string             `json:"qr_code"`
+	Status       string             `json:"status"`
+	PurchasedAt  time.Time          `json:"purchased_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	UsedAt       pgtype.Timestamptz `json:"used_at"`
+	HolderUserID uuid.UUID          `json:"holder_user_id"`
+}
+
+type TicketResaleListing struct {
+	ID           uuid.UUID `json:"id"`
+	TicketID     uuid.UUID `json:"ticket_id"`
+	SellerUserID uuid.UUID `json:"seller_user_id"`
+	PriceCents   int64     `json:"price_cents"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type User struct {
-	ID           uuid.UUID          `json:"id"`
-	Name         string             `json:"name"`
-	Email        string             `json:"email"`
-	PasswordHash string             `json:"password_hash"`
-	CpfHash      string             `json:"cpf_hash"`
-	Phone        string             `json:"phone"`
-	Role         string             `json:"role"`
-	CreatedAt    time.Time          `json:"created_at"`
-	UpdatedAt    time.Time          `json:"updated_at"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ID                          uuid.UUID          `json:"id"`
+	Name                        string             `json:"name"`
+	Email                       string             `json:"email"`
+	PasswordHash                string             `json:"password_hash"`
+	CpfHash                     string             `json:"cpf_hash"`
+	Phone                       string             `json:"phone"`
+	Role                        string             `json:"role"`
+	CreatedAt                   time.Time          `json:"created_at"`
+	UpdatedAt                   time.Time          `json:"updated_at"`
+	DeletedAt                   pgtype.Timestamptz `json:"deleted_at"`
+	OrganizationID              pgtype.UUID        `json:"organization_id"`
+	StripeConnectAccountID      string             `json:"stripe_connect_account_id"`
+	StripeConnectChargesEnabled bool               `json:"stripe_connect_charges_enabled"`
 }
 
 type Venue struct {
-	ID        uuid.UUID          `json:"id"`
-	Name      string             `json:"name"`
-	City      string             `json:"city"`
-	State     string             `json:"state"`
-	Capacity  int32              `json:"capacity"`
-	CreatedAt time.Time          `json:"created_at"`
-	UpdatedAt time.Time          `json:"updated_at"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	ID             uuid.UUID          `json:"id"`
+	Name           string             `json:"name"`
+	City           string             `json:"city"`
+	State          string             `json:"state"`
+	Capacity       int32              `json:"capacity"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	OrganizationID uuid.UUID          `json:"organization_id"`
 }

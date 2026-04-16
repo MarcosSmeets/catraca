@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_orders_one_pending_resale_per_listing;

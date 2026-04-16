@@ -97,6 +97,7 @@ func MapVenues(
 	ctx context.Context,
 	games []ScrapedGame,
 	venueRepo repository.VenueRepository,
+	organizationID uuid.UUID,
 ) (map[string]uuid.UUID, error) {
 	// Collect unique venue names.
 	unique := make(map[string]struct{})
@@ -107,7 +108,7 @@ func MapVenues(
 	}
 
 	// Load all existing venues once.
-	existing, err := venueRepo.List(ctx)
+	existing, err := venueRepo.List(ctx, repository.VenueFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("MapVenues: list venues: %w", err)
 	}
@@ -128,7 +129,7 @@ func MapVenues(
 
 		// Create a stub venue record.
 		info := lookupVenueInfo(venueName)
-		newVenue, err := entity.NewVenue(venueName, info.City, info.State, 5000)
+		newVenue, err := entity.NewVenue(organizationID, venueName, info.City, info.State, 5000)
 		if err != nil {
 			return nil, fmt.Errorf("MapVenues: create venue entity %q: %w", venueName, err)
 		}

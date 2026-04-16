@@ -10,12 +10,14 @@ export interface CartItem {
 interface CartState {
   items: CartItem[];
   event: Event | null;
+  /** Organization slug for tenant-scoped reservation / checkout APIs */
+  organizationSlug: string | null;
   reservedAt: number | null;
   /** ISO string from server — precise expiry set by the reservation API */
   serverExpiresAt: string | null;
   /** Reservation IDs returned by POST /reservations */
   reservationIds: string[];
-  addSeats: (seats: Seat[], event: Event) => void;
+  addSeats: (seats: Seat[], event: Event, organizationSlug: string) => void;
   setReservation: (reservationIds: string[], expiresAt: string) => void;
   removeSeat: (seatId: string) => void;
   clearCart: () => void;
@@ -30,14 +32,16 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       items: [],
       event: null,
+      organizationSlug: null,
       reservedAt: null,
       serverExpiresAt: null,
       reservationIds: [],
 
-      addSeats: (seats, event) =>
+      addSeats: (seats, event, organizationSlug) =>
         set({
           items: seats.map((seat) => ({ seat, eventId: event.id })),
           event,
+          organizationSlug,
           reservedAt: Date.now(),
           serverExpiresAt: null,
           reservationIds: [],
@@ -59,6 +63,7 @@ export const useCartStore = create<CartState>()(
         set({
           items: [],
           event: null,
+          organizationSlug: null,
           reservedAt: null,
           serverExpiresAt: null,
           reservationIds: [],
@@ -82,7 +87,7 @@ export const useCartStore = create<CartState>()(
       },
     }),
     {
-      name: "catraca-cart",
+      name: "catraca-cart-v2",
     }
   )
 );

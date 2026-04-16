@@ -6,25 +6,20 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/marcos-smeets/catraca/backend/internal/domain/service"
-	"github.com/marcos-smeets/catraca/backend/internal/worker"
+	postgresinfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
 )
 
-// WebhookHandler handles incoming Stripe webhook events.
+// WebhookHandler stores raw Stripe webhook HTTP payloads for async validation and processing.
 type WebhookHandler struct {
-	paymentGateway  service.PaymentGateway
-	webhookWorker   *worker.PaymentWebhookWorker
+	inbox *postgresinfra.StripeWebhookInboxRepository
 }
 
-func NewWebhookHandler(gateway service.PaymentGateway, webhookWorker *worker.PaymentWebhookWorker) *WebhookHandler {
-	return &WebhookHandler{
-		paymentGateway: gateway,
-		webhookWorker:  webhookWorker,
-	}
+func NewWebhookHandler(inbox *postgresinfra.StripeWebhookInboxRepository) *WebhookHandler {
+	return &WebhookHandler{inbox: inbox}
 }
 
-// HandleStripe validates the Stripe webhook signature and enqueues the event.
-// Stripe requires a 200 response within 30 seconds; processing is async.
+// HandleStripe persists the raw body and Stripe-Signature header, then returns 200 immediately.
+// Validation and domain logic run in StripeInboxWorker (poll).
 func (h *WebhookHandler) HandleStripe(w http.ResponseWriter, r *http.Request) {
 	const maxBodyBytes = 65536
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
@@ -41,17 +36,13 @@ func (h *WebhookHandler) HandleStripe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventType, data, err := h.paymentGateway.ValidateWebhook(payload, signature)
+	id, err := h.inbox.InsertPending(r.Context(), payload, signature)
 	if err != nil {
-		log.Warn().Err(err).Msg("stripe webhook signature validation failed")
-		writeError(w, http.StatusBadRequest, "invalid webhook signature")
+		log.Error().Err(err).Msg("stripe webhook inbox insert failed")
+		writeError(w, http.StatusInternalServerError, "failed to store webhook")
 		return
 	}
 
-	h.webhookWorker.Enqueue(worker.WebhookEvent{
-		Type:    eventType,
-		Payload: data,
-	})
-
+	log.Debug().Stringer("inbox_id", id).Msg("stripe webhook stored")
 	w.WriteHeader(http.StatusOK)
 }

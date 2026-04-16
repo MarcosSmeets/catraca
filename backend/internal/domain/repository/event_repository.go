@@ -8,18 +8,23 @@ import (
 )
 
 type EventFilter struct {
-	Sport     *entity.SportType
-	League    *string
-	City      *string
-	Date      *string
-	DateFrom  *string
-	DateTo    *string
-	Q         *string
-	MinPrice  *int64
-	MaxPrice  *int64
-	Sort      *string
-	Limit     int
-	Offset    int
+	Sport    *entity.SportType
+	Status   *entity.EventStatus
+	League   *string
+	City     *string
+	Date     *string
+	DateFrom *string
+	DateTo   *string
+	Q        *string
+	MinPrice *int64
+	MaxPrice *int64
+	Sort     *string
+	Limit    int
+	Offset   int
+	// OrganizationID filters by venues.organization_id when non-nil.
+	OrganizationID *uuid.UUID
+	// TenantBuyerCatalog applies buyer-facing rules (published statuses + subscription) when true.
+	TenantBuyerCatalog bool
 }
 
 type EventRepository interface {

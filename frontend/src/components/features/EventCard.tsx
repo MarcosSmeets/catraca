@@ -13,14 +13,15 @@ function getEventImage(event: Event): string {
 
 interface EventCardProps {
   event: Event;
+  orgSlug: string;
 }
 
-export default function EventCard({ event }: EventCardProps) {
+export default function EventCard({ event, orgSlug }: EventCardProps) {
   const isSoldOut = event.status === "SOLD_OUT";
   const [imgSrc, setImgSrc] = useState(getEventImage(event));
 
   return (
-    <Link href={`/events/${event.id}`} className="group block">
+    <Link href={`/e/${orgSlug}/events/${event.id}`} className="group block">
       <div className="bg-surface-lowest rounded-md overflow-hidden hover:shadow-[0_12px_40px_0_rgba(26,28,28,0.06)] transition-shadow duration-200">
         {/* Image area */}
         <div className="relative aspect-[16/9] bg-surface-dim overflow-hidden">

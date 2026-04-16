@@ -1,37 +1,24 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import {
-  Elements,
-  CardElement,
-  useStripe,
-  useElements,
-} from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
+import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { loadStripe, type Stripe, type StripeElements, type PaymentRequest } from "@stripe/stripe-js";
+import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { formatCurrency, formatDate, type Seat, type Event } from "@/lib/mock-data";
+import { formatCurrency, formatDate, type Seat, type Event, type Order } from "@/lib/mock-data";
 import { useCartStore } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
+import { PENDING_CHECKOUT_ORDER_ID_KEY } from "@/lib/checkout-storage";
 import { toast } from "sonner";
 
 const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
   : null;
 
-type PaymentMethod = "pix" | "card";
-type Step = "payment" | "confirm" | "success";
-
-const INSTALLMENT_OPTIONS = [
-  { value: 1, label: "À vista" },
-  { value: 2, label: "2x" },
-  { value: 3, label: "3x" },
-  { value: 6, label: "6x" },
-  { value: 12, label: "12x" },
-];
+type Step = "payment" | "confirm";
 
 function formatCpf(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -69,8 +56,42 @@ interface AddressData {
   erro?: boolean;
 }
 
+function getCardElementStyle() {
+  const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  return {
+    base: {
+      color: isDark ? "#e2e2e2" : "#1a1c1c",
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "14px",
+      "::placeholder": { color: isDark ? "#666" : "#999" },
+    },
+    invalid: { color: "#ef4444" },
+  };
+}
+
+function CheckoutPageFallback() {
+  return (
+    <MainLayout>
+      <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="h-8 w-48 bg-surface-dim rounded-sm mb-6 animate-pulse" />
+        <div className="h-64 bg-surface-lowest rounded-md animate-pulse" />
+      </div>
+    </MainLayout>
+  );
+}
+
 export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<CheckoutPageFallback />}>
+      <CheckoutPageInner />
+    </Suspense>
+  );
+}
+
+function CheckoutPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const canceled = searchParams.get("canceled") === "1";
   const { items, event, clearCart } = useCartStore();
 
   const seats = items.map((i) => i.seat);
@@ -78,38 +99,47 @@ export default function CheckoutPage() {
   const fee = event ? Math.round(subtotal * (event.serviceFeePercent / 100)) : 0;
   const total = subtotal + fee;
 
+  const elementsOptions = useMemo(
+    () => ({
+      locale: "pt-BR" as const,
+      appearance: {
+        theme: "night" as const,
+        variables: {
+          colorPrimary: "#e91e63",
+          colorBackground: "#1a1a1a",
+          colorText: "#e0e0e0",
+          fontFamily: "'Inter', system-ui, sans-serif",
+        },
+      },
+    }),
+    []
+  );
+
+  const formProps = {
+    canceled,
+    seats,
+    event,
+    subtotal,
+    fee,
+    total,
+    router,
+    clearCart,
+  };
+
   if (stripePromise) {
     return (
-      <Elements stripe={stripePromise}>
-        <CheckoutForm
-          seats={seats}
-          event={event}
-          subtotal={subtotal}
-          fee={fee}
-          total={total}
-          router={router}
-          clearCart={clearCart}
-        />
+      <Elements stripe={stripePromise} options={elementsOptions}>
+        <StripeCheckoutForm {...formProps} />
       </Elements>
     );
   }
 
-  return (
-    <Elements stripe={null}>
-      <CheckoutForm
-        seats={seats}
-        event={event}
-        subtotal={subtotal}
-        fee={fee}
-        total={total}
-        router={router}
-        clearCart={clearCart}
-      />
-    </Elements>
-  );
+  // Dev mode: no Stripe key
+  return <StripeCheckoutForm {...formProps} />;
 }
 
 interface CheckoutFormProps {
+  canceled: boolean;
   seats: Seat[];
   event: Event | null;
   subtotal: number;
@@ -119,19 +149,156 @@ interface CheckoutFormProps {
   clearCart: () => void;
 }
 
-function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }: CheckoutFormProps) {
+/** Wrapper that provides stripe/elements from the Elements context. */
+function StripeCheckoutForm(props: CheckoutFormProps) {
+  // Only call hooks when we know <Elements> is wrapping us
+  if (stripePromise) {
+    return <StripeCheckoutFormWithHooks {...props} />;
+  }
+  return <CheckoutFormInner {...props} stripe={null} elements={null} />;
+}
+
+function StripeCheckoutFormWithHooks(props: CheckoutFormProps) {
   const stripe = useStripe();
   const elements = useElements();
+  return <CheckoutFormInner {...props} stripe={stripe} elements={elements} />;
+}
 
+interface CheckoutFormInnerProps extends CheckoutFormProps {
+  stripe: Stripe | null;
+  elements: StripeElements | null;
+}
+
+function CheckoutFormInner({
+  canceled,
+  seats,
+  event,
+  subtotal,
+  fee,
+  total,
+  router,
+  clearCart,
+  stripe,
+  elements,
+}: CheckoutFormInnerProps) {
   const [step, setStep] = useState<Step>("payment");
-  const [method, setMethod] = useState<PaymentMethod>("pix");
   const [loading, setLoading] = useState(false);
-  const [pixCopied, setPixCopied] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
   const [installments, setInstallments] = useState(1);
-  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
+  const [paymentType, setPaymentType] = useState<"credit" | "debit">("credit");
+  const canceledToastShown = useRef(false);
+  const cardStyle = useMemo(() => getCardElementStyle(), []);
+  const [paymentRequest, setPaymentRequest] = useState<PaymentRequest | null>(null);
+  const [canPayWithWallet, setCanPayWithWallet] = useState(false);
 
   const reservationIds = useCartStore((s) => s.reservationIds);
+  const organizationSlug = useCartStore((s) => s.organizationSlug);
   const accessToken = useAuthStore((s) => s.accessToken);
+
+  // Apple Pay / Google Pay setup
+  useEffect(() => {
+    if (!stripe || total <= 0) return;
+
+    const pr = stripe.paymentRequest({
+      country: "BR",
+      currency: "brl",
+      total: {
+        label: "Ingressos Catraca",
+        amount: total,
+      },
+      requestPayerName: true,
+      requestPayerEmail: true,
+    });
+
+    pr.canMakePayment().then((result) => {
+      if (result) {
+        setPaymentRequest(pr);
+        setCanPayWithWallet(true);
+      }
+    });
+  }, [stripe, total]);
+
+  // Handle wallet payment (Apple Pay / Google Pay)
+  useEffect(() => {
+    if (!paymentRequest || !stripe) return;
+
+    const handler = async (ev: { paymentMethod: { id: string }; complete: (status: "success" | "fail") => void }) => {
+      try {
+        if (!organizationSlug) {
+          toast.error("Carrinho inválido. Volte ao evento e selecione os assentos novamente.");
+          ev.complete("fail");
+          return;
+        }
+        // Create order
+        const orderRes = await apiFetch<{
+          orderId: string;
+          totalCents: number;
+          stripeEnabled: boolean;
+        }>("/orders", {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({ orgSlug: organizationSlug, reservationIds }),
+        });
+
+        sessionStorage.setItem(PENDING_CHECKOUT_ORDER_ID_KEY, orderRes.orderId);
+
+        // Create PaymentIntent
+        const piRes = await apiFetch<{
+          clientSecret: string;
+          amountCents: number;
+        }>(`/orders/${orderRes.orderId}/payment-intent`, {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({}),
+        });
+
+        const { error, paymentIntent } = await stripe.confirmCardPayment(
+          piRes.clientSecret,
+          { payment_method: ev.paymentMethod.id },
+          { handleActions: false }
+        );
+
+        if (error) {
+          ev.complete("fail");
+          setCardError(error.message ?? "Erro no pagamento.");
+          return;
+        }
+
+        if (paymentIntent?.status === "requires_action") {
+          ev.complete("success");
+          const { error: actionError } = await stripe.confirmCardPayment(piRes.clientSecret);
+          if (actionError) {
+            setCardError(actionError.message ?? "Erro na autenticação.");
+            return;
+          }
+        } else {
+          ev.complete("success");
+        }
+
+        clearCart();
+        router.push("/checkout/success");
+      } catch (err) {
+        ev.complete("fail");
+        const msg = err instanceof Error ? err.message : "Erro ao processar pagamento.";
+        toast.error(msg);
+      }
+    };
+
+    paymentRequest.on("paymentmethod", handler);
+    return () => {
+      paymentRequest.off("paymentmethod", handler);
+    };
+  }, [paymentRequest, stripe, accessToken, reservationIds, organizationSlug, clearCart, router]);
+
+  useEffect(() => {
+    if (!canceled || canceledToastShown.current) return;
+    canceledToastShown.current = true;
+    toast.message("Pagamento cancelado. Revise o pedido e tente novamente.");
+  }, [canceled]);
+
+  useEffect(() => {
+    if (paymentType === "debit") setInstallments(1);
+  }, [paymentType]);
 
   const [form, setForm] = useState({
     name: "",
@@ -143,7 +310,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     neighborhood: "",
     city: "",
     state: "",
-    cardName: "",
   });
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [cepLoading, setCepLoading] = useState(false);
@@ -201,51 +367,159 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
 
   async function handleConfirm() {
     setLoading(true);
+    setCardError(null);
     try {
-      // 1. Create order on the backend → get clientSecret
-      const orderRes = await apiFetch<{ orderId: string; clientSecret: string; totalCents: number }>(
-        "/orders",
-        {
-          method: "POST",
-          accessToken,
-          body: JSON.stringify({ reservationIds }),
-        }
-      );
-      setConfirmedOrderId(orderRes.orderId);
+      // Check for existing pending order
+      const pendingId =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem(PENDING_CHECKOUT_ORDER_ID_KEY)
+          : null;
 
-      // 2. Confirm payment with Stripe (card) or wait for PIX webhook
-      if (method === "card" && stripe && elements) {
-        const cardElement = elements.getElement(CardElement);
-        if (cardElement && orderRes.clientSecret) {
-          const { error } = await stripe.confirmCardPayment(orderRes.clientSecret, {
-            payment_method: {
-              card: cardElement,
-              billing_details: { name: form.cardName || form.name, email: form.email },
-            },
-          });
-          if (error) {
-            toast.error(error.message ?? "Pagamento recusado pelo cartão");
-            setLoading(false);
+      let orderId: string | null = null;
+
+      if (pendingId && accessToken) {
+        try {
+          const existing = await apiFetch<Order>(`/me/orders/${pendingId}`, { accessToken });
+          if (existing.status === "PAID") {
+            sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+            router.replace("/tickets?paid=1");
+            return;
+          }
+          if (existing.status === "PENDING") {
+            orderId = pendingId;
+          } else {
+            sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+          }
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            sessionStorage.removeItem(PENDING_CHECKOUT_ORDER_ID_KEY);
+          } else {
+            const msg = e instanceof Error ? e.message : "Erro ao verificar o pedido.";
+            toast.error(msg);
             return;
           }
         }
       }
 
-      // In dev mode (no Stripe key), auto-confirm via dev endpoint
-      const isDevPayment = orderRes.clientSecret?.startsWith("pi_dev_");
-      if (isDevPayment) {
-        try {
-          await apiFetch(`/dev/orders/${orderRes.orderId}/pay`, {
-            method: "POST",
-            accessToken,
-          });
-        } catch {
-          // dev endpoint failure is non-fatal; order will stay PENDING but we still show success
+      // Create order if needed
+      if (!orderId) {
+        if (!organizationSlug) {
+          toast.error("Carrinho inválido. Volte ao evento e selecione os assentos novamente.");
+          return;
+        }
+        const orderRes = await apiFetch<{
+          orderId: string;
+          totalCents: number;
+          stripeEnabled: boolean;
+        }>("/orders", {
+          method: "POST",
+          accessToken,
+          body: JSON.stringify({
+            orgSlug: organizationSlug,
+            reservationIds,
+            buyerName: form.name,
+            buyerEmail: form.email,
+            buyerCpf: form.cpf,
+            buyerPhone: form.phone,
+            buyerCep: form.cep,
+            buyerStreet: form.street,
+            buyerNeighborhood: form.neighborhood,
+            buyerCity: form.city,
+            buyerState: form.state,
+          }),
+        });
+
+        orderId = orderRes.orderId;
+        sessionStorage.setItem(PENDING_CHECKOUT_ORDER_ID_KEY, orderId);
+
+        // Dev mode (no Stripe)
+        if (!orderRes.stripeEnabled) {
+          try {
+            await apiFetch(`/dev/orders/${orderId}/pay`, {
+              method: "POST",
+              accessToken,
+            });
+          } catch {
+            toast.error("Não foi possível simular o pagamento (dev).");
+            return;
+          }
+          clearCart();
+          router.push("/checkout/success");
+          return;
         }
       }
 
-      clearCart();
-      setStep("success");
+      // Create PaymentIntent
+      const piRes = await apiFetch<{
+        clientSecret: string;
+        amountCents: number;
+      }>(`/orders/${orderId}/payment-intent`, {
+        method: "POST",
+        accessToken,
+        body: JSON.stringify({}),
+      });
+
+      if (!stripe || !elements) {
+        toast.error("Stripe não carregou. Recarregue a página.");
+        return;
+      }
+
+      const cardNumberElement = elements.getElement(CardNumberElement);
+      if (!cardNumberElement) {
+        toast.error("Dados do cartão não preenchidos.");
+        return;
+      }
+
+      // Build confirm options
+      const confirmOptions: Parameters<typeof stripe.confirmCardPayment>[1] = {
+        payment_method: {
+          card: cardNumberElement,
+          billing_details: {
+            name: form.name,
+            email: form.email,
+            address: {
+              postal_code: form.cep.replace(/\D/g, ""),
+              line1: form.street,
+              city: form.city,
+              state: form.state,
+              country: "BR",
+            },
+          },
+        },
+      };
+
+      // Add installment plan for credit (> 1x)
+      if (paymentType === "credit" && installments > 1) {
+        (confirmOptions as Record<string, unknown>).payment_method_options = {
+          card: {
+            installments: {
+              plan: {
+                count: installments,
+                interval: "month",
+                type: "fixed_count",
+              },
+            },
+          },
+        };
+      }
+
+      const { error, paymentIntent } = await stripe.confirmCardPayment(
+        piRes.clientSecret,
+        confirmOptions
+      );
+
+      if (error) {
+        setCardError(error.message ?? "Erro ao processar pagamento.");
+        return;
+      }
+
+      if (paymentIntent?.status === "succeeded" || paymentIntent?.status === "processing") {
+        clearCart();
+        router.push("/checkout/success");
+        return;
+      }
+
+      // For requires_action (3DS), Stripe handles it automatically via confirmCardPayment
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao processar pagamento. Tente novamente.";
       toast.error(msg);
@@ -254,66 +528,24 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
     }
   }
 
-  function copyPixKey() {
-    navigator.clipboard.writeText("catraca@pagamentos.com.br");
-    setPixCopied(true);
-    setTimeout(() => setPixCopied(false), 2000);
-  }
+  const installmentOptions = useMemo(() => {
+    const options: { value: number; label: string }[] = [];
+    for (let i = 1; i <= 12; i++) {
+      const installmentValue = total / i;
+      if (i === 1) {
+        options.push({ value: 1, label: `1x de ${formatCurrency(total)} (à vista)` });
+      } else {
+        options.push({ value: i, label: `${i}x de ${formatCurrency(Math.ceil(installmentValue))}` });
+      }
+    }
+    return options;
+  }, [total]);
 
-  const installmentAmount = total / installments;
-
-  if (step === "success") {
-    return (
-      <MainLayout>
-        <div className="max-w-lg mx-auto px-6 py-20 text-center">
-          <div className="w-16 h-16 bg-primary rounded-sm flex items-center justify-center mx-auto mb-6">
-            <CheckIcon />
-          </div>
-          <h1 className="font-display font-black text-3xl uppercase tracking-tight text-on-surface mb-2">
-            Pedido confirmado!
-          </h1>
-          <p className="text-sm font-body text-on-surface/50 mb-8">
-            Seus ingressos foram enviados para{" "}
-            <span className="text-on-surface font-medium">{form.email || "seu e-mail"}</span>.
-          </p>
-          {event && (
-            <div className="bg-surface-lowest rounded-md p-5 text-left mb-8">
-              <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-3">
-                Resumo
-              </p>
-              <p className="font-display font-bold text-sm text-on-surface tracking-tight">
-                {event.homeTeam} vs {event.awayTeam}
-              </p>
-              <p className="text-xs text-on-surface/40 font-body mt-1">
-                {formatDate(event.startsAt)}
-              </p>
-              <div className="mt-4 pt-4 border-t border-outline-variant flex justify-between">
-                <span className="font-display font-bold uppercase tracking-tight text-on-surface text-sm">
-                  Total pago
-                </span>
-                <span className="font-display font-black text-on-surface tracking-tight">
-                  {formatCurrency(total)}
-                </span>
-              </div>
-            </div>
-          )}
-          <div className="flex flex-col gap-3">
-            <Button fullWidth onClick={() => router.push(`/orders/${confirmedOrderId ?? ""}`)}>
-              Ver detalhes do pedido
-            </Button>
-            <Button fullWidth variant="secondary" onClick={() => router.push("/tickets")}>
-              Meus ingressos
-            </Button>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
+  const hasStripe = !!stripePromise;
 
   return (
     <MainLayout>
       <div className="max-w-5xl mx-auto px-6 py-10">
-        {/* Header */}
         <div className="mb-8">
           <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">
             Finalizar compra
@@ -323,12 +555,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
           </h1>
         </div>
 
-        {/* Progress steps */}
         <div className="flex items-center gap-3 mb-10">
           {(["payment", "confirm"] as const).map((s, idx) => {
-            const stepOrder: Step[] = ["payment", "confirm", "success"];
             const isActive = step === s;
-            const isDone = stepOrder.indexOf(step) > stepOrder.indexOf(s);
+            const isDone = (step === "confirm" && s === "payment") || false;
             return (
               <div key={s} className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
@@ -336,7 +566,7 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                     className={[
                       "w-6 h-6 rounded-sm flex items-center justify-center text-xs font-display font-bold transition-colors duration-200",
                       isDone || isActive
-                        ? "bg-primary text-on-primary"
+                        ? "bg-accent text-on-accent"
                         : "bg-surface-dim text-on-surface/30",
                     ]
                       .filter(Boolean)
@@ -356,20 +586,15 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                     {s === "payment" ? "Pagamento" : "Confirmação"}
                   </span>
                 </div>
-                {idx < 1 && (
-                  <div className="w-8 h-px bg-outline-variant" />
-                )}
+                {idx < 1 && <div className="w-8 h-px bg-outline-variant" />}
               </div>
             );
           })}
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* ── Form ────────────────────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
-            {step === "payment" && (
-              <div className="flex flex-col gap-8">
-                {/* Buyer info */}
+            <div className="flex flex-col gap-8" style={{ display: step === "payment" ? undefined : "none" }}>
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Dados do comprador
@@ -382,7 +607,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                         value={form.name}
                         onChange={(e) => updateField("name", e.target.value)}
                         error={errors.name}
-                        aria-describedby={errors.name ? "name-error" : undefined}
                       />
                     </div>
                     <Input
@@ -392,7 +616,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                       value={form.email}
                       onChange={(e) => updateField("email", e.target.value)}
                       error={errors.email}
-                      aria-describedby={errors.email ? "email-error" : undefined}
                     />
                     <div>
                       <Input
@@ -401,7 +624,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                         value={form.cpf}
                         onChange={(e) => updateField("cpf", formatCpf(e.target.value))}
                         error={errors.cpf}
-                        aria-describedby={errors.cpf ? "cpf-error" : undefined}
                         inputMode="numeric"
                       />
                     </div>
@@ -415,7 +637,6 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   </div>
                 </section>
 
-                {/* Address */}
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Endereço de cobrança
@@ -458,128 +679,125 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   </div>
                 </section>
 
-                {/* Payment method */}
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Forma de pagamento
                   </h2>
 
-                  {/* Method tabs */}
-                  <div className="flex gap-2 mb-6" role="tablist" aria-label="Forma de pagamento">
-                    {(["pix", "card"] as PaymentMethod[]).map((m) => (
-                      <button
-                        key={m}
-                        role="tab"
-                        aria-selected={method === m}
-                        onClick={() => setMethod(m)}
-                        className={[
-                          "flex-1 py-3 px-4 rounded-sm text-sm font-display font-semibold uppercase tracking-tight transition-colors duration-150",
-                          method === m
-                            ? "bg-primary text-on-primary"
-                            : "bg-surface border border-outline-variant text-on-surface/50 hover:border-primary hover:text-on-surface",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        {m === "pix" ? "PIX" : "Cartão"}
-                      </button>
-                    ))}
-                  </div>
-
-                  {method === "pix" ? (
-                    <div className="flex flex-col items-center gap-4 py-6 text-center">
-                      <div className="w-40 h-40 bg-surface-low rounded-sm flex items-center justify-center">
-                        <div className="w-32 h-32 bg-surface-dim rounded-none grid grid-cols-8 gap-0.5 p-2" aria-label="QR Code PIX placeholder">
-                          {Array.from({ length: 64 }).map((_, i) => (
-                            <div
-                              key={i}
-                              className={
-                                (i * 13 + i * 7) % 3 === 0
-                                  ? "bg-primary"
-                                  : "bg-surface-lowest"
-                              }
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-body text-on-surface/50 mb-1">
-                          Escaneie o QR Code ou copie a chave PIX
-                        </p>
-                        <div className="flex items-center gap-2 bg-surface-low rounded-sm px-4 py-2.5">
-                          <code className="text-xs font-body text-on-surface/70 flex-1 truncate">
-                            catraca@pagamentos.com.br
-                          </code>
-                          <button
-                            onClick={copyPixKey}
-                            className="text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors shrink-0"
-                          >
-                            {pixCopied ? "Copiado!" : "Copiar"}
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs text-on-surface/30 font-body">
-                        Após o pagamento, a confirmação é automática em até 1 minuto.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      <Input
-                        label="Nome no cartão"
-                        placeholder="RAFAEL A SOUZA"
-                        value={form.cardName}
-                        onChange={(e) => updateField("cardName", e.target.value.toUpperCase())}
-                      />
-
-                      {/* Stripe CardElement or fallback */}
-                      {stripePromise ? (
-                        <div>
-                          <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
-                            Dados do cartão
-                          </label>
-                          <div className="bg-surface px-4 py-3 rounded-sm border border-outline-variant focus-within:border-primary transition-colors duration-150">
-                            <CardElement
-                              options={{
-                                style: {
-                                  base: {
-                                    fontSize: "14px",
-                                    fontFamily: "Inter, sans-serif",
-                                    color: "var(--color-on-surface, #1a1a1a)",
-                                    "::placeholder": { color: "rgba(0,0,0,0.3)" },
-                                  },
-                                  invalid: { color: "var(--color-error, #c00)" },
+                  {hasStripe ? (
+                    <>
+                      {/* Apple Pay / Google Pay */}
+                      {canPayWithWallet && paymentRequest && (
+                        <div className="mb-6">
+                          <PaymentRequestButtonElement
+                            options={{
+                              paymentRequest,
+                              style: {
+                                paymentRequestButton: {
+                                  type: "default",
+                                  theme: "light",
+                                  height: "48px",
                                 },
-                                hidePostalCode: true,
-                              }}
-                            />
+                              },
+                            }}
+                          />
+                          <div className="flex items-center gap-3 my-5">
+                            <div className="flex-1 h-px bg-outline-variant" />
+                            <span className="text-xs font-body text-on-surface/40 uppercase tracking-widest">
+                              ou pague com cartão
+                            </span>
+                            <div className="flex-1 h-px bg-outline-variant" />
                           </div>
                         </div>
-                      ) : (
-                        <p className="text-xs text-on-surface/40 font-body bg-surface-low rounded-sm px-4 py-3">
-                          Configure <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> para habilitar pagamento por cartão.
-                        </p>
                       )}
 
-                      {/* Installments */}
-                      <div>
-                        <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50 mb-2">
-                          Parcelamento
-                        </label>
-                        <select
-                          value={installments}
-                          onChange={(e) => setInstallments(Number(e.target.value))}
-                          className="w-full bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant focus:outline-none focus:border-primary transition-colors duration-150"
+                      {/* Payment type toggle */}
+                      <div className="flex gap-2 mb-6">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentType("credit")}
+                          className={[
+                            "flex-1 py-2.5 px-4 rounded-md text-sm font-display font-semibold tracking-tight transition-all duration-150 cursor-pointer",
+                            paymentType === "credit"
+                              ? "bg-accent text-on-accent"
+                              : "bg-surface-high text-on-surface/50 hover:text-on-surface",
+                          ].join(" ")}
                         >
-                          {INSTALLMENT_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.value === 1
-                                ? `À vista — ${formatCurrency(total)}`
-                                : `${opt.label} de ${formatCurrency(installmentAmount)} (sem juros)`}
-                            </option>
-                          ))}
-                        </select>
+                          Crédito
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentType("debit")}
+                          className={[
+                            "flex-1 py-2.5 px-4 rounded-md text-sm font-display font-semibold tracking-tight transition-all duration-150 cursor-pointer",
+                            paymentType === "debit"
+                              ? "bg-accent text-on-accent"
+                              : "bg-surface-high text-on-surface/50 hover:text-on-surface",
+                          ].join(" ")}
+                        >
+                          Débito
+                        </button>
                       </div>
-                    </div>
+
+                      {/* Card fields */}
+                      <div className="flex flex-col gap-4">
+                        <div>
+                          <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/60 mb-2">
+                            Número do cartão
+                          </label>
+                          <div className="bg-surface-high border border-outline-variant rounded-md px-3 py-3">
+                            <CardNumberElement options={{ style: cardStyle, showIcon: true }} />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/60 mb-2">
+                              Validade
+                            </label>
+                            <div className="bg-surface-high border border-outline-variant rounded-md px-3 py-3">
+                              <CardExpiryElement options={{ style: cardStyle }} />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/60 mb-2">
+                              CVC
+                            </label>
+                            <div className="bg-surface-high border border-outline-variant rounded-md px-3 py-3">
+                              <CardCvcElement options={{ style: cardStyle }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Installments - credit only */}
+                        {paymentType === "credit" && (
+                          <div>
+                            <label className="block text-xs font-display font-semibold uppercase tracking-tight text-on-surface/60 mb-2">
+                              Parcelas
+                            </label>
+                            <select
+                              value={installments}
+                              onChange={(e) => setInstallments(Number(e.target.value))}
+                              className="w-full bg-surface-high border border-outline-variant rounded-md px-3 py-3 text-sm font-body text-on-surface appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+                            >
+                              {installmentOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      {cardError && (
+                        <p className="mt-3 text-sm font-body text-red-400">{cardError}</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm font-body text-on-surface/50">
+                      Modo desenvolvimento — o pagamento será simulado automaticamente.
+                    </p>
                   )}
                 </section>
 
@@ -593,10 +811,8 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   Revisar pedido →
                 </Button>
               </div>
-            )}
 
-            {step === "confirm" && (
-              <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-6" style={{ display: step === "confirm" ? undefined : "none" }}>
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-4">
                     Revisão do pedido
@@ -610,16 +826,17 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                       <span className="font-body text-on-surface/50">E-mail</span>
                       <span className="font-body text-on-surface">{form.email}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="font-body text-on-surface/50">Pagamento</span>
-                      <span className="font-body text-on-surface uppercase">
-                        {method === "pix"
-                          ? "PIX"
-                          : installments === 1
-                          ? "Cartão — à vista"
-                          : `Cartão — ${installments}x de ${formatCurrency(installmentAmount)}`}
-                      </span>
-                    </div>
+                    {hasStripe && (
+                      <div className="flex justify-between text-sm">
+                        <span className="font-body text-on-surface/50">Pagamento</span>
+                        <span className="font-body text-on-surface text-right max-w-[14rem]">
+                          Cartão de {paymentType === "credit" ? "crédito" : "débito"}
+                          {paymentType === "credit" && installments > 1
+                            ? ` — ${installments}x de ${formatCurrency(Math.ceil(total / installments))}`
+                            : ""}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm border-t border-outline-variant pt-3 mt-1">
                       <span className="font-display font-bold uppercase tracking-tight text-on-surface">
                         Total
@@ -631,28 +848,21 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                   </div>
                 </section>
 
+                {cardError && (
+                  <p className="text-sm font-body text-red-400">{cardError}</p>
+                )}
+
                 <div className="flex gap-3">
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    onClick={() => setStep("payment")}
-                  >
+                  <Button variant="secondary" size="lg" onClick={() => setStep("payment")}>
                     ← Voltar
                   </Button>
-                  <Button
-                    fullWidth
-                    size="lg"
-                    onClick={handleConfirm}
-                    disabled={loading}
-                  >
-                    {loading ? "Processando…" : "Confirmar pagamento"}
+                  <Button fullWidth size="lg" onClick={handleConfirm} disabled={loading}>
+                    {loading ? "Processando pagamento…" : `Pagar ${formatCurrency(total)}`}
                   </Button>
                 </div>
               </div>
-            )}
           </div>
 
-          {/* ── Order Summary Sidebar ───────────────────────────────────── */}
           <aside className="w-full lg:w-72 shrink-0">
             <div className="bg-surface-lowest rounded-md p-6 sticky top-20">
               <h3 className="font-display font-bold text-xs uppercase tracking-tight text-on-surface/50 mb-4">
@@ -673,11 +883,10 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
                 {seats.map((seat) => (
                   <div key={seat.id} className="flex justify-between text-sm">
                     <span className="font-body text-on-surface/60">
-                      {seat.section} · {seat.row}{seat.number}
+                      {seat.section} · {seat.row}
+                      {seat.number}
                     </span>
-                    <span className="font-body text-on-surface">
-                      {formatCurrency(seat.priceCents)}
-                    </span>
+                    <span className="font-body text-on-surface">{formatCurrency(seat.priceCents)}</span>
                   </div>
                 ))}
               </div>
@@ -705,13 +914,5 @@ function CheckoutForm({ seats, event, subtotal, fee, total, router, clearCart }:
         </div>
       </div>
     </MainLayout>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
   );
 }

@@ -87,10 +87,10 @@ export default function SeatMap({
                 className={[
                   "px-4 py-2.5 rounded-sm text-xs font-body transition-colors duration-150 text-left",
                   isActive
-                    ? "bg-primary text-on-primary"
+                    ? "bg-accent text-on-accent"
                     : avail === 0
                     ? "bg-surface-dim text-on-surface/30 cursor-not-allowed"
-                    : "bg-surface-lowest border border-outline-variant text-on-surface hover:border-primary",
+                    : "bg-surface-lowest border border-outline-variant text-on-surface hover:border-accent",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -112,7 +112,7 @@ export default function SeatMap({
 
       {/* Stage indicator */}
       <div className="flex flex-col items-center gap-1" aria-hidden="true">
-        <div className="w-full max-w-xs h-1.5 bg-primary/20 rounded-none" />
+        <div className="w-full max-w-xs h-1.5 bg-accent/20 rounded-none" />
         <span className="text-[10px] font-body uppercase tracking-widest text-on-surface/30">
           Campo / Palco
         </span>
@@ -155,7 +155,7 @@ export default function SeatMap({
       <div className="flex flex-wrap gap-4" role="list" aria-label="Legenda">
         {[
           { color: "bg-surface-high border border-outline-variant", label: "Disponível" },
-          { color: "bg-primary", label: "Selecionado" },
+          { color: "bg-accent", label: "Selecionado" },
           { color: "bg-surface-dim", label: "Indisponível" },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2" role="listitem">
@@ -225,11 +225,11 @@ function SeatButton({
       aria-label={label}
       aria-pressed={isSelected}
       className={[
-        "w-6 h-6 rounded-none transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+        "w-6 h-6 rounded-none transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1",
         isSelected
-          ? "bg-primary scale-110"
+          ? "bg-accent scale-110"
           : isAvailable
-          ? "bg-surface-high border border-outline-variant hover:bg-primary/20 cursor-pointer"
+          ? "bg-surface-high border border-outline-variant hover:bg-accent/20 cursor-pointer"
           : isReserved
           ? "bg-surface-dim cursor-not-allowed opacity-60"
           : "bg-surface-dim cursor-not-allowed opacity-40",

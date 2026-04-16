@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button, Input } from "@/components/ui";
+import Logo from "@/components/brand/Logo";
 import { adminAuthLogin } from "@/lib/admin-auth-api";
 import { useAdminAuthStore } from "@/store/admin-auth";
 import { ApiError } from "@/lib/api";
@@ -52,11 +53,8 @@ export default function AdminLoginPage() {
     <div className="min-h-screen flex">
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12">
-        <Link href="/" className="flex items-center gap-2 group">
-          <span className="font-display font-black text-2xl tracking-tight text-on-primary uppercase">
-            Catraca
-          </span>
-          <span className="w-2 h-2 rounded-full bg-on-primary group-hover:scale-125 transition-transform duration-150" />
+        <Link href="/" className="flex items-center group">
+          <Logo variant="lockup" className="group-hover:opacity-90 transition-opacity duration-150" />
         </Link>
         <div>
           <h1 className="font-display font-black text-5xl text-on-primary tracking-tight leading-tight mb-6">
@@ -76,17 +74,14 @@ export default function AdminLoginPage() {
       {/* Right panel */}
       <div className="flex-1 bg-surface-lowest flex flex-col justify-center items-center px-6 py-12">
         <div className="lg:hidden mb-10 self-start">
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="font-display font-black text-xl tracking-tight text-primary uppercase">
-              Catraca
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:scale-125 transition-transform duration-150" />
+          <Link href="/" className="flex items-center group">
+            <Logo variant="wordmark" className="group-hover:opacity-90 transition-opacity duration-150" />
           </Link>
         </div>
 
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <p className="text-xs font-display font-semibold uppercase tracking-tight text-primary mb-1">
+            <p className="text-xs font-display font-semibold uppercase tracking-tight text-accent mb-1">
               Acesso restrito
             </p>
             <h2 className="font-display font-black text-3xl text-on-surface tracking-tight mb-1">

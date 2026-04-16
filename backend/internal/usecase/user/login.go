@@ -41,11 +41,7 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOu
 		return nil, ErrInvalidCredentials
 	}
 
-	pair, err := uc.tokenService.GenerateTokenPair(service.TokenClaims{
-		UserID: u.ID,
-		Email:  u.Email,
-		Role:   string(u.Role),
-	})
+	pair, err := uc.tokenService.GenerateTokenPair(tokenClaimsFromUser(u))
 	if err != nil {
 		return nil, err
 	}

@@ -1,75 +1,148 @@
 "use client";
 
+import type { ReactNode } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { adminListVenues, adminListEvents } from "@/lib/admin-api";
+import {
+  useAdminVenues,
+  useAdminEvents,
+  useAdminMetrics,
+  useAdminOrganizationsList,
+  type DashboardMetrics,
+  type OrderStatusMetric,
+  type TicketStatusCount,
+} from "@/lib/admin-api";
+import { formatCurrency } from "@/lib/mock-data";
+import { StatCard } from "@/components/admin/StatCard";
+import { ChartCard } from "@/components/admin/ChartCard";
+import { RevenueLineChart } from "@/components/admin/charts/RevenueLineChart";
+import { TicketsBySectionBar } from "@/components/admin/charts/TicketsBySectionBar";
+import { TicketsBySportBar } from "@/components/admin/charts/TicketsBySportBar";
+import { TicketStatusDonut } from "@/components/admin/charts/TicketStatusDonut";
+import { OrderStatusDonut } from "@/components/admin/charts/OrderStatusDonut";
+import { StadiumOccupancyTable } from "@/components/admin/StadiumOccupancyTable";
+import { TopEventsTable } from "@/components/admin/TopEventsTable";
+import { OrgRevenueByTenantBar } from "@/components/admin/charts/OrgRevenueByTenantBar";
+import { ResaleListingsBar } from "@/components/admin/charts/ResaleListingsBar";
+import { useAdminAuthStore } from "@/store/admin-auth";
 
-function StatCard({
-  label,
-  value,
-  href,
-  cta,
-}: {
-  label: string;
-  value: number | undefined;
-  href: string;
-  cta: string;
-}) {
+const TICKET_STATUSES: TicketStatusCount["status"][] = ["VALID", "USED", "CANCELLED"];
+
+function mergeTicketStatuses(rows: TicketStatusCount[] | undefined): TicketStatusCount[] {
+  const map = new Map((rows ?? []).map((r) => [r.status, r.count]));
+  return TICKET_STATUSES.map((status) => ({
+    status,
+    count: map.get(status) ?? 0,
+  }));
+}
+
+const ORDER_STATUSES: OrderStatusMetric["status"][] = ["PENDING", "PAID", "FAILED", "REFUNDED"];
+
+function mergeOrderStatuses(rows: OrderStatusMetric[] | undefined): OrderStatusMetric[] {
+  const by = new Map((rows ?? []).map((r) => [r.status, r]));
+  return ORDER_STATUSES.map((status) => {
+    const r = by.get(status);
+    return (
+      r ?? {
+        status,
+        countAll: 0,
+        count30d: 0,
+        amountAllCents: 0,
+        amount30dCents: 0,
+      }
+    );
+  });
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-surface-low border border-outline-variant rounded-sm p-6 flex flex-col gap-4">
-      <div>
-        <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
-          {label}
-        </p>
-        <p className="text-4xl font-display font-black text-on-surface mt-1">
-          {value ?? "—"}
-        </p>
-      </div>
-      <Link
-        href={href}
-        className="text-sm font-display font-semibold text-primary hover:underline underline-offset-2"
-      >
-        {cta} →
-      </Link>
-    </div>
+    <h2 className="font-display font-black text-xl text-on-surface tracking-tight border-b border-outline-variant pb-2">
+      {children}
+    </h2>
   );
 }
 
 export default function AdminDashboardPage() {
-  const { data: venues } = useQuery({
-    queryKey: ["admin-venues"],
-    queryFn: adminListVenues,
-  });
+  const adminUser = useAdminAuthStore((s) => s.adminUser);
+  const isPlatformAdmin = adminUser?.role === "platform_admin";
+  const [metricsOrgId, setMetricsOrgId] = useState<string>("");
+  const listOrgId = isPlatformAdmin && metricsOrgId ? metricsOrgId : undefined;
 
-  const { data: events } = useQuery({
-    queryKey: ["admin-events"],
-    queryFn: adminListEvents,
-  });
+  const { data: orgDirectory } = useAdminOrganizationsList(isPlatformAdmin);
 
-  const draftCount = events?.filter((e) => e.status === "DRAFT").length ?? 0;
-  const onSaleCount = events?.filter((e) => e.status === "ON_SALE").length ?? 0;
+  const { data: venues } = useAdminVenues({ limit: 1, organizationId: listOrgId });
+  const { data: events } = useAdminEvents({ limit: 1, organizationId: listOrgId });
+  const { data: drafts } = useAdminEvents({ status: "DRAFT", limit: 1, organizationId: listOrgId });
+  const { data: onSale } = useAdminEvents({ status: "ON_SALE", limit: 1, organizationId: listOrgId });
+  const { data: metrics, isLoading: metricsLoading, isSuccess: metricsReady } = useAdminMetrics(
+    isPlatformAdmin ? metricsOrgId : undefined
+  );
+
+  const draftCount = drafts?.total ?? 0;
+  const onSaleCount = onSale?.total ?? 0;
+
+  const m: DashboardMetrics | undefined = metricsReady ? metrics : undefined;
+  const fin = m?.financial;
+  const resaleRows =
+    m?.resale != null
+      ? [
+          { label: "Anúncios ativos", count: m.resale.activeListings },
+          { label: "Cancelados", count: m.resale.cancelledListings },
+          { label: "Vendidos (anúncio)", count: m.resale.soldListingsAll },
+        ]
+      : [];
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="font-display font-black text-3xl text-on-surface tracking-tight">
-          Dashboard
-        </h1>
-        <p className="text-on-surface/50 font-body text-sm mt-1">
-          Visão geral do painel administrativo.
-        </p>
+    <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-display font-black text-3xl text-on-surface tracking-tight">Dashboard</h1>
+          <p className="text-on-surface/50 font-body text-sm mt-1">
+            Visão geral do painel administrativo.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 sm:items-end shrink-0">
+          <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40 sm:pt-1">
+            Últimos 30 dias · Total
+          </p>
+          {isPlatformAdmin ? (
+            <label className="flex flex-col gap-1 w-full sm:w-72">
+              <span className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
+                Métricas por empresa
+              </span>
+              <select
+                value={metricsOrgId}
+                onChange={(e) => setMetricsOrgId(e.target.value)}
+                className="bg-surface-low border border-outline-variant rounded-sm px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-accent/30"
+              >
+                <option value="">Todas as empresas</option>
+                {(orgDirectory?.items ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {m?.platform ? (
+          <>
+            <StatCard label="Empresas" value={m.platform.organizationCount} />
+            <StatCard label="Usuários" value={m.platform.userCount} />
+          </>
+        ) : null}
         <StatCard
           label="Estádios"
-          value={venues?.length}
+          value={venues?.total}
           href="/admin/venues"
           cta="Ver estádios"
         />
         <StatCard
           label="Eventos totais"
-          value={events?.length}
+          value={events?.total}
           href="/admin/events"
           cta="Ver eventos"
         />
@@ -90,26 +163,162 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link
           href="/admin/venues/new"
-          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-primary transition-colors duration-150 flex flex-col gap-2"
+          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-accent transition-colors duration-150 flex flex-col gap-2"
         >
           <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
             Ação rápida
           </p>
-          <p className="font-display font-black text-lg text-on-surface group-hover:text-primary transition-colors duration-150">
+          <p className="font-display font-black text-lg text-on-surface group-hover:text-accent transition-colors duration-150">
             Cadastrar estádio →
           </p>
         </Link>
         <Link
           href="/admin/events/new"
-          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-primary transition-colors duration-150 flex flex-col gap-2"
+          className="group bg-surface-low border border-outline-variant rounded-sm p-6 hover:border-accent transition-colors duration-150 flex flex-col gap-2"
         >
           <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
             Ação rápida
           </p>
-          <p className="font-display font-black text-lg text-on-surface group-hover:text-primary transition-colors duration-150">
+          <p className="font-display font-black text-lg text-on-surface group-hover:text-accent transition-colors duration-150">
             Criar novo evento →
           </p>
         </Link>
+      </div>
+
+      {m?.organizationsRevenue && m.organizationsRevenue.length > 0 ? (
+        <div className="flex flex-col gap-6">
+          <SectionTitle>Receita por empresa (30 dias)</SectionTitle>
+          <ChartCard
+            title="Comparativo entre tenants"
+            subtitle="Receita de pedidos pagos — últimos 30 dias"
+            isLoading={metricsLoading}
+            isEmpty={false}
+            minHeight={200}
+          >
+            <OrgRevenueByTenantBar data={m.organizationsRevenue} />
+          </ChartCard>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-6">
+        <SectionTitle>Financeiro</SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <StatCard
+            label="Receita total"
+            value={fin ? formatCurrency(fin.revenueAllCents) : undefined}
+            subtitle="Pedidos pagos (histórico)"
+          />
+          <StatCard
+            label="Receita (30 dias)"
+            value={fin ? formatCurrency(fin.revenue30dCents) : undefined}
+          />
+          <StatCard
+            label="Ticket médio"
+            value={fin ? formatCurrency(fin.avgTicketAllCents) : undefined}
+            subtitle="Preço base médio por ingresso pago"
+          />
+          <StatCard
+            label="Taxa de serviço (30 dias)"
+            value={fin ? formatCurrency(fin.serviceFees30dCents) : undefined}
+          />
+        </div>
+        <ChartCard
+          title="Receita diária"
+          subtitle="Pedidos pagos — últimos 30 dias (fuso America/Sao_Paulo)"
+          isLoading={metricsLoading}
+          isEmpty={false}
+        >
+          {m ? <RevenueLineChart data={m.dailyRevenue} /> : null}
+        </ChartCard>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <SectionTitle>Revenda</SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <StatCard
+            label="Receita revenda (30 dias)"
+            value={m?.resale ? formatCurrency(m.resale.resaleRevenue30dCents) : undefined}
+            subtitle="Pedidos resale pagos"
+          />
+          <StatCard
+            label="Pedidos revenda pagos (30 dias)"
+            value={m?.resale?.resalePaidOrders30d}
+          />
+          <StatCard
+            label="Receita revenda (total)"
+            value={m?.resale ? formatCurrency(m.resale.resaleRevenueAllCents) : undefined}
+          />
+          <StatCard label="Pedidos revenda pagos (total)" value={m?.resale?.resalePaidOrdersAll} />
+        </div>
+        <ChartCard
+          title="Listagens de revenda"
+          subtitle="Contagem por status do anúncio"
+          isLoading={metricsLoading}
+          isEmpty={!m}
+          minHeight={240}
+        >
+          {m ? <ResaleListingsBar data={resaleRows} /> : null}
+        </ChartCard>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <SectionTitle>Ingressos</SectionTitle>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard
+            title="Vendidos por setor"
+            subtitle="Top 10 — pedidos pagos"
+            isLoading={metricsLoading}
+            isEmpty={!m?.ticketSections.length}
+          >
+            {m && m.ticketSections.length > 0 ? (
+              <TicketsBySectionBar data={m.ticketSections} />
+            ) : null}
+          </ChartCard>
+          <ChartCard
+            title="Status dos ingressos"
+            isLoading={metricsLoading}
+            isEmpty={!m}
+          >
+            {m ? <TicketStatusDonut data={mergeTicketStatuses(m.ticketStatuses)} /> : null}
+          </ChartCard>
+        </div>
+        <ChartCard
+          title="Por esporte"
+          subtitle="Pedidos pagos"
+          isLoading={metricsLoading}
+          isEmpty={!m?.ticketSports.length}
+        >
+          {m && m.ticketSports.length > 0 ? <TicketsBySportBar data={m.ticketSports} /> : null}
+        </ChartCard>
+        <ChartCard title="Top eventos" subtitle="Por ingressos vendidos (pagos)" isLoading={metricsLoading} isEmpty={false}>
+          {m ? <TopEventsTable data={m.topEvents} /> : null}
+        </ChartCard>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <SectionTitle>Estádios</SectionTitle>
+        <ChartCard
+          title="Ocupação e receita"
+          subtitle="Capacidade, eventos ativos e ingressos pagos"
+          isLoading={metricsLoading}
+          isEmpty={!m?.stadiums.length}
+          minHeight={200}
+        >
+          {m && m.stadiums.length > 0 ? <StadiumOccupancyTable data={m.stadiums} /> : null}
+        </ChartCard>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <SectionTitle>Pedidos</SectionTitle>
+        <ChartCard
+          title="Pedidos por status"
+          subtitle="Volume e valor (toggle 30 dias / total)"
+          isLoading={metricsLoading}
+          isEmpty={!m}
+          minHeight={320}
+        >
+          {m ? <OrderStatusDonut data={mergeOrderStatuses(m.orderStatuses)} /> : null}
+        </ChartCard>
       </div>
     </div>
   );

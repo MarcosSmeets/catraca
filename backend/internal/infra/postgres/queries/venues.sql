@@ -1,6 +1,6 @@
 -- name: CreateVenue :one
-INSERT INTO venues (id, name, city, state, capacity)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO venues (id, name, city, state, capacity, organization_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetVenueByID :one

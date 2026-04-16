@@ -16,16 +16,23 @@ import {
   sportLabel,
 } from "@/lib/mock-data";
 import { useEvent, useEventSeats } from "@/lib/events-api";
+import { useResaleListingsByEvent } from "@/lib/resale-api";
 import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 import { useCartStore } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
 import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
 
-export default function EventPageClient({ id }: { id: string }) {
-  const { data: event, isLoading: eventLoading } = useEvent(id);
-  const { data: seats = [], isLoading: seatsLoading } = useEventSeats(id);
-  useSeatAvailability(id);
+export default function EventPageClient({
+  id,
+  orgSlug,
+}: {
+  id: string;
+  orgSlug: string;
+}) {
+  const { data: event, isLoading: eventLoading } = useEvent(orgSlug, id);
+  const { data: seats = [], isLoading: seatsLoading } = useEventSeats(orgSlug, id);
+  useSeatAvailability(orgSlug, id);
 
   if (eventLoading) {
     return (
@@ -39,14 +46,23 @@ export default function EventPageClient({ id }: { id: string }) {
   }
   if (!event) return null;
 
-  return <EventPageInner event={event} seats={seats} seatsLoading={seatsLoading} />;
+  return (
+    <EventPageInner
+      orgSlug={orgSlug}
+      event={event}
+      seats={seats}
+      seatsLoading={seatsLoading}
+    />
+  );
 }
 
 function EventPageInner({
+  orgSlug,
   event,
   seats,
   seatsLoading,
 }: {
+  orgSlug: string;
   event: NonNullable<ReturnType<typeof useEvent>["data"]>;
   seats: Seat[];
   seatsLoading: boolean;
@@ -77,6 +93,11 @@ function EventPageInner({
   const [heroImgSrc, setHeroImgSrc] = useState(eventImage);
   const [gallerySrcs, setGallerySrcs] = useState(gallery);
 
+  const { data: resaleRows = [], isLoading: resaleLoading } = useResaleListingsByEvent(
+    orgSlug,
+    event.id
+  );
+
   const isSoldOut = event.status === "SOLD_OUT";
   const subtotalCents = selectedSeats.reduce((sum, s) => sum + s.priceCents, 0);
   const feeCents = Math.round(subtotalCents * (event.serviceFeePercent / 100));
@@ -84,7 +105,7 @@ function EventPageInner({
 
   async function handleAddToCart() {
     if (selectedSeats.length === 0) return;
-    addSeats(selectedSeats, event);
+    addSeats(selectedSeats, event, orgSlug);
     try {
       const res = await apiFetch<{ reservations: { id: string; expiresAt: string }[]; expiresAt: string }>(
         "/reservations",
@@ -92,6 +113,7 @@ function EventPageInner({
           method: "POST",
           accessToken,
           body: JSON.stringify({
+            orgSlug,
             eventId: event.id,
             seatIds: selectedSeats.map((s) => s.id),
           }),
@@ -358,7 +380,7 @@ function EventPageInner({
                           placeholder="seu@email.com.br"
                           value={waitlistEmail}
                           onChange={(e) => setWaitlistEmail(e.target.value)}
-                          className="flex-1 bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-primary transition-colors duration-150"
+                          className="flex-1 bg-surface px-4 py-2.5 text-sm text-on-surface font-body rounded-sm border border-outline-variant placeholder:text-on-surface/30 focus:outline-none focus:border-accent transition-colors duration-150"
                           aria-label="E-mail para lista de espera"
                         />
                         <Button type="submit" size="sm">Entrar</Button>
@@ -380,6 +402,55 @@ function EventPageInner({
                   maxSelectable={6}
                   sport={event.sport}
                 />
+              )}
+            </div>
+
+            <div className="bg-surface-lowest rounded-md border border-outline-variant p-6">
+              <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">Torcedores</p>
+              <h3 className="font-display font-bold text-lg text-on-surface uppercase tracking-tight mb-4">
+                Revenda
+              </h3>
+              {resaleLoading ? (
+                <p className="text-sm text-on-surface/40 font-body">Carregando ofertas…</p>
+              ) : resaleRows.length === 0 ? (
+                <p className="text-sm text-on-surface/40 font-body">
+                  Nenhum ingresso anunciado na revenda por enquanto.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {resaleRows.map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/80 pb-3 last:border-0 last:pb-0"
+                    >
+                      <div>
+                        <p className="font-display font-semibold text-on-surface text-sm">
+                          {row.section} · {row.row}
+                          {row.number}
+                        </p>
+                        <p className="text-xs text-on-surface/40 font-body">Revenda entre torcedores</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-display font-bold text-on-surface">
+                          {formatCurrency(row.priceCents)}
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const path = `/checkout/resale/${row.id}`;
+                            if (!accessToken) {
+                              router.push(`/login?redirect=${encodeURIComponent(path)}`);
+                              return;
+                            }
+                            router.push(path);
+                          }}
+                        >
+                          Comprar
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </div>
@@ -476,7 +547,7 @@ function EventPageInner({
           </div>
           <button
             onClick={handleAddToCart}
-            className="shrink-0 px-5 py-3 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-display font-bold tracking-tight rounded-sm hover:opacity-90 transition-opacity duration-150"
+            className="shrink-0 px-5 py-3 bg-gradient-to-br from-accent to-accent/85 text-on-accent text-sm font-display font-bold tracking-tight rounded-sm hover:opacity-90 transition-opacity duration-150"
           >
             Adicionar ao carrinho
           </button>

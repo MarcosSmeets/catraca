@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"strings"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
@@ -16,22 +17,28 @@ import (
 // SeatExpiryWorker subscribes to Redis keyspace notifications for expired seat locks
 // and releases the corresponding DB reservation + seat status.
 type SeatExpiryWorker struct {
-	redisClient     *goredis.Client
-	reservationRepo repository.ReservationRepository
-	seatRepo        repository.SeatRepository
-	sseHub          *sse.Hub
+	redisClient       *goredis.Client
+	reservationRepo   repository.ReservationRepository
+	seatRepo          repository.SeatRepository
+	orderRepo         repository.OrderRepository
+	resaleHoldRepo    repository.ResaleListingHoldRepository
+	sseHub            *sse.Hub
 }
 
 func NewSeatExpiryWorker(
 	redisClient *goredis.Client,
 	reservationRepo repository.ReservationRepository,
 	seatRepo repository.SeatRepository,
+	orderRepo repository.OrderRepository,
+	resaleHoldRepo repository.ResaleListingHoldRepository,
 	sseHub *sse.Hub,
 ) *SeatExpiryWorker {
 	return &SeatExpiryWorker{
 		redisClient:     redisClient,
 		reservationRepo: reservationRepo,
 		seatRepo:        seatRepo,
+		orderRepo:       orderRepo,
+		resaleHoldRepo:  resaleHoldRepo,
 		sseHub:          sseHub,
 	}
 }
@@ -78,13 +85,58 @@ func (w *SeatExpiryWorker) Run(ctx context.Context) error {
 	}
 }
 
+// RunSweeper periodically releases seats whose reservation is still ACTIVE but past expires_at
+// (e.g. Redis keyspace notifications disabled or expiry event missed).
+func (w *SeatExpiryWorker) RunSweeper(ctx context.Context, interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	log.Info().Dur("interval", interval).Msg("reservation expiry sweeper started")
+	w.sweepExpiredActive(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("reservation expiry sweeper stopped")
+			return nil
+		case <-ticker.C:
+			w.sweepExpiredActive(ctx)
+		}
+	}
+}
+
+func (w *SeatExpiryWorker) sweepExpiredActive(ctx context.Context) {
+	rows, err := w.reservationRepo.ListExpiredActive(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("list expired active reservations")
+		return
+	}
+	for _, row := range rows {
+		w.handleExpiry(ctx, row.EventID, row.SeatID)
+	}
+	if w.resaleHoldRepo != nil {
+		if err := w.resaleHoldRepo.ExpireStale(ctx); err != nil {
+			log.Error().Err(err).Msg("expire stale resale listing holds")
+		}
+	}
+}
+
 func (w *SeatExpiryWorker) handleExpiry(ctx context.Context, eventID, seatID uuid.UUID) {
 	// Find the active reservation for this seat
-	res, err := w.reservationRepo.GetActiveBySeatID(ctx, seatID)
+	res, err := w.reservationRepo.GetActiveStatusBySeatID(ctx, seatID)
 	if err != nil {
 		if err != repository.ErrNotFound {
 			log.Error().Err(err).Stringer("seat_id", seatID).Msg("get active reservation for expired seat")
 		}
+		return
+	}
+
+	// Do not expire reservations that belong to a PENDING order (payment in progress).
+	hasPending, err := w.orderRepo.HasPendingOrderForReservation(ctx, res.ID)
+	if err != nil {
+		log.Error().Err(err).Stringer("reservation_id", res.ID).Msg("check pending order for reservation")
+		return
+	}
+	if hasPending {
+		log.Debug().Stringer("reservation_id", res.ID).Stringer("seat_id", seatID).Msg("reservation has pending order, skipping expiry")
 		return
 	}
 
