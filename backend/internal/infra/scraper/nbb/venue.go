@@ -107,7 +107,7 @@ func MapVenues(
 	}
 
 	// Load all existing venues once.
-	existing, err := venueRepo.List(ctx)
+	existing, err := venueRepo.List(ctx, repository.VenueFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("MapVenues: list venues: %w", err)
 	}

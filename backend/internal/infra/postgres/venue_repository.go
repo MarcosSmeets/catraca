@@ -53,16 +53,107 @@ func (r *VenueRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Ve
 	return dbVenueToEntity(row), nil
 }
 
-func (r *VenueRepository) List(ctx context.Context) ([]*entity.Venue, error) {
-	rows, err := r.queries.ListVenues(ctx)
+func (r *VenueRepository) List(ctx context.Context, filter repository.VenueFilter) ([]*entity.Venue, error) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	q := `
+SELECT id, name, city, state, capacity, created_at, updated_at, deleted_at
+FROM venues
+WHERE deleted_at IS NULL
+  AND ($1::text IS NULL OR state = $1)
+  AND ($2::text IS NULL OR city ILIKE '%' || $2 || '%')
+  AND ($3::text IS NULL OR (
+        name ILIKE '%' || $3 || '%' OR
+        city ILIKE '%' || $3 || '%' OR
+        state ILIKE '%' || $3 || '%'
+  ))
+ORDER BY name
+LIMIT $4 OFFSET $5`
+
+	args := buildVenueFilterArgs(filter)
+	args = append(args, int32(limit), int32(filter.Offset))
+
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("VenueRepository.List: %w", err)
 	}
-	venues := make([]*entity.Venue, 0, len(rows))
-	for _, row := range rows {
-		venues = append(venues, dbVenueToEntity(row))
+	defer rows.Close()
+
+	venues := make([]*entity.Venue, 0)
+	for rows.Next() {
+		var v pgdb.Venue
+		if err := rows.Scan(
+			&v.ID, &v.Name, &v.City, &v.State, &v.Capacity,
+			&v.CreatedAt, &v.UpdatedAt, &v.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("VenueRepository.List scan: %w", err)
+		}
+		venues = append(venues, dbVenueToEntity(v))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("VenueRepository.List rows: %w", err)
 	}
 	return venues, nil
+}
+
+func (r *VenueRepository) Count(ctx context.Context, filter repository.VenueFilter) (int64, error) {
+	q := `
+SELECT COUNT(*)
+FROM venues
+WHERE deleted_at IS NULL
+  AND ($1::text IS NULL OR state = $1)
+  AND ($2::text IS NULL OR city ILIKE '%' || $2 || '%')
+  AND ($3::text IS NULL OR (
+        name ILIKE '%' || $3 || '%' OR
+        city ILIKE '%' || $3 || '%' OR
+        state ILIKE '%' || $3 || '%'
+  ))`
+
+	args := buildVenueFilterArgs(filter)
+	var total int64
+	if err := r.pool.QueryRow(ctx, q, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("VenueRepository.Count: %w", err)
+	}
+	return total, nil
+}
+
+func (r *VenueRepository) ListStates(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT state FROM venues WHERE deleted_at IS NULL ORDER BY state`)
+	if err != nil {
+		return nil, fmt.Errorf("VenueRepository.ListStates: %w", err)
+	}
+	defer rows.Close()
+
+	states := make([]string, 0)
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("VenueRepository.ListStates scan: %w", err)
+		}
+		states = append(states, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("VenueRepository.ListStates rows: %w", err)
+	}
+	return states, nil
+}
+
+// buildVenueFilterArgs returns the 3 positional args ($1–$3) shared by List and Count.
+func buildVenueFilterArgs(filter repository.VenueFilter) []interface{} {
+	var state, city, q interface{}
+	if filter.State != nil && *filter.State != "" {
+		state = *filter.State
+	}
+	if filter.City != nil && *filter.City != "" {
+		city = *filter.City
+	}
+	if filter.Q != nil && *filter.Q != "" {
+		q = *filter.Q
+	}
+	return []interface{}{state, city, q}
 }
 
 func dbVenueToEntity(v pgdb.Venue) *entity.Venue {

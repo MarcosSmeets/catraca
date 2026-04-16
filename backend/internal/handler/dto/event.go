@@ -31,3 +31,10 @@ type EventListResponse struct {
 	Page   int             `json:"page"`
 	Limit  int             `json:"limit"`
 }
+
+type VenueListResponse struct {
+	Venues []VenueResponse `json:"venues"`
+	Total  int64           `json:"total"`
+	Page   int             `json:"page"`
+	Limit  int             `json:"limit"`
+}

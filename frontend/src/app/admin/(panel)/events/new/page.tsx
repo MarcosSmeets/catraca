@@ -19,10 +19,11 @@ export default function NewEventPage() {
   const router = useRouter();
   const qc = useQueryClient();
 
-  const { data: venues } = useQuery({
-    queryKey: ["admin-venues"],
-    queryFn: adminListVenues,
+  const { data: venuesData } = useQuery({
+    queryKey: ["admin-venues", { limit: 100 }],
+    queryFn: () => adminListVenues({ limit: 100 }),
   });
+  const venues = venuesData?.venues;
 
   const [title, setTitle] = useState("");
   const [sport, setSport] = useState("");

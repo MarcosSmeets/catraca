@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { adminScanTicket, type ScanTicketResult } from "@/lib/admin-api";
 import { ApiError } from "@/lib/api";
+import QrScannerModal from "@/components/features/tickets/QrScannerModal";
 
 type ScanState =
   | { kind: "idle" }
@@ -26,10 +27,19 @@ function formatDate(iso: string) {
 export default function ScanTicketPage() {
   const [qrCode, setQrCode] = useState("");
   const [state, setState] = useState<ScanState>({ kind: "idle" });
+  const [isMobile, setIsMobile] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleScan() {
-    const code = qrCode.trim();
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hasCamera = Boolean(navigator.mediaDevices?.getUserMedia);
+    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+    setIsMobile(hasCamera && coarsePointer);
+  }, []);
+
+  const handleScan = useCallback(async (rawCode: string) => {
+    const code = rawCode.trim();
     if (!code) return;
 
     setState({ kind: "loading" });
@@ -58,10 +68,19 @@ export default function ScanTicketPage() {
     } finally {
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }
+  }, []);
+
+  const handleDetected = useCallback(
+    (code: string) => {
+      setScannerOpen(false);
+      setQrCode(code);
+      void handleScan(code);
+    },
+    [handleScan]
+  );
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") handleScan();
+    if (e.key === "Enter") void handleScan(qrCode);
   }
 
   function handleReset() {
@@ -84,6 +103,41 @@ export default function ScanTicketPage() {
         </p>
       </div>
 
+      {/* Scanner (mobile only) */}
+      {isMobile && (
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setScannerOpen(true)}
+            disabled={isLoading}
+            className="w-full px-5 py-4 bg-gradient-to-br from-accent to-accent/85 text-on-accent font-display font-semibold text-sm rounded-sm flex items-center justify-center gap-2 disabled:opacity-40 transition-opacity duration-150"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+              <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+              <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+              <rect x="7" y="7" width="10" height="10" rx="1" />
+            </svg>
+            Escanear QR Code
+          </button>
+          <div className="flex items-center gap-3 text-[10px] font-display font-semibold uppercase tracking-tight text-on-surface/30">
+            <span className="flex-1 border-t border-outline-variant" />
+            ou digite manualmente
+            <span className="flex-1 border-t border-outline-variant" />
+          </div>
+        </div>
+      )}
+
       {/* Input */}
       <div className="flex flex-col gap-3">
         <label className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/50">
@@ -103,7 +157,7 @@ export default function ScanTicketPage() {
             spellCheck={false}
           />
           <button
-            onClick={handleScan}
+            onClick={() => void handleScan(qrCode)}
             disabled={isLoading || !qrCode.trim()}
             className="px-5 py-3 bg-gradient-to-br from-accent to-accent/85 text-on-accent font-display font-semibold text-sm rounded-sm disabled:opacity-40 transition-opacity duration-150"
           >
@@ -111,6 +165,12 @@ export default function ScanTicketPage() {
           </button>
         </div>
       </div>
+
+      <QrScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetected={handleDetected}
+      />
 
       {/* Feedback */}
       {state.kind === "ok" && (

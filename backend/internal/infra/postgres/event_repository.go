@@ -112,8 +112,9 @@ WHERE e.deleted_at IS NULL
   ))
   AND ($7::bigint IS NULL OR COALESCE(ep.min_p, 0) >= $7)
   AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)
+  AND ($9::text IS NULL OR e.status = $9)
 ORDER BY ` + orderBy + `
-LIMIT $9 OFFSET $10`
+LIMIT $10 OFFSET $11`
 
 	args := buildEventFilterArgs(filter)
 	args = append(args, int32(limit), int32(filter.Offset))
@@ -186,7 +187,8 @@ WHERE e.deleted_at IS NULL
         e.league ILIKE '%' || $6 || '%'
   ))
   AND ($7::bigint IS NULL OR COALESCE(ep.min_p, 0) >= $7)
-  AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)`
+  AND ($8::bigint IS NULL OR COALESCE(ep.max_p, 0) <= $8)
+  AND ($9::text IS NULL OR e.status = $9)`
 
 	args := buildEventFilterArgs(filter)
 
@@ -197,9 +199,9 @@ WHERE e.deleted_at IS NULL
 	return total, nil
 }
 
-// buildEventFilterArgs returns the 8 positional args ($1–$8) shared by List and Count.
+// buildEventFilterArgs returns the 9 positional args ($1–$9) shared by List and Count.
 func buildEventFilterArgs(filter repository.EventFilter) []interface{} {
-	var sport, league, city, dateFrom, dateTo, q interface{}
+	var sport, league, city, dateFrom, dateTo, q, status interface{}
 	var minPrice, maxPrice interface{}
 
 	if filter.Sport != nil {
@@ -226,8 +228,11 @@ func buildEventFilterArgs(filter repository.EventFilter) []interface{} {
 	if filter.MaxPrice != nil {
 		maxPrice = *filter.MaxPrice
 	}
+	if filter.Status != nil && *filter.Status != "" {
+		status = filter.Status.String()
+	}
 
-	return []interface{}{sport, league, city, dateFrom, dateTo, q, minPrice, maxPrice}
+	return []interface{}{sport, league, city, dateFrom, dateTo, q, minPrice, maxPrice, status}
 }
 
 func (r *EventRepository) Update(ctx context.Context, e *entity.Event) error {

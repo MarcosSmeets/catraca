@@ -18,6 +18,7 @@ import (
 
 	"github.com/marcos-smeets/catraca/backend/internal/config"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
+	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
 	pginfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
 	"github.com/marcos-smeets/catraca/backend/internal/infra/scraper/nbb"
 )
@@ -354,7 +355,7 @@ func extractSeason(games []nbb.ScrapedGame) string {
 // resolveFallbackVenue returns a venue ID to use when a game has no venue name.
 // It creates a stub venue "Arena NBB" if none exists.
 func resolveFallbackVenue(ctx context.Context, venueRepo *pginfra.VenueRepository) uuid.UUID {
-	existing, err := venueRepo.List(ctx)
+	existing, err := venueRepo.List(ctx, repository.VenueFilter{Limit: 10000})
 	if err == nil {
 		for _, v := range existing {
 			if strings.EqualFold(v.Name, "Arena NBB") {
