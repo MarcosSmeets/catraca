@@ -8,6 +8,7 @@ import Logo from "@/components/brand/Logo";
 import { login } from "@/lib/auth-api";
 import { useAuthStore } from "@/store/auth";
 import { ApiError } from "@/lib/api";
+import { formatMarketingNonFootballLeaguesSpan } from "@/lib/public-discovery-filters";
 
 function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -79,8 +80,8 @@ export default function LoginPage() {
             da mão.
           </h1>
           <p className="text-on-primary/60 font-body text-base leading-relaxed max-w-sm">
-            Do Brasileirão à Série D — ingressos para todos os torcedores,
-            de todos os clubes.
+            Do Brasileirão à Série D, {formatMarketingNonFootballLeaguesSpan()} — ingressos
+            para todos os torcedores, de todos os clubes.
           </p>
         </div>
 
