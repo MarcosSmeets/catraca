@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 import { adminScanTicket, type ScanTicketResult } from "@/lib/admin-api";
 import { ApiError } from "@/lib/api";
 import QrScannerModal from "@/components/features/tickets/QrScannerModal";
@@ -14,6 +21,39 @@ type ScanState =
   | { kind: "not_found" }
   | { kind: "error"; message: string };
 
+const TICKET_CODE_PREFIX = "CATRACA-TK-";
+
+function prefixMatchesCaseInsensitive(value: string): boolean {
+  const p = TICKET_CODE_PREFIX;
+  return value.length >= p.length && value.slice(0, p.length).toUpperCase() === p.toUpperCase();
+}
+
+/** Keeps a fixed CATRACA-TK- prefix; supports paste of full code or suffix only. */
+function normalizeTicketCodeInput(next: string): string {
+  const p = TICKET_CODE_PREFIX;
+  if (next.startsWith(p)) return next;
+  if (next.trim().length === 0) return p;
+  if (next.length < p.length) return p;
+  const trimmed = next.trim();
+  if (prefixMatchesCaseInsensitive(trimmed)) {
+    return p + trimmed.slice(p.length);
+  }
+  return p + trimmed.replace(/^CATRACA-TK-/i, "");
+}
+
+function focusTicketInput(el: HTMLInputElement | null) {
+  if (!el) return;
+  el.focus();
+  const pos = TICKET_CODE_PREFIX.length;
+  requestAnimationFrame(() => {
+    try {
+      el.setSelectionRange(pos, pos);
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", {
     day: "2-digit",
@@ -25,7 +65,7 @@ function formatDate(iso: string) {
 }
 
 export default function ScanTicketPage() {
-  const [qrCode, setQrCode] = useState("");
+  const [qrCode, setQrCode] = useState(TICKET_CODE_PREFIX);
   const [state, setState] = useState<ScanState>({ kind: "idle" });
   const [isMobile, setIsMobile] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -38,16 +78,28 @@ export default function ScanTicketPage() {
     setIsMobile(hasCamera && coarsePointer);
   }, []);
 
+  useEffect(() => {
+    const t = window.setTimeout(() => focusTicketInput(inputRef.current), 0);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const handleScan = useCallback(async (rawCode: string) => {
-    const code = rawCode.trim();
-    if (!code) return;
+    const trimmed = rawCode.trim();
+    if (!trimmed) return;
+
+    const p = TICKET_CODE_PREFIX;
+    const normalized = prefixMatchesCaseInsensitive(trimmed)
+      ? p + trimmed.slice(p.length).trimStart()
+      : p + trimmed.replace(/^CATRACA-TK-/i, "").trim();
+    const uniquePart = normalized.slice(p.length).trim();
+    if (!uniquePart) return;
 
     setState({ kind: "loading" });
 
     try {
-      const ticket = await adminScanTicket(code);
+      const ticket = await adminScanTicket(normalized);
       setState({ kind: "ok", ticket });
-      setQrCode("");
+      setQrCode(TICKET_CODE_PREFIX);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 404) {
@@ -66,7 +118,7 @@ export default function ScanTicketPage() {
         setState({ kind: "error", message: "Erro inesperado. Tente novamente." });
       }
     } finally {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => focusTicketInput(inputRef.current), 50);
     }
   }, []);
 
@@ -85,8 +137,12 @@ export default function ScanTicketPage() {
 
   function handleReset() {
     setState({ kind: "idle" });
-    setQrCode("");
-    setTimeout(() => inputRef.current?.focus(), 50);
+    setQrCode(TICKET_CODE_PREFIX);
+    setTimeout(() => focusTicketInput(inputRef.current), 50);
+  }
+
+  function handleQrChange(e: ChangeEvent<HTMLInputElement>) {
+    setQrCode(normalizeTicketCodeInput(e.target.value));
   }
 
   const isLoading = state.kind === "loading";
@@ -149,16 +205,16 @@ export default function ScanTicketPage() {
             type="text"
             autoFocus
             value={qrCode}
-            onChange={(e) => setQrCode(e.target.value)}
+            onChange={handleQrChange}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
-            placeholder="CATRACA-TK-XXXXXXXX"
+            placeholder="XXXXXXXX"
             className="flex-1 px-4 py-3 bg-surface-lowest border border-outline-variant rounded-sm font-body text-sm text-on-surface placeholder:text-on-surface/30 focus:outline-none focus:border-accent disabled:opacity-50 tracking-widest"
             spellCheck={false}
           />
           <button
             onClick={() => void handleScan(qrCode)}
-            disabled={isLoading || !qrCode.trim()}
+            disabled={isLoading || qrCode.trim().length <= TICKET_CODE_PREFIX.length}
             className="px-5 py-3 bg-gradient-to-br from-accent to-accent/85 text-on-accent font-display font-semibold text-sm rounded-sm disabled:opacity-40 transition-opacity duration-150"
           >
             {isLoading ? "..." : "Validar"}
