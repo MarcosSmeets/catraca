@@ -29,11 +29,11 @@ function ScallopedEdge({ flip }: { flip?: boolean }) {
   const pos = flip ? "0%" : "100%";
   return (
     <div className="w-full h-[14px] shrink-0 relative" aria-hidden>
-      {/* Light mode: visible gray scallops against white card */}
+      {/* Light mode: dark scallops against white card */}
       <div
         className="absolute inset-0 dark:hidden"
         style={{
-          background: `radial-gradient(circle at 50% ${pos}, transparent 5px, #d4d4d4 5.5px)`,
+          background: `radial-gradient(circle at 50% ${pos}, transparent 5px, #1a1c1c 5.5px)`,
           backgroundSize: "18px 14px",
         }}
       />
