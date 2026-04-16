@@ -24,25 +24,44 @@ const DEFAULT_SECTION_FORM: SectionFormState = {
   priceReais: "100",
 };
 
+// Spreadsheet-style label: 1→A, 26→Z, 27→AA, 28→AB, … Starts from `fromRow`.
+function rowLabelAt(startIndex: number): string {
+  let n = startIndex;
+  let label = "";
+  do {
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return label;
+}
+
+function parseRowLabel(label: string): number {
+  let n = 0;
+  for (const ch of label.toUpperCase()) {
+    n = n * 26 + (ch.charCodeAt(0) - 65 + 1);
+  }
+  return n - 1; // 0-indexed
+}
+
 function generateRows(fromRow: string, count: number): string[] {
-  const start = fromRow.toUpperCase().charCodeAt(0);
-  return Array.from({ length: count }, (_, i) => String.fromCharCode(start + i));
+  const startIdx = parseRowLabel(fromRow);
+  return Array.from({ length: count }, (_, i) => rowLabelAt(startIdx + i));
 }
 
 function buildSectionSeats(
   section: string,
   state: SectionFormState
 ): { seats: SeatInput[]; error: string | null } {
-  if (!state.fromRow || state.fromRow.length !== 1 || !/[A-Za-z]/.test(state.fromRow)) {
-    return { seats: [], error: "Informe uma letra (A-Z) para a fileira inicial." };
+  if (!state.fromRow || !/^[A-Za-z]+$/.test(state.fromRow)) {
+    return { seats: [], error: "Informe uma fileira inicial válida (ex: A, B, AA)." };
   }
   const rc = parseInt(state.rowCount, 10);
-  if (!state.rowCount || isNaN(rc) || rc <= 0 || rc > 26) {
-    return { seats: [], error: "Nº de fileiras deve estar entre 1 e 26." };
+  if (!state.rowCount || isNaN(rc) || rc <= 0) {
+    return { seats: [], error: "Nº de fileiras deve ser positivo." };
   }
   const spr = parseInt(state.seatsPerRow, 10);
-  if (!state.seatsPerRow || isNaN(spr) || spr <= 0 || spr > 200) {
-    return { seats: [], error: "Assentos por fileira deve estar entre 1 e 200." };
+  if (!state.seatsPerRow || isNaN(spr) || spr <= 0) {
+    return { seats: [], error: "Assentos por fileira deve ser positivo." };
   }
   const price = parseFloat(state.priceReais);
   if (!state.priceReais || isNaN(price) || price <= 0) {
@@ -294,7 +313,6 @@ export default function NewSeatsPage() {
                     label="Fileira inicial"
                     placeholder="A"
                     value={state.fromRow}
-                    maxLength={1}
                     onChange={(e) => updateForm(section.id, { fromRow: e.target.value })}
                   />
                   <Input
@@ -303,7 +321,6 @@ export default function NewSeatsPage() {
                     placeholder="5"
                     value={state.rowCount}
                     min={1}
-                    max={26}
                     onChange={(e) => updateForm(section.id, { rowCount: e.target.value })}
                   />
                   <Input
@@ -312,7 +329,6 @@ export default function NewSeatsPage() {
                     placeholder="10"
                     value={state.seatsPerRow}
                     min={1}
-                    max={200}
                     onChange={(e) => updateForm(section.id, { seatsPerRow: e.target.value })}
                   />
                   <Input
