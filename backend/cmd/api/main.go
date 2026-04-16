@@ -118,7 +118,7 @@ func main() {
 	// --- Workers ---
 	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, seatLocker, sseHub, paymentGateway)
 	stripeInboxWorker := worker.NewStripeInboxWorker(pool, stripeWebhookInboxRepo, paymentGateway, stripePaymentProcessor)
-	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, sseHub)
+	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, orderRepo, sseHub)
 
 	// --- Handlers ---
 	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AppEnv)

@@ -111,6 +111,14 @@ func (r *OrderRepository) UpdateStripePaymentID(ctx context.Context, id uuid.UUI
 	return nil
 }
 
+func (r *OrderRepository) HasPendingOrderForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	hasPending, err := r.queries.HasPendingOrderForReservation(ctx, reservationID)
+	if err != nil {
+		return false, fmt.Errorf("OrderRepository.HasPendingOrderForReservation: %w", err)
+	}
+	return hasPending, nil
+}
+
 func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
 	return &entity.Order{
 		ID:                o.ID,

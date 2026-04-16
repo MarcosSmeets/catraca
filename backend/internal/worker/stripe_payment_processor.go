@@ -198,8 +198,10 @@ func (p *StripePaymentProcessor) fulfillPaidOrder(ctx context.Context, orderID u
 			continue
 		}
 		if err := res.Convert(); err != nil {
-			log.Warn().Err(err).Stringer("reservation_id", resID).Msg("convert reservation failed")
-			continue
+			// Payment succeeded — force-convert even if the reservation expired or was
+			// already marked expired by the sweeper while the user was paying.
+			log.Warn().Err(err).Stringer("reservation_id", resID).Str("status", string(res.Status)).Msg("convert reservation failed, force-converting (payment succeeded)")
+			res.Status = entity.ReservationStatusConverted
 		}
 		_ = p.reservationRepo.UpdateStatus(ctx, res.ID, res.Status)
 

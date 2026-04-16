@@ -13,4 +13,5 @@ type OrderRepository interface {
 	ListByUserID(ctx context.Context, userID uuid.UUID) ([]*entity.Order, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.OrderStatus) error
 	UpdateStripePaymentID(ctx context.Context, id uuid.UUID, stripePaymentID string) error
+	HasPendingOrderForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error)
 }

@@ -118,6 +118,21 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 	return i, err
 }
 
+const hasPendingOrderForReservation = `-- name: HasPendingOrderForReservation :one
+SELECT EXISTS (
+  SELECT 1 FROM order_reservations orr
+  INNER JOIN orders o ON o.id = orr.order_id
+  WHERE orr.reservation_id = $1 AND o.status = 'PENDING'
+) AS has_pending
+`
+
+func (q *Queries) HasPendingOrderForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingOrderForReservation, reservationID)
+	var has_pending bool
+	err := row.Scan(&has_pending)
+	return has_pending, err
+}
+
 const listOrderReservationIDs = `-- name: ListOrderReservationIDs :many
 SELECT reservation_id FROM order_reservations WHERE order_id = $1
 `

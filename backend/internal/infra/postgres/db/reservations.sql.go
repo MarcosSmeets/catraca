@@ -114,6 +114,11 @@ SELECT r.id AS reservation_id, r.seat_id, s.event_id
 FROM reservations r
 INNER JOIN seats s ON s.id = r.seat_id
 WHERE r.status = 'ACTIVE' AND r.expires_at < NOW()
+  AND NOT EXISTS (
+    SELECT 1 FROM order_reservations orr
+    INNER JOIN orders o ON o.id = orr.order_id
+    WHERE orr.reservation_id = r.id AND o.status = 'PENDING'
+  )
 `
 
 type ListExpiredActiveReservationsRow struct {
@@ -122,6 +127,7 @@ type ListExpiredActiveReservationsRow struct {
 	EventID       uuid.UUID `json:"event_id"`
 }
 
+// Expired reservations that are NOT tied to a PENDING order (those are being paid for).
 func (q *Queries) ListExpiredActiveReservations(ctx context.Context) ([]ListExpiredActiveReservationsRow, error) {
 	rows, err := q.db.Query(ctx, listExpiredActiveReservations)
 	if err != nil {

@@ -20,6 +20,7 @@ type SeatExpiryWorker struct {
 	redisClient     *goredis.Client
 	reservationRepo repository.ReservationRepository
 	seatRepo        repository.SeatRepository
+	orderRepo       repository.OrderRepository
 	sseHub          *sse.Hub
 }
 
@@ -27,12 +28,14 @@ func NewSeatExpiryWorker(
 	redisClient *goredis.Client,
 	reservationRepo repository.ReservationRepository,
 	seatRepo repository.SeatRepository,
+	orderRepo repository.OrderRepository,
 	sseHub *sse.Hub,
 ) *SeatExpiryWorker {
 	return &SeatExpiryWorker{
 		redisClient:     redisClient,
 		reservationRepo: reservationRepo,
 		seatRepo:        seatRepo,
+		orderRepo:       orderRepo,
 		sseHub:          sseHub,
 	}
 }
@@ -115,6 +118,17 @@ func (w *SeatExpiryWorker) handleExpiry(ctx context.Context, eventID, seatID uui
 		if err != repository.ErrNotFound {
 			log.Error().Err(err).Stringer("seat_id", seatID).Msg("get active reservation for expired seat")
 		}
+		return
+	}
+
+	// Do not expire reservations that belong to a PENDING order (payment in progress).
+	hasPending, err := w.orderRepo.HasPendingOrderForReservation(ctx, res.ID)
+	if err != nil {
+		log.Error().Err(err).Stringer("reservation_id", res.ID).Msg("check pending order for reservation")
+		return
+	}
+	if hasPending {
+		log.Debug().Stringer("reservation_id", res.ID).Stringer("seat_id", seatID).Msg("reservation has pending order, skipping expiry")
 		return
 	}
 

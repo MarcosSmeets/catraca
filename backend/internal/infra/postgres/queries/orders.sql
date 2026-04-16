@@ -23,3 +23,10 @@ VALUES ($1, $2);
 
 -- name: ListOrderReservationIDs :many
 SELECT reservation_id FROM order_reservations WHERE order_id = $1;
+
+-- name: HasPendingOrderForReservation :one
+SELECT EXISTS (
+  SELECT 1 FROM order_reservations orr
+  INNER JOIN orders o ON o.id = orr.order_id
+  WHERE orr.reservation_id = $1 AND o.status = 'PENDING'
+) AS has_pending;
