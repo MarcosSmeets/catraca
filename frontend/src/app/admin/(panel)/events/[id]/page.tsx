@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { adminListEvents, adminPublishEvent, adminListSections } from "@/lib/admin-api";
+import { adminGetEvent, adminPublishEvent, adminListSections } from "@/lib/admin-api";
 import { Button } from "@/components/ui";
 import type { EventStatus } from "@/lib/mock-data";
 import { apiFetch } from "@/lib/api";
@@ -15,6 +15,7 @@ const STATUS_LABELS: Record<EventStatus, string> = {
   ON_SALE: "À Venda",
   SOLD_OUT: "Esgotado",
   CANCELLED: "Cancelado",
+  EXPIRED: "Expirado",
 };
 
 const STATUS_COLORS: Record<EventStatus, string> = {
@@ -22,6 +23,7 @@ const STATUS_COLORS: Record<EventStatus, string> = {
   ON_SALE: "bg-accent/10 text-accent",
   SOLD_OUT: "bg-error/10 text-error",
   CANCELLED: "bg-surface-dim text-on-surface/40",
+  EXPIRED: "bg-on-surface/5 text-on-surface/50",
 };
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -40,9 +42,14 @@ export default function AdminEventDetailPage() {
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.accessToken);
 
-  const { data: events, isLoading } = useQuery({
-    queryKey: ["admin-events"],
-    queryFn: adminListEvents,
+  const {
+    data: event,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["admin-event", id],
+    queryFn: () => adminGetEvent(id!),
+    enabled: !!id,
   });
 
   const { data: sections } = useQuery({
@@ -61,10 +68,9 @@ export default function AdminEventDetailPage() {
     mutationFn: adminPublishEvent,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-events"] });
+      qc.invalidateQueries({ queryKey: ["admin-event", id] });
     },
   });
-
-  const event = events?.find((e) => e.id === id);
 
   if (isLoading) {
     return (
@@ -76,7 +82,7 @@ export default function AdminEventDetailPage() {
     );
   }
 
-  if (!event) {
+  if (isError || !event) {
     return (
       <p className="text-sm font-body text-error bg-error/5 px-4 py-3 rounded-sm">
         Evento não encontrado.

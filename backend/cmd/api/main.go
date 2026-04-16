@@ -250,6 +250,7 @@ func main() {
 
 		r.Get("/admin/events", adminHandler.ListEvents)
 		r.Post("/admin/events", adminHandler.CreateEvent)
+		r.Get("/admin/events/{id}", adminHandler.GetEvent)
 		r.Patch("/admin/events/{id}", adminHandler.UpdateEvent)
 		r.Post("/admin/events/{id}/publish", adminHandler.PublishEvent)
 

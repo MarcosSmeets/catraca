@@ -156,6 +156,10 @@ export function useAdminEvents(params: AdminEventsParams = {}) {
   });
 }
 
+export async function adminGetEvent(id: string): Promise<Event> {
+  return apiFetch<Event>(`/admin/events/${id}`, { accessToken: token() });
+}
+
 export async function adminCreateEvent(payload: CreateEventPayload): Promise<Event> {
   return apiFetch<Event>("/admin/events", {
     method: "POST",

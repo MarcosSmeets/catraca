@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -45,11 +46,33 @@ type CreateVenueRequest struct {
 }
 
 func (h *AdminHandler) ListVenues(w http.ResponseWriter, r *http.Request) {
-	venues, err := h.venueRepo.List(r.Context())
+	filter := repository.VenueFilter{}
+
+	if q := r.URL.Query().Get("q"); q != "" {
+		filter.Q = &q
+	}
+	if s := r.URL.Query().Get("state"); s != "" {
+		filter.State = &s
+	}
+	if c := r.URL.Query().Get("city"); c != "" {
+		filter.City = &c
+	}
+
+	limit, page := parsePagination(r, 20, 100)
+	filter.Limit = limit
+	filter.Offset = (page - 1) * limit
+
+	venues, err := h.venueRepo.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list venues")
 		return
 	}
+	total, err := h.venueRepo.Count(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count venues")
+		return
+	}
+
 	resp := make([]dto.VenueResponse, 0, len(venues))
 	for _, v := range venues {
 		resp = append(resp, dto.VenueResponse{
@@ -60,7 +83,21 @@ func (h *AdminHandler) ListVenues(w http.ResponseWriter, r *http.Request) {
 			Capacity: v.Capacity,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"venues": resp})
+	writeJSON(w, http.StatusOK, dto.VenueListResponse{
+		Venues: resp,
+		Total:  total,
+		Page:   page,
+		Limit:  limit,
+	})
+}
+
+func (h *AdminHandler) ListVenueStates(w http.ResponseWriter, r *http.Request) {
+	states, err := h.venueRepo.ListStates(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list venue states")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"states": states})
 }
 
 func (h *AdminHandler) CreateVenue(w http.ResponseWriter, r *http.Request) {
@@ -112,16 +149,87 @@ type CreateEventRequest struct {
 }
 
 func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
-	events, err := h.eventRepo.List(r.Context(), repository.EventFilter{Limit: 100})
+	filter := repository.EventFilter{}
+
+	if q := r.URL.Query().Get("q"); q != "" {
+		filter.Q = &q
+	}
+	if s := r.URL.Query().Get("status"); s != "" {
+		status := entity.EventStatus(s)
+		filter.Status = &status
+	}
+	if df := r.URL.Query().Get("date_from"); df != "" {
+		filter.DateFrom = &df
+	}
+	if dt := r.URL.Query().Get("date_to"); dt != "" {
+		filter.DateTo = &dt
+	}
+
+	limit, page := parsePagination(r, 20, 100)
+	filter.Limit = limit
+	filter.Offset = (page - 1) * limit
+
+	events, err := h.eventRepo.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list events")
 		return
 	}
+	total, err := h.eventRepo.Count(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count events")
+		return
+	}
+
 	resp := make([]dto.EventResponse, 0, len(events))
 	for _, e := range events {
 		resp = append(resp, toEventResponse(e))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": resp})
+	writeJSON(w, http.StatusOK, dto.EventListResponse{
+		Events: resp,
+		Total:  total,
+		Page:   page,
+		Limit:  limit,
+	})
+}
+
+func (h *AdminHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	eventID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	event, err := h.eventRepo.GetByID(r.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get event")
+		return
+	}
+	writeJSON(w, http.StatusOK, toEventResponse(event))
+}
+
+// parsePagination extracts page and limit from query params with defaults and a cap.
+func parsePagination(r *http.Request, defaultLimit, maxLimit int) (limit, page int) {
+	limit = defaultLimit
+	if lim := r.URL.Query().Get("limit"); lim != "" {
+		if v, err := strconv.Atoi(lim); err == nil && v > 0 {
+			if v > maxLimit {
+				v = maxLimit
+			}
+			limit = v
+		}
+	}
+	page = 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	return limit, page
 }
 
 func (h *AdminHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {

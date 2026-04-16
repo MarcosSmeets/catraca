@@ -8,7 +8,7 @@ export type SportType =
   | "FUTSAL"
   | "ATHLETICS";
 
-export type EventStatus = "DRAFT" | "ON_SALE" | "SOLD_OUT" | "CANCELLED";
+export type EventStatus = "DRAFT" | "ON_SALE" | "SOLD_OUT" | "CANCELLED" | "EXPIRED";
 
 export type SeatStatus = "AVAILABLE" | "RESERVED" | "SOLD" | "BLOCKED";
 
