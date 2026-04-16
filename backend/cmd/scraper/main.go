@@ -141,7 +141,7 @@ func main() {
 			VenueID:           venueID,
 			StartsAt:          g.Date,
 			Status:            status,
-			ServiceFeePercent: 10,
+			ServiceFeePercent: 8,
 			HomeTeam:          g.HomeTeam,
 			AwayTeam:          g.AwayTeam,
 			ImageURL:          defaultBasketballImage,

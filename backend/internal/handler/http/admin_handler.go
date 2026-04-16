@@ -358,6 +358,12 @@ func (h *AdminHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Omitted json serviceFeePercent unmarshals as 0 — use platform default (8%).
+	serviceFee := req.ServiceFeePercent
+	if serviceFee == 0 {
+		serviceFee = 8
+	}
+
 	event := &entity.Event{
 		ID:                uuid.New(),
 		Title:             req.Title,
@@ -369,7 +375,7 @@ func (h *AdminHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		HomeTeam:          req.HomeTeam,
 		AwayTeam:          req.AwayTeam,
 		ImageURL:          req.ImageURL,
-		ServiceFeePercent: req.ServiceFeePercent,
+		ServiceFeePercent: serviceFee,
 		VibeChips:         req.VibeChips,
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),

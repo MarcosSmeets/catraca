@@ -40,7 +40,7 @@ func NewTestEvent(venueID uuid.UUID) *entity.Event {
 		VenueID:           venueID,
 		StartsAt:          time.Now().Add(24 * time.Hour),
 		Status:            entity.EventStatusOnSale,
-		ServiceFeePercent: 10,
+		ServiceFeePercent: 8,
 		HomeTeam:          "Atlético MG",
 		AwayTeam:          "Flamengo",
 		ImageURL:          "https://example.com/image.jpg",

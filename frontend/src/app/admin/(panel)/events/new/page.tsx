@@ -33,7 +33,7 @@ export default function NewEventPage() {
   const [homeTeam, setHomeTeam] = useState("");
   const [awayTeam, setAwayTeam] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [serviceFeePercent, setServiceFeePercent] = useState("10");
+  const [serviceFeePercent, setServiceFeePercent] = useState("8");
   const [vibeChipsRaw, setVibeChipsRaw] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -201,7 +201,7 @@ export default function NewEventPage() {
         <Input
           label="Taxa de Serviço (%)"
           type="number"
-          placeholder="10"
+          placeholder="8"
           value={serviceFeePercent}
           onChange={(e) => setServiceFeePercent(e.target.value)}
           error={errors.serviceFeePercent}

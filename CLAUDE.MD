@@ -169,7 +169,7 @@ usecase/reservation/reserve_seat_test.go   ← testa reserve_seat.go
   3. Webhook do Stripe (`payment_intent.succeeded` / `payment_intent.payment_failed`) confirma ou cancela a order
   4. Worker processa o webhook → atualiza status → libera ou confirma o lock do assento
 - **Segurança:** Validar assinatura do webhook com `stripe.ConstructEvent` (obrigatório)
-- Taxa de serviço: configurável por evento (`service_fee_percent` na tabela `events`)
+- Taxa de serviço: por evento (`service_fee_percent` na tabela `events`); padrão da plataforma **8%** (default SQL, criação admin/API e migration alinhados)
 
 ---
 
