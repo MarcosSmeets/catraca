@@ -21,7 +21,9 @@ type Config struct {
 	// Requires PIX enabled in Stripe Dashboard → Settings → Payment methods; leave false if you only use cards.
 	StripeCheckoutEnablePix bool
 	AppEnv                  string
-	Port                    int
+	// AuthCookieSecure sets the HttpOnly session cookies' Secure flag. When unset, derived as (AppEnv != "development"). Set AUTH_COOKIE_SECURE=false only for HTTP staging (sessions sent in cleartext).
+	AuthCookieSecure bool
+	Port             int
 	AppSeed                 bool
 	CORSAllowedOrigins      []string
 	CPFPepper               string
@@ -38,6 +40,7 @@ func Load() (*Config, error) {
 		}
 	}
 
+	appEnv := getEnv("APP_ENV", "development")
 	cfg := &Config{
 		DatabaseURL:              getEnv("DATABASE_URL", "postgres://catraca:catraca@localhost:5432/catraca?sslmode=disable"),
 		RedisURL:                 getEnv("REDIS_URL", "redis://localhost:6379"),
@@ -48,7 +51,8 @@ func Load() (*Config, error) {
 		StripeCheckoutSuccessURL: getEnv("STRIPE_CHECKOUT_SUCCESS_URL", "http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
 		StripeCheckoutCancelURL:  getEnv("STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:3000/checkout?canceled=1"),
 		StripeCheckoutEnablePix:  getEnvBool("STRIPE_CHECKOUT_ENABLE_PIX", false),
-		AppEnv:                   getEnv("APP_ENV", "development"),
+		AppEnv:                   appEnv,
+		AuthCookieSecure:         getEnvBool("AUTH_COOKIE_SECURE", appEnv != "development"),
 		Port:                     port,
 		AppSeed:                  getEnvBool("APP_SEED", false),
 		CORSAllowedOrigins:       getEnvSlice("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),

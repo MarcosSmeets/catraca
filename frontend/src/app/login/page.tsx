@@ -13,6 +13,13 @@ function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+/** Same-origin path only; blocks open redirects (e.g. //evil.com). */
+function safeRedirectPath(raw: string | null): string | null {
+  if (!raw || raw.length < 2) return null;
+  if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -38,7 +45,12 @@ export default function LoginPage() {
     try {
       const res = await login({ email, password });
       setAuth(res.user, res.accessToken);
-      router.push("/");
+      const redirect = safeRedirectPath(
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("redirect")
+          : null
+      );
+      router.push(redirect ?? "/");
     } catch (err) {
       const message =
         err instanceof ApiError

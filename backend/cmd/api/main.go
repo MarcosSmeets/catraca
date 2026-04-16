@@ -122,7 +122,7 @@ func main() {
 	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, orderRepo, sseHub)
 
 	// --- Handlers ---
-	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AppEnv)
+	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AuthCookieSecure)
 	eventHandler := httphandler.NewEventHandler(listEventsUC, getEventUC, listSeatsUC)
 	sseHandler := httphandler.NewSSEHandler(sseHub)
 	webhookHandler := httphandler.NewWebhookHandler(stripeWebhookInboxRepo)

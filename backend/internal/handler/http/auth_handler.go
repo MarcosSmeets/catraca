@@ -22,7 +22,7 @@ type AuthHandler struct {
 	refreshUC        *user.RefreshUseCase
 	forgotPasswordUC *user.ForgotPasswordUseCase
 	resetPasswordUC  *user.ResetPasswordUseCase
-	appEnv           string
+	authCookieSecure bool
 }
 
 func NewAuthHandler(
@@ -31,7 +31,7 @@ func NewAuthHandler(
 	refreshUC *user.RefreshUseCase,
 	forgotPasswordUC *user.ForgotPasswordUseCase,
 	resetPasswordUC *user.ResetPasswordUseCase,
-	appEnv string,
+	authCookieSecure bool,
 ) *AuthHandler {
 	return &AuthHandler{
 		registerUC:       registerUC,
@@ -39,7 +39,7 @@ func NewAuthHandler(
 		refreshUC:        refreshUC,
 		forgotPasswordUC: forgotPasswordUC,
 		resetPasswordUC:  resetPasswordUC,
-		appEnv:           appEnv,
+		authCookieSecure: authCookieSecure,
 	}
 }
 
@@ -234,7 +234,7 @@ func (h *AuthHandler) setAdminTokenCookie(w http.ResponseWriter, token string) {
 		Path:     "/",
 		MaxAge:   adminTokenDuration,
 		HttpOnly: true,
-		Secure:   h.appEnv != "development",
+		Secure:   h.authCookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -246,7 +246,7 @@ func (h *AuthHandler) clearAdminTokenCookie(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   h.appEnv != "development",
+		Secure:   h.authCookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -258,7 +258,7 @@ func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string) {
 		Path:     "/",
 		MaxAge:   7 * 24 * 60 * 60, // 7 days
 		HttpOnly: true,
-		Secure:   h.appEnv != "development",
+		Secure:   h.authCookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -270,7 +270,7 @@ func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   h.appEnv != "development",
+		Secure:   h.authCookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
