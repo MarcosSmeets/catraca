@@ -107,6 +107,7 @@ func main() {
 
 	createOrderUC := orderuc.NewCreateOrderUseCase(reservationRepo, seatRepo, eventRepo, orderRepo)
 	createCheckoutSessionUC := orderuc.NewCreateCheckoutSessionUseCase(orderRepo, paymentGateway, cfg.StripeCheckoutEnablePix)
+	createPaymentIntentUC := orderuc.NewCreatePaymentIntentUseCase(orderRepo, paymentGateway)
 	getOrderUC := orderuc.NewGetOrderUseCase(orderRepo)
 	listOrdersUC := orderuc.NewListOrdersUseCase(orderRepo)
 
@@ -133,6 +134,7 @@ func main() {
 		ReleaseSeatUC:           releaseSeatUC,
 		CreateOrderUC:           createOrderUC,
 		CreateCheckoutSessionUC: createCheckoutSessionUC,
+		CreatePaymentIntentUC:  createPaymentIntentUC,
 		GetOrderUC:              getOrderUC,
 		ListOrdersUC:            listOrdersUC,
 		ListTicketsUC:           listTicketsUC,
@@ -224,6 +226,7 @@ func main() {
 		// Orders
 		r.Post("/orders", userHandler.CreateOrder)
 		r.Post("/orders/{id}/checkout-session", userHandler.CreateCheckoutSession)
+		r.Post("/orders/{id}/payment-intent", userHandler.CreatePaymentIntent)
 		r.Get("/me/orders", userHandler.ListOrders)
 		r.Get("/me/orders/{id}", userHandler.GetOrder)
 

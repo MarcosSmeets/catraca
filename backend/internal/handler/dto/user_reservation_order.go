@@ -45,6 +45,14 @@ type CreateCheckoutSessionResponse struct {
 	URL string `json:"url"`
 }
 
+// CreatePaymentIntentRequest is the JSON body for POST .../payment-intent (may be {}).
+type CreatePaymentIntentRequest struct{}
+
+type CreatePaymentIntentResponse struct {
+	ClientSecret string `json:"clientSecret"`
+	AmountCents  int64  `json:"amountCents"`
+}
+
 type TicketEventInfo struct {
 	ID        string `json:"id"`
 	HomeTeam  string `json:"homeTeam"`

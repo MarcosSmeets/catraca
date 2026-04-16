@@ -21,53 +21,56 @@ import (
 
 // UserHandler handles profile, orders, tickets, and reservation routes.
 type UserHandler struct {
-	userRepo                repository.UserRepository
-	sseHub                  *sse.Hub
-	reserveSeatUC           *reservationuc.ReserveSeatUseCase
-	releaseSeatUC           *reservationuc.ReleaseSeatUseCase
-	createOrderUC           *orderuc.CreateOrderUseCase
-	createCheckoutSessionUC *orderuc.CreateCheckoutSessionUseCase
-	getOrderUC              *orderuc.GetOrderUseCase
-	listOrdersUC            *orderuc.ListOrdersUseCase
-	listTicketsUC           *ticketuc.ListTicketsUseCase
-	getTicketUC             *ticketuc.GetTicketUseCase
-	stripeEnabled           bool
-	checkoutSuccessURL      string
-	checkoutCancelURL       string
+	userRepo                  repository.UserRepository
+	sseHub                    *sse.Hub
+	reserveSeatUC             *reservationuc.ReserveSeatUseCase
+	releaseSeatUC             *reservationuc.ReleaseSeatUseCase
+	createOrderUC             *orderuc.CreateOrderUseCase
+	createCheckoutSessionUC   *orderuc.CreateCheckoutSessionUseCase
+	createPaymentIntentUC     *orderuc.CreatePaymentIntentUseCase
+	getOrderUC                *orderuc.GetOrderUseCase
+	listOrdersUC              *orderuc.ListOrdersUseCase
+	listTicketsUC             *ticketuc.ListTicketsUseCase
+	getTicketUC               *ticketuc.GetTicketUseCase
+	stripeEnabled             bool
+	checkoutSuccessURL        string
+	checkoutCancelURL         string
 }
 
 // UserDeps holds all dependencies for UserHandler.
 type UserDeps struct {
-	UserRepo                repository.UserRepository
-	SSEHub                  *sse.Hub
-	ReserveSeatUC           *reservationuc.ReserveSeatUseCase
-	ReleaseSeatUC           *reservationuc.ReleaseSeatUseCase
-	CreateOrderUC           *orderuc.CreateOrderUseCase
-	CreateCheckoutSessionUC *orderuc.CreateCheckoutSessionUseCase
-	GetOrderUC              *orderuc.GetOrderUseCase
-	ListOrdersUC            *orderuc.ListOrdersUseCase
-	ListTicketsUC           *ticketuc.ListTicketsUseCase
-	GetTicketUC             *ticketuc.GetTicketUseCase
-	StripeEnabled           bool
-	CheckoutSuccessURL      string
-	CheckoutCancelURL       string
+	UserRepo                  repository.UserRepository
+	SSEHub                    *sse.Hub
+	ReserveSeatUC             *reservationuc.ReserveSeatUseCase
+	ReleaseSeatUC             *reservationuc.ReleaseSeatUseCase
+	CreateOrderUC             *orderuc.CreateOrderUseCase
+	CreateCheckoutSessionUC   *orderuc.CreateCheckoutSessionUseCase
+	CreatePaymentIntentUC     *orderuc.CreatePaymentIntentUseCase
+	GetOrderUC                *orderuc.GetOrderUseCase
+	ListOrdersUC              *orderuc.ListOrdersUseCase
+	ListTicketsUC             *ticketuc.ListTicketsUseCase
+	GetTicketUC               *ticketuc.GetTicketUseCase
+	StripeEnabled             bool
+	CheckoutSuccessURL        string
+	CheckoutCancelURL         string
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
-		userRepo:                deps.UserRepo,
-		sseHub:                  deps.SSEHub,
-		reserveSeatUC:           deps.ReserveSeatUC,
-		releaseSeatUC:           deps.ReleaseSeatUC,
-		createOrderUC:           deps.CreateOrderUC,
-		createCheckoutSessionUC: deps.CreateCheckoutSessionUC,
-		getOrderUC:              deps.GetOrderUC,
-		listOrdersUC:            deps.ListOrdersUC,
-		listTicketsUC:           deps.ListTicketsUC,
-		getTicketUC:             deps.GetTicketUC,
-		stripeEnabled:           deps.StripeEnabled,
-		checkoutSuccessURL:      deps.CheckoutSuccessURL,
-		checkoutCancelURL:       deps.CheckoutCancelURL,
+		userRepo:                  deps.UserRepo,
+		sseHub:                    deps.SSEHub,
+		reserveSeatUC:             deps.ReserveSeatUC,
+		releaseSeatUC:             deps.ReleaseSeatUC,
+		createOrderUC:             deps.CreateOrderUC,
+		createCheckoutSessionUC:   deps.CreateCheckoutSessionUC,
+		createPaymentIntentUC:     deps.CreatePaymentIntentUC,
+		getOrderUC:                deps.GetOrderUC,
+		listOrdersUC:              deps.ListOrdersUC,
+		listTicketsUC:             deps.ListTicketsUC,
+		getTicketUC:               deps.GetTicketUC,
+		stripeEnabled:             deps.StripeEnabled,
+		checkoutSuccessURL:        deps.CheckoutSuccessURL,
+		checkoutCancelURL:         deps.CheckoutCancelURL,
 	}
 }
 
@@ -350,6 +353,44 @@ func (h *UserHandler) CreateCheckoutSession(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, dto.CreateCheckoutSessionResponse{URL: out.URL})
+}
+
+func (h *UserHandler) CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	orderID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid order ID")
+		return
+	}
+
+	out, err := h.createPaymentIntentUC.Execute(r.Context(), orderuc.CreatePaymentIntentInput{
+		UserID:  claims.UserID,
+		OrderID: orderID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			writeError(w, http.StatusNotFound, "order not found")
+		case errors.Is(err, orderuc.ErrOrderNotPending):
+			writeError(w, http.StatusConflict, "order is not pending payment")
+		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
+			writeError(w, http.StatusServiceUnavailable, "stripe is not configured")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to create payment intent")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dto.CreatePaymentIntentResponse{
+		ClientSecret: out.ClientSecret,
+		AmountCents:  out.AmountCents,
+	})
 }
 
 func (h *UserHandler) GetOrder(w http.ResponseWriter, r *http.Request) {

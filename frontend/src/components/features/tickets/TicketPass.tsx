@@ -20,19 +20,19 @@ function formatTicketWhen(iso: string): string {
   return `${datePart} | ${timePart}`;
 }
 
-function ZigZagBorder({ flip }: { flip?: boolean }) {
+function ScallopedEdge({ flip }: { flip?: boolean }) {
+  // Semicircular notches that reveal the page background behind the ticket.
+  // "flip" mirrors the scallops for the bottom edge.
+  const gradientDir = flip ? "0%" : "100%";
   return (
-    <svg
-      className={`w-full h-2.5 text-surface-lowest shrink-0 ${flip ? "rotate-180" : ""}`}
-      viewBox="0 0 320 10"
-      preserveAspectRatio="none"
+    <div
+      className="w-full h-[14px] shrink-0"
       aria-hidden
-    >
-      <path
-        fill="currentColor"
-        d="M0 10V5 L8 0 L16 5 L24 0 L32 5 L40 0 L48 5 L56 0 L64 5 L72 0 L80 5 L88 0 L96 5 L104 0 L112 5 L120 0 L128 5 L136 0 L144 5 L152 0 L160 5 L168 0 L176 5 L184 0 L192 5 L200 0 L208 5 L216 0 L224 5 L232 0 L240 5 L248 0 L256 5 L264 0 L272 5 L280 0 L288 5 L296 0 L304 5 L312 0 L320 5 V10z"
-      />
-    </svg>
+      style={{
+        background: `radial-gradient(circle at 50% ${gradientDir}, transparent 5px, var(--color-surface) 5.5px)`,
+        backgroundSize: "18px 14px",
+      }}
+    />
   );
 }
 
@@ -58,8 +58,8 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
       : "—";
 
   return (
-    <div className="w-[min(100%,340px)] mx-auto bg-surface-lowest text-on-surface shadow-[0_12px_40px_rgba(0,0,0,0.35)] rounded-sm overflow-hidden border border-outline-variant/30">
-      <ZigZagBorder />
+    <div className="w-[min(100%,340px)] mx-auto bg-surface-lowest text-on-surface shadow-[0_12px_40px_rgba(0,0,0,0.35)] overflow-hidden border-x border-outline-variant/30">
+      <ScallopedEdge />
       <div className="bg-[#0a0a0a] text-center py-2.5 px-3">
         <span className="font-display font-bold text-[11px] tracking-[0.35em] text-white uppercase">
           Premium
@@ -121,7 +121,7 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
         </p>
       </div>
 
-      <ZigZagBorder flip />
+      <ScallopedEdge flip />
     </div>
   );
 }

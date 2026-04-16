@@ -182,7 +182,7 @@ func (g *PaymentGateway) CreatePaymentIntent(
 	}
 
 	// Enable card installments (plan is chosen at confirm time on the client).
-	if in.Mode == service.PaymentIntentModeCard && in.Installments > 1 {
+	if in.Mode == service.PaymentIntentModeCard {
 		params.PaymentMethodOptions = &stripelib.PaymentIntentPaymentMethodOptionsParams{
 			Card: &stripelib.PaymentIntentPaymentMethodOptionsCardParams{
 				Installments: &stripelib.PaymentIntentPaymentMethodOptionsCardInstallmentsParams{
@@ -197,6 +197,27 @@ func (g *PaymentGateway) CreatePaymentIntent(
 		return nil, fmt.Errorf("stripe.CreatePaymentIntent: %w", err)
 	}
 
+	return &service.PaymentIntentResult{
+		ID:           pi.ID,
+		ClientSecret: pi.ClientSecret,
+		Status:       string(pi.Status),
+	}, nil
+}
+
+// GetPaymentIntent retrieves an existing PaymentIntent by ID, returning its client secret and status.
+func (g *PaymentGateway) GetPaymentIntent(ctx context.Context, paymentIntentID string) (*service.PaymentIntentResult, error) {
+	_ = ctx
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+	id := strings.TrimSpace(paymentIntentID)
+	if id == "" {
+		return nil, fmt.Errorf("payment intent id required")
+	}
+	pi, err := paymentintent.Get(id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stripe.GetPaymentIntent: %w", err)
+	}
 	return &service.PaymentIntentResult{
 		ID:           pi.ID,
 		ClientSecret: pi.ClientSecret,
