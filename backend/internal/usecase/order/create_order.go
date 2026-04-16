@@ -20,6 +20,7 @@ var (
 type CreateOrderInput struct {
 	UserID         uuid.UUID
 	ReservationIDs []uuid.UUID
+	Buyer          entity.BuyerDetails
 }
 
 type CreateOrderOutput struct {
@@ -90,7 +91,7 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 	fee := int64(math.Round(float64(totalCents) * serviceFeePercent / 100))
 	totalCents += fee
 
-	order, err := entity.NewOrder(input.UserID, input.ReservationIDs, totalCents, "")
+	order, err := entity.NewOrder(input.UserID, input.ReservationIDs, totalCents, "", input.Buyer)
 	if err != nil {
 		return nil, fmt.Errorf("create order: new order: %w", err)
 	}

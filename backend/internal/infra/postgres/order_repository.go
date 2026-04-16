@@ -29,11 +29,20 @@ func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
 
 func (r *OrderRepository) Create(ctx context.Context, o *entity.Order) error {
 	_, err := r.queries.CreateOrder(ctx, pgdb.CreateOrderParams{
-		ID:              o.ID,
-		UserID:          o.UserID,
-		TotalCents:      o.TotalCents,
-		StripePaymentID: o.StripePaymentID,
-		Status:          o.Status.String(),
+		ID:                o.ID,
+		UserID:            o.UserID,
+		TotalCents:        o.TotalCents,
+		StripePaymentID:   o.StripePaymentID,
+		Status:            o.Status.String(),
+		BuyerName:         o.BuyerName,
+		BuyerEmail:        o.BuyerEmail,
+		BuyerCpf:          o.BuyerCPF,
+		BuyerPhone:        o.BuyerPhone,
+		BuyerCep:          o.BuyerCEP,
+		BuyerStreet:       o.BuyerStreet,
+		BuyerNeighborhood: o.BuyerNeighborhood,
+		BuyerCity:         o.BuyerCity,
+		BuyerState:        o.BuyerState,
 	})
 	if err != nil {
 		return fmt.Errorf("OrderRepository.Create: %w", err)
@@ -104,13 +113,22 @@ func (r *OrderRepository) UpdateStripePaymentID(ctx context.Context, id uuid.UUI
 
 func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
 	return &entity.Order{
-		ID:              o.ID,
-		UserID:          o.UserID,
-		ReservationIDs:  resIDs,
-		TotalCents:      o.TotalCents,
-		StripePaymentID: o.StripePaymentID,
-		Status:          entity.OrderStatus(o.Status),
-		CreatedAt:       o.CreatedAt,
-		UpdatedAt:       o.UpdatedAt,
+		ID:                o.ID,
+		UserID:            o.UserID,
+		ReservationIDs:    resIDs,
+		TotalCents:        o.TotalCents,
+		StripePaymentID:   o.StripePaymentID,
+		Status:            entity.OrderStatus(o.Status),
+		CreatedAt:         o.CreatedAt,
+		UpdatedAt:         o.UpdatedAt,
+		BuyerName:         o.BuyerName,
+		BuyerEmail:        o.BuyerEmail,
+		BuyerCPF:          o.BuyerCpf,
+		BuyerPhone:        o.BuyerPhone,
+		BuyerCEP:          o.BuyerCep,
+		BuyerStreet:       o.BuyerStreet,
+		BuyerNeighborhood: o.BuyerNeighborhood,
+		BuyerCity:         o.BuyerCity,
+		BuyerState:        o.BuyerState,
 	}
 }

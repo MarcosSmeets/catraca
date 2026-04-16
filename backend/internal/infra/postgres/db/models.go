@@ -30,13 +30,22 @@ type Event struct {
 }
 
 type Order struct {
-	ID              uuid.UUID `json:"id"`
-	UserID          uuid.UUID `json:"user_id"`
-	TotalCents      int64     `json:"total_cents"`
-	StripePaymentID string    `json:"stripe_payment_id"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                uuid.UUID `json:"id"`
+	UserID            uuid.UUID `json:"user_id"`
+	TotalCents        int64     `json:"total_cents"`
+	StripePaymentID   string    `json:"stripe_payment_id"`
+	Status            string    `json:"status"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	BuyerName         string    `json:"buyer_name"`
+	BuyerEmail        string    `json:"buyer_email"`
+	BuyerCpf          string    `json:"buyer_cpf"`
+	BuyerPhone        string    `json:"buyer_phone"`
+	BuyerCep          string    `json:"buyer_cep"`
+	BuyerStreet       string    `json:"buyer_street"`
+	BuyerNeighborhood string    `json:"buyer_neighborhood"`
+	BuyerCity         string    `json:"buyer_city"`
+	BuyerState        string    `json:"buyer_state"`
 }
 
 type OrderReservation struct {

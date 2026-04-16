@@ -285,6 +285,17 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	output, err := h.createOrderUC.Execute(r.Context(), orderuc.CreateOrderInput{
 		UserID:         claims.UserID,
 		ReservationIDs: resIDs,
+		Buyer: entity.BuyerDetails{
+			Name:         req.BuyerName,
+			Email:        req.BuyerEmail,
+			CPF:          req.BuyerCPF,
+			Phone:        req.BuyerPhone,
+			CEP:          req.BuyerCEP,
+			Street:       req.BuyerStreet,
+			Neighborhood: req.BuyerNeighborhood,
+			City:         req.BuyerCity,
+			State:        req.BuyerState,
+		},
 	})
 	if err != nil {
 		switch {

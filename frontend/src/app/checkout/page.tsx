@@ -400,7 +400,18 @@ function CheckoutFormInner({
         }>("/orders", {
           method: "POST",
           accessToken,
-          body: JSON.stringify({ reservationIds }),
+          body: JSON.stringify({
+            reservationIds,
+            buyerName: form.name,
+            buyerEmail: form.email,
+            buyerCpf: form.cpf,
+            buyerPhone: form.phone,
+            buyerCep: form.cep,
+            buyerStreet: form.street,
+            buyerNeighborhood: form.neighborhood,
+            buyerCity: form.city,
+            buyerState: form.state,
+          }),
         });
 
         orderId = orderRes.orderId;
@@ -568,8 +579,7 @@ function CheckoutFormInner({
 
         <div className="flex flex-col lg:flex-row gap-8">
           <div className="flex-1 min-w-0">
-            {step === "payment" && (
-              <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-8" style={{ display: step === "payment" ? undefined : "none" }}>
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-5">
                     Dados do comprador
@@ -786,10 +796,8 @@ function CheckoutFormInner({
                   Revisar pedido →
                 </Button>
               </div>
-            )}
 
-            {step === "confirm" && (
-              <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-6" style={{ display: step === "confirm" ? undefined : "none" }}>
                 <section className="bg-surface-lowest rounded-md p-6">
                   <h2 className="font-display font-bold text-sm uppercase tracking-tight text-on-surface mb-4">
                     Revisão do pedido
@@ -838,7 +846,6 @@ function CheckoutFormInner({
                   </Button>
                 </div>
               </div>
-            )}
           </div>
 
           <aside className="w-full lg:w-72 shrink-0">

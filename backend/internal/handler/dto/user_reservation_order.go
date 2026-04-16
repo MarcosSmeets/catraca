@@ -27,7 +27,16 @@ type OrderResponse struct {
 }
 
 type CreateOrderRequest struct {
-	ReservationIDs []string `json:"reservationIds"`
+	ReservationIDs    []string `json:"reservationIds"`
+	BuyerName         string   `json:"buyerName"`
+	BuyerEmail        string   `json:"buyerEmail"`
+	BuyerCPF          string   `json:"buyerCpf"`
+	BuyerPhone        string   `json:"buyerPhone"`
+	BuyerCEP          string   `json:"buyerCep"`
+	BuyerStreet       string   `json:"buyerStreet"`
+	BuyerNeighborhood string   `json:"buyerNeighborhood"`
+	BuyerCity         string   `json:"buyerCity"`
+	BuyerState        string   `json:"buyerState"`
 }
 
 // CreateOrderResponse is returned after creating a pending order. Payment happens via Stripe Checkout (redirect).

@@ -20,30 +20,35 @@ function formatTicketWhen(iso: string): string {
   return `${datePart} | ${timePart}`;
 }
 
-/** CSS mask that cuts semicircular notches into the top and bottom edges. */
-const ticketMask = {
-  WebkitMaskImage: [
-    /* top scallops */
-    "radial-gradient(circle 6px at 10px 0, transparent 98%, black)",
-    /* solid middle fill */
-    "linear-gradient(black, black)",
-    /* bottom scallops */
-    "radial-gradient(circle 6px at 10px 100%, transparent 98%, black)",
-  ].join(", "),
-  WebkitMaskSize: "20px 12px, 100% calc(100% - 24px), 20px 12px",
-  WebkitMaskPosition: "top, center, bottom",
-  WebkitMaskRepeat: "repeat-x, no-repeat, repeat-x",
-  maskImage: [
-    "radial-gradient(circle 6px at 10px 0, transparent 98%, black)",
-    "linear-gradient(black, black)",
-    "radial-gradient(circle 6px at 10px 100%, transparent 98%, black)",
-  ].join(", "),
-  maskSize: "20px 12px, 100% calc(100% - 24px), 20px 12px",
-  maskPosition: "top, center, bottom" as const,
-  maskRepeat: "repeat-x, no-repeat, repeat-x",
-  maskComposite: "add",
-  WebkitMaskComposite: "source-over",
-} as React.CSSProperties;
+/** Hidden SVG that defines a clip-path with semicircular notches at top & bottom. */
+function TicketClipDefs() {
+  const count = 17;
+  const r = 0.018;
+  const ry = r * 5; // elongated vertically so the semicircles are visible
+  let d = "M0,0 ";
+  // Top edge: left→right, semicircular bites going downward
+  for (let i = 0; i < count; i++) {
+    const cx = (i + 0.5) / count;
+    d += `L${cx - r},0 A${r},${ry} 0 0,0 ${cx + r},0 `;
+  }
+  d += "L1,0 L1,1 ";
+  // Bottom edge: right→left, semicircular bites going upward
+  for (let i = count - 1; i >= 0; i--) {
+    const cx = (i + 0.5) / count;
+    d += `L${cx + r},1 A${r},${ry} 0 0,0 ${cx - r},1 `;
+  }
+  d += "L0,1 Z";
+
+  return (
+    <svg width="0" height="0" className="absolute" aria-hidden>
+      <defs>
+        <clipPath id="ticket-clip" clipPathUnits="objectBoundingBox">
+          <path d={d} />
+        </clipPath>
+      </defs>
+    </svg>
+  );
+}
 
 type TicketFaceProps = {
   ticket: Ticket;
@@ -67,71 +72,74 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
       : "—";
 
   return (
-    <div
-      className="w-[min(100%,340px)] mx-auto bg-surface-lowest text-on-surface shadow-[0_12px_40px_rgba(0,0,0,0.35)] overflow-hidden"
-      style={ticketMask}
-    >
-      <div className="bg-[#0a0a0a] text-center py-2.5 px-3">
-        <span className="font-display font-bold text-[11px] tracking-[0.35em] text-white uppercase">
-          Premium
-        </span>
-      </div>
+    <div className="w-[min(100%,340px)] mx-auto" style={{ filter: "drop-shadow(0 12px 40px rgba(0,0,0,0.35))" }}>
+      <TicketClipDefs />
+      <div
+        className="bg-surface-lowest text-on-surface"
+        style={{ clipPath: "url(#ticket-clip)" }}
+      >
+        <div className="bg-[#0a0a0a] text-center py-2.5 px-3">
+          <span className="font-display font-bold text-[11px] tracking-[0.35em] text-white uppercase">
+            Premium
+          </span>
+        </div>
 
-      <div className="bg-white px-5 pt-5 pb-4 border-b-2 border-accent">
-        <div className="flex flex-col items-center gap-3">
-          <Image
-            src="/logo.png"
-            alt="Catraca"
-            width={120}
-            height={48}
-            className="h-10 w-auto object-contain"
+        <div className="bg-white px-5 pt-5 pb-4 border-b-2 border-accent">
+          <div className="flex flex-col items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt="Catraca"
+              width={120}
+              height={48}
+              className="h-10 w-auto object-contain"
+            />
+            <p className="font-display font-black text-2xl tracking-tight text-[#0a0a0a] uppercase">
+              C<span className="text-accent">A</span>TR<span className="text-accent">A</span>C<span className="text-accent">A</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="relative bg-[#141416] px-4 py-5 text-white">
+          <p className="font-display font-black text-base sm:text-lg text-center uppercase tracking-tight leading-snug">
+            {title}
+          </p>
+          <p className="mt-2 text-center text-sm text-white/95 font-body">{when}</p>
+          <p className="mt-1 text-center text-xs text-white/55 font-body">{venue}</p>
+        </div>
+
+        <div className="relative bg-accent h-3">
+          <span
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-3.5 h-7 rounded-r-full bg-[#141416]"
+            aria-hidden
           />
-          <p className="font-display font-black text-2xl tracking-tight text-[#0a0a0a] uppercase">
-            CATR<span className="text-accent">A</span>C<span className="text-accent">A</span>
+          <span
+            className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-7 rounded-l-full bg-[#141416]"
+            aria-hidden
+          />
+        </div>
+
+        <div className="bg-[#141416] px-4 pt-5 pb-4 flex flex-col items-center">
+          {showQr ? (
+            <>
+              <TicketQr value={ticket.qrCode} size={200} className="rounded-sm" />
+              <p className="mt-3 text-[10px] font-mono text-white/50 text-center break-all max-w-full px-1">
+                {ticket.qrCode}
+              </p>
+            </>
+          ) : (
+            <div className="py-8 px-4 text-center text-white/45 text-sm font-body">
+              QR indisponível para este status.
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#141416] px-4 pb-5 pt-0">
+          <p className="text-center text-[11px] sm:text-xs font-display font-semibold tracking-wide text-white uppercase">
+            {seatLine}
           </p>
         </div>
-      </div>
 
-      <div className="relative bg-[#141416] px-4 py-5 text-white">
-        <p className="font-display font-black text-base sm:text-lg text-center uppercase tracking-tight leading-snug">
-          {title}
-        </p>
-        <p className="mt-2 text-center text-sm text-white/95 font-body">{when}</p>
-        <p className="mt-1 text-center text-xs text-white/55 font-body">{venue}</p>
       </div>
-
-      <div className="relative bg-accent h-3">
-        <span
-          className="absolute left-0 top-1/2 -translate-y-1/2 w-3.5 h-7 rounded-r-full bg-[#141416]"
-          aria-hidden
-        />
-        <span
-          className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-7 rounded-l-full bg-[#141416]"
-          aria-hidden
-        />
-      </div>
-
-      <div className="bg-[#141416] px-4 pt-5 pb-4 flex flex-col items-center">
-        {showQr ? (
-          <>
-            <TicketQr value={ticket.qrCode} size={200} className="rounded-sm" />
-            <p className="mt-3 text-[10px] font-mono text-white/50 text-center break-all max-w-full px-1">
-              {ticket.qrCode}
-            </p>
-          </>
-        ) : (
-          <div className="py-8 px-4 text-center text-white/45 text-sm font-body">
-            QR indisponível para este status.
-          </div>
-        )}
-      </div>
-
-      <div className="bg-[#141416] px-4 pb-5 pt-0">
-        <p className="text-center text-[11px] sm:text-xs font-display font-semibold tracking-wide text-white uppercase">
-          {seatLine}
-        </p>
-      </div>
-
     </div>
   );
 }

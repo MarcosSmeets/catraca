@@ -16,18 +16,51 @@ type Order struct {
 	Status          OrderStatus
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// Buyer details captured at checkout
+	BuyerName         string
+	BuyerEmail        string
+	BuyerCPF          string
+	BuyerPhone        string
+	BuyerCEP          string
+	BuyerStreet       string
+	BuyerNeighborhood string
+	BuyerCity         string
+	BuyerState        string
 }
 
-func NewOrder(userID uuid.UUID, reservationIDs []uuid.UUID, totalCents int64, stripePaymentID string) (*Order, error) {
+// BuyerDetails groups buyer information for order creation.
+type BuyerDetails struct {
+	Name         string
+	Email        string
+	CPF          string
+	Phone        string
+	CEP          string
+	Street       string
+	Neighborhood string
+	City         string
+	State        string
+}
+
+func NewOrder(userID uuid.UUID, reservationIDs []uuid.UUID, totalCents int64, stripePaymentID string, buyer BuyerDetails) (*Order, error) {
 	o := &Order{
-		ID:              uuid.New(),
-		UserID:          userID,
-		ReservationIDs:  reservationIDs,
-		TotalCents:      totalCents,
-		StripePaymentID: stripePaymentID,
-		Status:          OrderStatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		ID:                uuid.New(),
+		UserID:            userID,
+		ReservationIDs:    reservationIDs,
+		TotalCents:        totalCents,
+		StripePaymentID:   stripePaymentID,
+		Status:            OrderStatusPending,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+		BuyerName:         buyer.Name,
+		BuyerEmail:        buyer.Email,
+		BuyerCPF:          buyer.CPF,
+		BuyerPhone:        buyer.Phone,
+		BuyerCEP:          buyer.CEP,
+		BuyerStreet:       buyer.Street,
+		BuyerNeighborhood: buyer.Neighborhood,
+		BuyerCity:         buyer.City,
+		BuyerState:        buyer.State,
 	}
 	if err := o.Validate(); err != nil {
 		return nil, err
