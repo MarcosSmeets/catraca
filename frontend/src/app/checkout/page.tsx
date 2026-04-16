@@ -56,15 +56,18 @@ interface AddressData {
   erro?: boolean;
 }
 
-const CARD_ELEMENT_STYLE = {
-  base: {
-    color: "#e0e0e0",
-    fontFamily: "'Inter', system-ui, sans-serif",
-    fontSize: "14px",
-    "::placeholder": { color: "#666" },
-  },
-  invalid: { color: "#ef4444" },
-};
+function getCardElementStyle() {
+  const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  return {
+    base: {
+      color: isDark ? "#e2e2e2" : "#1a1c1c",
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "14px",
+      "::placeholder": { color: isDark ? "#666" : "#999" },
+    },
+    invalid: { color: "#ef4444" },
+  };
+}
 
 function CheckoutPageFallback() {
   return (
@@ -184,6 +187,7 @@ function CheckoutFormInner({
   const [installments, setInstallments] = useState(1);
   const [paymentType, setPaymentType] = useState<"credit" | "debit">("credit");
   const canceledToastShown = useRef(false);
+  const cardStyle = useMemo(() => getCardElementStyle(), []);
   const [paymentRequest, setPaymentRequest] = useState<PaymentRequest | null>(null);
   const [canPayWithWallet, setCanPayWithWallet] = useState(false);
 
@@ -731,7 +735,7 @@ function CheckoutFormInner({
                             Número do cartão
                           </label>
                           <div className="bg-surface-high border border-outline-variant rounded-md px-3 py-3">
-                            <CardNumberElement options={{ style: CARD_ELEMENT_STYLE, showIcon: true }} />
+                            <CardNumberElement options={{ style: cardStyle, showIcon: true }} />
                           </div>
                         </div>
 
@@ -741,7 +745,7 @@ function CheckoutFormInner({
                               Validade
                             </label>
                             <div className="bg-surface-high border border-outline-variant rounded-md px-3 py-3">
-                              <CardExpiryElement options={{ style: CARD_ELEMENT_STYLE }} />
+                              <CardExpiryElement options={{ style: cardStyle }} />
                             </div>
                           </div>
                           <div>
@@ -749,7 +753,7 @@ function CheckoutFormInner({
                               CVC
                             </label>
                             <div className="bg-surface-high border border-outline-variant rounded-md px-3 py-3">
-                              <CardCvcElement options={{ style: CARD_ELEMENT_STYLE }} />
+                              <CardCvcElement options={{ style: cardStyle }} />
                             </div>
                           </div>
                         </div>
