@@ -121,13 +121,12 @@ func main() {
 	getTicketUC := ticketuc.NewGetTicketUseCase(ticketRepo)
 	scanTicketUC := ticketuc.NewScanTicketUseCase(ticketRepo)
 
-	startConnectUC := resaleuc.NewStartConnectUseCase(userRepo, paymentGateway)
-	getConnectStatusUC := resaleuc.NewGetConnectStatusUseCase(userRepo, paymentGateway)
-	createResaleListingUC := resaleuc.NewCreateResaleListingUseCase(ticketRepo, eventRepo, seatRepo, userRepo, resaleListingRepo)
+	createResaleListingUC := resaleuc.NewCreateResaleListingUseCase(ticketRepo, eventRepo, seatRepo, resaleListingRepo)
 	cancelResaleListingUC := resaleuc.NewCancelResaleListingUseCase(resaleListingRepo)
 	listMyResalesUC := resaleuc.NewListMyResaleListingsUseCase(resaleListingRepo)
 	listEventResalesUC := resaleuc.NewListEventResaleListingsUseCase(resaleListingRepo)
-	createResaleCheckoutUC := resaleuc.NewCreateResaleCheckoutUseCase(orderRepo, resaleListingRepo, userRepo, paymentGateway)
+	listGlobalResalesUC := resaleuc.NewListGlobalResaleListingsUseCase(resaleListingRepo)
+	createResaleCheckoutUC := resaleuc.NewCreateResaleCheckoutUseCase(orderRepo, resaleListingRepo, paymentGateway)
 
 	// --- Workers ---
 	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, resaleListingRepo, orgRepo, seatLocker, sseHub, paymentGateway)
@@ -154,12 +153,11 @@ func main() {
 	adminOrganizationsHandler := httphandler.NewAdminOrganizationsHandler(orgRepo, userRepo, subscriptionCheckoutUC)
 	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
 	resaleHandler := httphandler.NewResaleHandler(httphandler.ResaleHandlerDeps{
-		StartConnect:     startConnectUC,
-		GetConnectStatus: getConnectStatusUC,
 		CreateListing:    createResaleListingUC,
 		CancelListing:    cancelResaleListingUC,
 		ListMine:         listMyResalesUC,
 		ListByEvent:      listEventResalesUC,
+		ListGlobal:       listGlobalResalesUC,
 		CreateCheckout:   createResaleCheckoutUC,
 		OrganizationRepo: orgRepo,
 		GetEventUC:       getEventUC,
@@ -219,6 +217,9 @@ func main() {
 	r.Post("/admin/auth/login", authHandler.AdminLogin)
 	r.Post("/admin/auth/logout", authHandler.AdminLogout)
 
+	// Public resale marketplace (all organizations)
+	r.Get("/resale-listings", resaleHandler.ListGlobalResaleListings)
+
 	// Public catalog (scoped by organization slug)
 	r.Route("/orgs/{slug}", func(r chi.Router) {
 		r.Get("/events", eventHandler.ListByOrganization)
@@ -274,10 +275,6 @@ func main() {
 		r.Post("/orders/{id}/payment-intent", userHandler.CreatePaymentIntent)
 		r.Get("/me/orders", userHandler.ListOrders)
 		r.Get("/me/orders/{id}", userHandler.GetOrder)
-
-		// Stripe Connect (resale payouts)
-		r.Post("/me/stripe/connect/account", resaleHandler.PostStripeConnectAccount)
-		r.Get("/me/stripe/connect/status", resaleHandler.GetStripeConnectStatus)
 
 		// Resale listings
 		r.Post("/me/tickets/{id}/resale-listings", resaleHandler.PostTicketResaleListing)

@@ -21,6 +21,8 @@ type Order struct {
 	ReservationIDs   []uuid.UUID
 	ResaleListingID  *uuid.UUID
 	TotalCents       int64
+	// SellerPayoutCents is set for resale orders: listing price minus platform fee (ledger for manual payout).
+	SellerPayoutCents *int64
 	StripePaymentID  string
 	Status           OrderStatus
 	CreatedAt        time.Time

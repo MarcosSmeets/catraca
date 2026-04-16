@@ -29,6 +29,35 @@ JOIN seats s ON s.id = t.seat_id
 WHERE t.event_id = $1 AND l.status = 'active'
 ORDER BY l.price_cents ASC, l.created_at ASC;
 
+-- name: ListActiveResaleListingsGlobal :many
+SELECT
+    l.id,
+    l.ticket_id,
+    l.seller_user_id,
+    l.price_cents,
+    l.status,
+    l.created_at,
+    l.updated_at,
+    t.event_id,
+    e.starts_at AS event_starts_at,
+    e.home_team AS event_home_team,
+    e.away_team AS event_away_team,
+    o.slug AS organization_slug,
+    s.section AS seat_section,
+    s.row AS seat_row,
+    s.number AS seat_number
+FROM ticket_resale_listings l
+JOIN tickets t ON t.id = l.ticket_id
+JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
+JOIN organizations o ON o.id = v.organization_id
+JOIN seats s ON s.id = t.seat_id
+WHERE l.status = 'active'
+  AND e.starts_at > NOW()
+  AND e.deleted_at IS NULL
+  AND o.deleted_at IS NULL
+ORDER BY e.starts_at ASC, l.price_cents ASC, l.created_at ASC;
+
 -- name: ListTicketResaleListingsBySellerUserID :many
 SELECT * FROM ticket_resale_listings
 WHERE seller_user_id = $1

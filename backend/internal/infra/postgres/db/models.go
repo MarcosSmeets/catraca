@@ -48,6 +48,7 @@ type Order struct {
 	BuyerState        string      `json:"buyer_state"`
 	Kind              string      `json:"kind"`
 	ResaleListingID   pgtype.UUID `json:"resale_listing_id"`
+	SellerPayoutCents pgtype.Int8 `json:"seller_payout_cents"`
 }
 
 type OrderReservation struct {

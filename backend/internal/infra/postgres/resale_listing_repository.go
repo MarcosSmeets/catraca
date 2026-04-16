@@ -84,6 +84,32 @@ func (r *ResaleListingRepository) ListActiveByEventID(ctx context.Context, event
 	return out, nil
 }
 
+func (r *ResaleListingRepository) ListActiveMarketplace(ctx context.Context) ([]repository.ResaleListingMarketplaceRow, error) {
+	rows, err := r.queries.ListActiveResaleListingsGlobal(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ResaleListingRepository.ListActiveMarketplace: %w", err)
+	}
+	out := make([]repository.ResaleListingMarketplaceRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, repository.ResaleListingMarketplaceRow{
+			ID:               row.ID,
+			TicketID:         row.TicketID,
+			PriceCents:       row.PriceCents,
+			Status:           row.Status,
+			CreatedAt:        row.CreatedAt,
+			EventID:          row.EventID,
+			EventStartsAt:    row.EventStartsAt,
+			HomeTeam:         row.EventHomeTeam,
+			AwayTeam:         row.EventAwayTeam,
+			OrganizationSlug: row.OrganizationSlug,
+			SeatSection:      row.SeatSection,
+			SeatRow:          row.SeatRow,
+			SeatNumber:       row.SeatNumber,
+		})
+	}
+	return out, nil
+}
+
 func (r *ResaleListingRepository) ListBySellerUserID(ctx context.Context, sellerUserID uuid.UUID) ([]repository.ResaleListing, error) {
 	rows, err := r.queries.ListTicketResaleListingsBySellerUserID(ctx, sellerUserID)
 	if err != nil {

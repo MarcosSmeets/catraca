@@ -11,6 +11,7 @@ import CatracaHeaderBrand from "@/components/brand/CatracaHeaderBrand";
 const navLinks = [
   { href: "/", label: "INÍCIO" },
   { href: "/search", label: "EXPLORAR" },
+  { href: "/revenda", label: "REVENDA" },
   { href: "/tickets", label: "MEUS INGRESSOS" },
 ] as const;
 

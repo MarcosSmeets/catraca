@@ -13,7 +13,6 @@ import (
 
 var (
 	ErrAlreadyListed     = errors.New("ticket already has an active resale listing")
-	ErrConnectNotReady   = errors.New("complete Stripe Connect onboarding before listing tickets for resale")
 	ErrPriceAboveCap     = errors.New("price is above the allowed cap for this seat")
 	ErrTicketNotEligible = errors.New("ticket is not eligible for resale")
 )
@@ -28,7 +27,6 @@ type CreateResaleListingUseCase struct {
 	tickets  repository.TicketRepository
 	events   repository.EventRepository
 	seats    repository.SeatRepository
-	users    repository.UserRepository
 	listings repository.ResaleListingRepository
 }
 
@@ -36,11 +34,10 @@ func NewCreateResaleListingUseCase(
 	tickets repository.TicketRepository,
 	events repository.EventRepository,
 	seats repository.SeatRepository,
-	users repository.UserRepository,
 	listings repository.ResaleListingRepository,
 ) *CreateResaleListingUseCase {
 	return &CreateResaleListingUseCase{
-		tickets: tickets, events: events, seats: seats, users: users, listings: listings,
+		tickets: tickets, events: events, seats: seats, listings: listings,
 	}
 }
 
@@ -72,13 +69,6 @@ func (uc *CreateResaleListingUseCase) Execute(ctx context.Context, in CreateResa
 	maxCents := seat.PriceCents + (seat.PriceCents / 2) // 150% of face
 	if in.PriceCents > maxCents {
 		return nil, ErrPriceAboveCap
-	}
-	u, err := uc.users.GetByID(ctx, in.UserID)
-	if err != nil {
-		return nil, err
-	}
-	if !u.StripeConnectChargesEnabled || u.StripeConnectAccountID == "" {
-		return nil, ErrConnectNotReady
 	}
 	if _, err := uc.listings.GetActiveByTicketID(ctx, in.TicketID); err == nil {
 		return nil, ErrAlreadyListed
@@ -148,4 +138,16 @@ func NewListEventResaleListingsUseCase(listings repository.ResaleListingReposito
 
 func (uc *ListEventResaleListingsUseCase) Execute(ctx context.Context, eventID uuid.UUID) ([]repository.ResaleListingEventRow, error) {
 	return uc.listings.ListActiveByEventID(ctx, eventID)
+}
+
+type ListGlobalResaleListingsUseCase struct {
+	listings repository.ResaleListingRepository
+}
+
+func NewListGlobalResaleListingsUseCase(listings repository.ResaleListingRepository) *ListGlobalResaleListingsUseCase {
+	return &ListGlobalResaleListingsUseCase{listings: listings}
+}
+
+func (uc *ListGlobalResaleListingsUseCase) Execute(ctx context.Context) ([]repository.ResaleListingMarketplaceRow, error) {
+	return uc.listings.ListActiveMarketplace(ctx)
 }

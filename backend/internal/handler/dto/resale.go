@@ -1,20 +1,5 @@
 package dto
 
-type StripeConnectStartRequest struct {
-	ReturnURL  string `json:"returnUrl"`
-	RefreshURL string `json:"refreshUrl"`
-}
-
-type StripeConnectStartResponse struct {
-	URL string `json:"url"`
-}
-
-type StripeConnectStatusResponse struct {
-	ChargesEnabled         bool   `json:"chargesEnabled"`
-	DetailsSubmitted       bool   `json:"detailsSubmitted"`
-	StripeConnectAccountID string `json:"stripeConnectAccountId,omitempty"`
-}
-
 type CreateResaleListingRequest struct {
 	PriceCents int64 `json:"priceCents"`
 }
@@ -28,6 +13,22 @@ type ResaleListingResponse struct {
 	Section      string `json:"section,omitempty"`
 	Row          string `json:"row,omitempty"`
 	Number       string `json:"number,omitempty"`
+}
+
+type ResaleMarketplaceListingResponse struct {
+	ID               string `json:"id"`
+	TicketID         string `json:"ticketId"`
+	PriceCents       int64  `json:"priceCents"`
+	Status           string `json:"status"`
+	CreatedAt        string `json:"createdAt"`
+	OrganizationSlug string `json:"organizationSlug"`
+	EventID          string `json:"eventId"`
+	HomeTeam         string `json:"homeTeam"`
+	AwayTeam         string `json:"awayTeam"`
+	EventStartsAt    string `json:"eventStartsAt"`
+	Section          string `json:"section,omitempty"`
+	Row              string `json:"row,omitempty"`
+	Number           string `json:"number,omitempty"`
 }
 
 type ResaleCheckoutRequest struct {

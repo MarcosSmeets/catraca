@@ -19,28 +19,26 @@ import (
 )
 
 type ResaleHandler struct {
-	startConnect     *resaleuc.StartConnectUseCase
-	getConnectStatus *resaleuc.GetConnectStatusUseCase
-	createListing    *resaleuc.CreateResaleListingUseCase
-	cancelListing    *resaleuc.CancelResaleListingUseCase
-	listMine         *resaleuc.ListMyResaleListingsUseCase
-	listByEvent      *resaleuc.ListEventResaleListingsUseCase
-	createCheckout   *resaleuc.CreateResaleCheckoutUseCase
-	orgRepo          repository.OrganizationRepository
-	getEventUC       *eventuc.GetEventUseCase
-	stripeEnabled    bool
-	checkoutSuccess  string
-	checkoutCancel   string
+	createListing   *resaleuc.CreateResaleListingUseCase
+	cancelListing   *resaleuc.CancelResaleListingUseCase
+	listMine        *resaleuc.ListMyResaleListingsUseCase
+	listByEvent     *resaleuc.ListEventResaleListingsUseCase
+	listGlobal      *resaleuc.ListGlobalResaleListingsUseCase
+	createCheckout  *resaleuc.CreateResaleCheckoutUseCase
+	orgRepo         repository.OrganizationRepository
+	getEventUC      *eventuc.GetEventUseCase
+	stripeEnabled   bool
+	checkoutSuccess string
+	checkoutCancel  string
 }
 
 type ResaleHandlerDeps struct {
-	StartConnect     *resaleuc.StartConnectUseCase
-	GetConnectStatus *resaleuc.GetConnectStatusUseCase
-	CreateListing    *resaleuc.CreateResaleListingUseCase
-	CancelListing    *resaleuc.CancelResaleListingUseCase
-	ListMine         *resaleuc.ListMyResaleListingsUseCase
-	ListByEvent      *resaleuc.ListEventResaleListingsUseCase
-	CreateCheckout   *resaleuc.CreateResaleCheckoutUseCase
+	CreateListing   *resaleuc.CreateResaleListingUseCase
+	CancelListing   *resaleuc.CancelResaleListingUseCase
+	ListMine        *resaleuc.ListMyResaleListingsUseCase
+	ListByEvent     *resaleuc.ListEventResaleListingsUseCase
+	ListGlobal      *resaleuc.ListGlobalResaleListingsUseCase
+	CreateCheckout  *resaleuc.CreateResaleCheckoutUseCase
 	OrganizationRepo repository.OrganizationRepository
 	GetEventUC       *eventuc.GetEventUseCase
 	StripeEnabled    bool
@@ -50,68 +48,45 @@ type ResaleHandlerDeps struct {
 
 func NewResaleHandler(d ResaleHandlerDeps) *ResaleHandler {
 	return &ResaleHandler{
-		startConnect:     d.StartConnect,
-		getConnectStatus: d.GetConnectStatus,
-		createListing:    d.CreateListing,
-		cancelListing:    d.CancelListing,
-		listMine:         d.ListMine,
-		listByEvent:      d.ListByEvent,
-		createCheckout:   d.CreateCheckout,
-		orgRepo:          d.OrganizationRepo,
-		getEventUC:       d.GetEventUC,
-		stripeEnabled:    d.StripeEnabled,
-		checkoutSuccess:  d.CheckoutSuccess,
-		checkoutCancel:   d.CheckoutCancel,
+		createListing:   d.CreateListing,
+		cancelListing:   d.CancelListing,
+		listMine:        d.ListMine,
+		listByEvent:     d.ListByEvent,
+		listGlobal:      d.ListGlobal,
+		createCheckout:  d.CreateCheckout,
+		orgRepo:         d.OrganizationRepo,
+		getEventUC:      d.GetEventUC,
+		stripeEnabled:   d.StripeEnabled,
+		checkoutSuccess: d.CheckoutSuccess,
+		checkoutCancel:  d.CheckoutCancel,
 	}
 }
 
-func (h *ResaleHandler) PostStripeConnectAccount(w http.ResponseWriter, r *http.Request) {
-	claims := authmw.GetUserClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	if !h.stripeEnabled {
-		writeError(w, http.StatusServiceUnavailable, "stripe is not configured")
-		return
-	}
-	var body dto.StripeConnectStartRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	out, err := h.startConnect.Execute(r.Context(), resaleuc.StartConnectInput{
-		UserID:     claims.UserID,
-		ReturnURL:  body.ReturnURL,
-		RefreshURL: body.RefreshURL,
-	})
+func (h *ResaleHandler) ListGlobalResaleListings(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.listGlobal.Execute(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list resale listings")
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.StripeConnectStartResponse{URL: out.URL})
-}
-
-func (h *ResaleHandler) GetStripeConnectStatus(w http.ResponseWriter, r *http.Request) {
-	claims := authmw.GetUserClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
+	out := make([]dto.ResaleMarketplaceListingResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, dto.ResaleMarketplaceListingResponse{
+			ID:               row.ID.String(),
+			TicketID:         row.TicketID.String(),
+			PriceCents:       row.PriceCents,
+			Status:           row.Status,
+			CreatedAt:        row.CreatedAt.UTC().Format(time.RFC3339),
+			OrganizationSlug: row.OrganizationSlug,
+			EventID:          row.EventID.String(),
+			HomeTeam:         row.HomeTeam,
+			AwayTeam:         row.AwayTeam,
+			EventStartsAt:    row.EventStartsAt.UTC().Format(time.RFC3339),
+			Section:          row.SeatSection,
+			Row:              row.SeatRow,
+			Number:           row.SeatNumber,
+		})
 	}
-	if !h.stripeEnabled {
-		writeError(w, http.StatusServiceUnavailable, "stripe is not configured")
-		return
-	}
-	out, err := h.getConnectStatus.Execute(r.Context(), claims.UserID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, dto.StripeConnectStatusResponse{
-		ChargesEnabled:         out.ChargesEnabled,
-		DetailsSubmitted:       out.DetailsSubmitted,
-		StripeConnectAccountID: out.StripeConnectAccountID,
-	})
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *ResaleHandler) PostTicketResaleListing(w http.ResponseWriter, r *http.Request) {
@@ -141,8 +116,6 @@ func (h *ResaleHandler) PostTicketResaleListing(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusNotFound, "ticket not found")
 		case errors.Is(err, resaleuc.ErrAlreadyListed):
 			writeError(w, http.StatusConflict, err.Error())
-		case errors.Is(err, resaleuc.ErrConnectNotReady):
-			writeError(w, http.StatusPreconditionFailed, err.Error())
 		case errors.Is(err, resaleuc.ErrPriceAboveCap):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, resaleuc.ErrTicketNotEligible):

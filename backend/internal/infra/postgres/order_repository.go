@@ -33,6 +33,10 @@ func (r *OrderRepository) Create(ctx context.Context, o *entity.Order) error {
 	if o.ResaleListingID != nil {
 		resaleListingPg = pgtype.UUID{Bytes: *o.ResaleListingID, Valid: true}
 	}
+	var payoutPg pgtype.Int8
+	if o.SellerPayoutCents != nil {
+		payoutPg = pgtype.Int8{Int64: *o.SellerPayoutCents, Valid: true}
+	}
 	_, err := r.queries.CreateOrder(ctx, pgdb.CreateOrderParams{
 		ID:                o.ID,
 		UserID:            o.UserID,
@@ -50,6 +54,7 @@ func (r *OrderRepository) Create(ctx context.Context, o *entity.Order) error {
 		BuyerState:        o.BuyerState,
 		Kind:              string(o.Kind),
 		ResaleListingID:   resaleListingPg,
+		SellerPayoutCents: payoutPg,
 	})
 	if err != nil {
 		return fmt.Errorf("OrderRepository.Create: %w", err)
@@ -150,6 +155,10 @@ func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
 	if o.ResaleListingID.Valid {
 		u := uuid.UUID(o.ResaleListingID.Bytes)
 		out.ResaleListingID = &u
+	}
+	if o.SellerPayoutCents.Valid {
+		v := o.SellerPayoutCents.Int64
+		out.SellerPayoutCents = &v
 	}
 	return out
 }

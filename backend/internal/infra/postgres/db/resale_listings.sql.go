@@ -183,6 +183,90 @@ func (q *Queries) ListActiveResaleListingsByEventID(ctx context.Context, eventID
 	return items, nil
 }
 
+const listActiveResaleListingsGlobal = `-- name: ListActiveResaleListingsGlobal :many
+SELECT
+    l.id,
+    l.ticket_id,
+    l.seller_user_id,
+    l.price_cents,
+    l.status,
+    l.created_at,
+    l.updated_at,
+    t.event_id,
+    e.starts_at AS event_starts_at,
+    e.home_team AS event_home_team,
+    e.away_team AS event_away_team,
+    o.slug AS organization_slug,
+    s.section AS seat_section,
+    s.row AS seat_row,
+    s.number AS seat_number
+FROM ticket_resale_listings l
+JOIN tickets t ON t.id = l.ticket_id
+JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
+JOIN organizations o ON o.id = v.organization_id
+JOIN seats s ON s.id = t.seat_id
+WHERE l.status = 'active'
+  AND e.starts_at > NOW()
+  AND e.deleted_at IS NULL
+  AND o.deleted_at IS NULL
+ORDER BY e.starts_at ASC, l.price_cents ASC, l.created_at ASC
+`
+
+type ListActiveResaleListingsGlobalRow struct {
+	ID               uuid.UUID `json:"id"`
+	TicketID         uuid.UUID `json:"ticket_id"`
+	SellerUserID     uuid.UUID `json:"seller_user_id"`
+	PriceCents       int64     `json:"price_cents"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	EventID          uuid.UUID `json:"event_id"`
+	EventStartsAt    time.Time `json:"event_starts_at"`
+	EventHomeTeam    string    `json:"event_home_team"`
+	EventAwayTeam    string    `json:"event_away_team"`
+	OrganizationSlug string    `json:"organization_slug"`
+	SeatSection      string    `json:"seat_section"`
+	SeatRow          string    `json:"seat_row"`
+	SeatNumber       string    `json:"seat_number"`
+}
+
+func (q *Queries) ListActiveResaleListingsGlobal(ctx context.Context) ([]ListActiveResaleListingsGlobalRow, error) {
+	rows, err := q.db.Query(ctx, listActiveResaleListingsGlobal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveResaleListingsGlobalRow{}
+	for rows.Next() {
+		var i ListActiveResaleListingsGlobalRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TicketID,
+			&i.SellerUserID,
+			&i.PriceCents,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EventID,
+			&i.EventStartsAt,
+			&i.EventHomeTeam,
+			&i.EventAwayTeam,
+			&i.OrganizationSlug,
+			&i.SeatSection,
+			&i.SeatRow,
+			&i.SeatNumber,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTicketResaleListingsBySellerUserID = `-- name: ListTicketResaleListingsBySellerUserID :many
 SELECT id, ticket_id, seller_user_id, price_cents, status, created_at, updated_at FROM ticket_resale_listings
 WHERE seller_user_id = $1

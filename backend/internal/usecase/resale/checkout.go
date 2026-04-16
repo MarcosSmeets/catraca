@@ -30,18 +30,16 @@ type CreateResaleCheckoutOutput struct {
 type CreateResaleCheckoutUseCase struct {
 	orders   repository.OrderRepository
 	listings repository.ResaleListingRepository
-	users    repository.UserRepository
 	gw       service.PaymentGateway
 }
 
 func NewCreateResaleCheckoutUseCase(
 	orders repository.OrderRepository,
 	listings repository.ResaleListingRepository,
-	users repository.UserRepository,
 	gw service.PaymentGateway,
 ) *CreateResaleCheckoutUseCase {
 	return &CreateResaleCheckoutUseCase{
-		orders: orders, listings: listings, users: users, gw: gw,
+		orders: orders, listings: listings, gw: gw,
 	}
 }
 
@@ -73,21 +71,17 @@ func (uc *CreateResaleCheckoutUseCase) Execute(ctx context.Context, in CreateRes
 		return nil, fmt.Errorf("this listing already has a pending checkout")
 	}
 
-	seller, err := uc.users.GetByID(ctx, l.SellerUserID)
-	if err != nil {
-		return nil, err
-	}
-	dest := strings.TrimSpace(seller.StripeConnectAccountID)
-	if dest == "" || !seller.StripeConnectChargesEnabled {
-		return nil, fmt.Errorf("seller is not ready to receive payments")
-	}
-
 	fee := ApplicationFeeCents(l.PriceCents)
+	sellerPayout := l.PriceCents - fee
+	if sellerPayout < 1 {
+		sellerPayout = 1
+	}
 	listingID := l.ID
 	o, err := entity.NewOrder(in.BuyerUserID, entity.OrderKindResale, nil, &listingID, l.PriceCents, "", in.Buyer)
 	if err != nil {
 		return nil, err
 	}
+	o.SellerPayoutCents = &sellerPayout
 	if err := uc.orders.Create(ctx, o); err != nil {
 		return nil, fmt.Errorf("create resale order: %w", err)
 	}
@@ -106,8 +100,8 @@ func (uc *CreateResaleCheckoutUseCase) Execute(ctx context.Context, in CreateRes
 		PaymentMethodTypes:            []string{"card"},
 		PaymentIntentMetadata:         meta,
 		ClientReferenceID:             o.ID.String(),
-		ConnectDestinationAccountID:   dest,
-		ApplicationFeeCents:           fee,
+		ConnectDestinationAccountID:   "",
+		ApplicationFeeCents:           0,
 		LineItemName:                  "Revenda de ingresso",
 	})
 	if err != nil {

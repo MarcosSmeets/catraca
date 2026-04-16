@@ -16,9 +16,9 @@ const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (id, user_id, total_cents, stripe_payment_id, status,
   buyer_name, buyer_email, buyer_cpf, buyer_phone,
   buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state,
-  kind, resale_listing_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id
+  kind, resale_listing_id, seller_payout_cents)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+RETURNING id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id, seller_payout_cents
 `
 
 type CreateOrderParams struct {
@@ -38,6 +38,7 @@ type CreateOrderParams struct {
 	BuyerState        string      `json:"buyer_state"`
 	Kind              string      `json:"kind"`
 	ResaleListingID   pgtype.UUID `json:"resale_listing_id"`
+	SellerPayoutCents pgtype.Int8 `json:"seller_payout_cents"`
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
@@ -58,6 +59,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		arg.BuyerState,
 		arg.Kind,
 		arg.ResaleListingID,
+		arg.SellerPayoutCents,
 	)
 	var i Order
 	err := row.Scan(
@@ -79,6 +81,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.BuyerState,
 		&i.Kind,
 		&i.ResaleListingID,
+		&i.SellerPayoutCents,
 	)
 	return i, err
 }
@@ -99,7 +102,7 @@ func (q *Queries) CreateOrderReservation(ctx context.Context, arg CreateOrderRes
 }
 
 const getOrderByID = `-- name: GetOrderByID :one
-SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id FROM orders WHERE id = $1
+SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id, seller_payout_cents FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -124,6 +127,7 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 		&i.BuyerState,
 		&i.Kind,
 		&i.ResaleListingID,
+		&i.SellerPayoutCents,
 	)
 	return i, err
 }
@@ -168,7 +172,7 @@ func (q *Queries) ListOrderReservationIDs(ctx context.Context, orderID uuid.UUID
 }
 
 const listOrdersByUserID = `-- name: ListOrdersByUserID :many
-SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id FROM orders WHERE user_id = $1 ORDER BY created_at DESC
+SELECT id, user_id, total_cents, stripe_payment_id, status, created_at, updated_at, buyer_name, buyer_email, buyer_cpf, buyer_phone, buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state, kind, resale_listing_id, seller_payout_cents FROM orders WHERE user_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]Order, error) {
@@ -199,6 +203,7 @@ func (q *Queries) ListOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]O
 			&i.BuyerState,
 			&i.Kind,
 			&i.ResaleListingID,
+			&i.SellerPayoutCents,
 		); err != nil {
 			return nil, err
 		}

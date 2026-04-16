@@ -13,10 +13,12 @@ export interface ResaleListing {
   number?: string;
 }
 
-export interface StripeConnectStatus {
-  chargesEnabled: boolean;
-  detailsSubmitted: boolean;
-  stripeConnectAccountId?: string;
+export interface ResaleMarketplaceListing extends ResaleListing {
+  organizationSlug: string;
+  eventId: string;
+  homeTeam: string;
+  awayTeam: string;
+  eventStartsAt: string;
 }
 
 export interface ResaleBuyerPayload {
@@ -64,24 +66,14 @@ export function useMyResaleListings() {
   });
 }
 
-export async function fetchStripeConnectStatus(): Promise<StripeConnectStatus> {
-  const token = useAuthStore.getState().accessToken;
-  return apiFetch<StripeConnectStatus>("/me/stripe/connect/status", { accessToken: token });
+export async function fetchResaleListingsMarketplace(): Promise<ResaleMarketplaceListing[]> {
+  return apiFetch<ResaleMarketplaceListing[]>("/resale-listings", { accessToken: null });
 }
 
-export function useStripeConnectStatus() {
+export function useResaleListingsMarketplace() {
   return useQuery({
-    queryKey: ["stripe-connect-status"],
-    queryFn: fetchStripeConnectStatus,
-  });
-}
-
-export async function startStripeConnect(returnUrl: string, refreshUrl: string): Promise<{ url: string }> {
-  const token = useAuthStore.getState().accessToken;
-  return apiFetch<{ url: string }>("/me/stripe/connect/account", {
-    method: "POST",
-    accessToken: token,
-    body: JSON.stringify({ returnUrl, refreshUrl }),
+    queryKey: ["resale-listings", "marketplace"],
+    queryFn: fetchResaleListingsMarketplace,
   });
 }
 

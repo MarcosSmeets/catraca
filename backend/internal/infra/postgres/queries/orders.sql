@@ -2,8 +2,8 @@
 INSERT INTO orders (id, user_id, total_cents, stripe_payment_id, status,
   buyer_name, buyer_email, buyer_cpf, buyer_phone,
   buyer_cep, buyer_street, buyer_neighborhood, buyer_city, buyer_state,
-  kind, resale_listing_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+  kind, resale_listing_id, seller_payout_cents)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING *;
 
 -- name: GetOrderByID :one
