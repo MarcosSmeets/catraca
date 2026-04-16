@@ -20,33 +20,32 @@ function formatTicketWhen(iso: string): string {
   return `${datePart} | ${timePart}`;
 }
 
-/** Hidden SVG that defines a clip-path with semicircular notches at top & bottom. */
-function TicketClipDefs() {
-  const count = 17;
-  const r = 0.018;
-  const ry = r * 5; // elongated vertically so the semicircles are visible
-  let d = "M0,0 ";
-  // Top edge: left→right, semicircular bites going downward
-  for (let i = 0; i < count; i++) {
-    const cx = (i + 0.5) / count;
-    d += `L${cx - r},0 A${r},${ry} 0 0,0 ${cx + r},0 `;
-  }
-  d += "L1,0 L1,1 ";
-  // Bottom edge: right→left, semicircular bites going upward
-  for (let i = count - 1; i >= 0; i--) {
-    const cx = (i + 0.5) / count;
-    d += `L${cx + r},1 A${r},${ry} 0 0,0 ${cx - r},1 `;
-  }
-  d += "L0,1 Z";
-
+/**
+ * Semicircular scalloped edge — visible only in dark mode (light mode
+ * uses var(--color-surface) which blends with the page background).
+ * In dark mode a lighter gray creates visible "perforated" notches.
+ */
+function ScallopedEdge({ flip }: { flip?: boolean }) {
+  const pos = flip ? "0%" : "100%";
   return (
-    <svg width="0" height="0" className="absolute" aria-hidden>
-      <defs>
-        <clipPath id="ticket-clip" clipPathUnits="objectBoundingBox">
-          <path d={d} />
-        </clipPath>
-      </defs>
-    </svg>
+    <div className="w-full h-[14px] shrink-0 relative" aria-hidden>
+      {/* Light mode: blends with page bg → nearly invisible (clean look) */}
+      <div
+        className="absolute inset-0 dark:hidden"
+        style={{
+          background: `radial-gradient(circle at 50% ${pos}, transparent 5px, var(--color-surface) 5.5px)`,
+          backgroundSize: "18px 14px",
+        }}
+      />
+      {/* Dark mode: contrasting gray so the scallops are visible */}
+      <div
+        className="absolute inset-0 hidden dark:block"
+        style={{
+          background: `radial-gradient(circle at 50% ${pos}, transparent 5px, #2a2c2d 5.5px)`,
+          backgroundSize: "18px 14px",
+        }}
+      />
+    </div>
   );
 }
 
@@ -72,13 +71,9 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
       : "—";
 
   return (
-    <div className="w-[min(100%,340px)] mx-auto" style={{ filter: "drop-shadow(0 12px 40px rgba(0,0,0,0.35))" }}>
-      <TicketClipDefs />
-      <div
-        className="bg-surface-lowest text-on-surface"
-        style={{ clipPath: "url(#ticket-clip)" }}
-      >
-        <div className="bg-[#0a0a0a] text-center py-2.5 px-3">
+    <div className="w-[min(100%,340px)] mx-auto bg-surface-lowest text-on-surface shadow-[0_12px_40px_rgba(0,0,0,0.35)] rounded-sm overflow-hidden border border-outline-variant/30">
+      <ScallopedEdge />
+      <div className="bg-[#0a0a0a] text-center py-2.5 px-3">
           <span className="font-display font-bold text-[11px] tracking-[0.35em] text-white uppercase">
             Premium
           </span>
@@ -139,7 +134,7 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
           </p>
         </div>
 
-      </div>
+      <ScallopedEdge flip />
     </div>
   );
 }
