@@ -20,21 +20,30 @@ function formatTicketWhen(iso: string): string {
   return `${datePart} | ${timePart}`;
 }
 
-function ScallopedEdge({ flip }: { flip?: boolean }) {
-  // Semicircular notches that reveal the page background behind the ticket.
-  // "flip" mirrors the scallops for the bottom edge.
-  const gradientDir = flip ? "0%" : "100%";
-  return (
-    <div
-      className="w-full h-[14px] shrink-0"
-      aria-hidden
-      style={{
-        background: `radial-gradient(circle at 50% ${gradientDir}, transparent 5px, var(--color-surface) 5.5px)`,
-        backgroundSize: "18px 14px",
-      }}
-    />
-  );
-}
+/** CSS mask that cuts semicircular notches into the top and bottom edges. */
+const ticketMask = {
+  WebkitMaskImage: [
+    /* top scallops */
+    "radial-gradient(circle 6px at 10px 0, transparent 98%, black)",
+    /* solid middle fill */
+    "linear-gradient(black, black)",
+    /* bottom scallops */
+    "radial-gradient(circle 6px at 10px 100%, transparent 98%, black)",
+  ].join(", "),
+  WebkitMaskSize: "20px 12px, 100% calc(100% - 24px), 20px 12px",
+  WebkitMaskPosition: "top, center, bottom",
+  WebkitMaskRepeat: "repeat-x, no-repeat, repeat-x",
+  maskImage: [
+    "radial-gradient(circle 6px at 10px 0, transparent 98%, black)",
+    "linear-gradient(black, black)",
+    "radial-gradient(circle 6px at 10px 100%, transparent 98%, black)",
+  ].join(", "),
+  maskSize: "20px 12px, 100% calc(100% - 24px), 20px 12px",
+  maskPosition: "top, center, bottom" as const,
+  maskRepeat: "repeat-x, no-repeat, repeat-x",
+  maskComposite: "add",
+  WebkitMaskComposite: "source-over",
+} as React.CSSProperties;
 
 type TicketFaceProps = {
   ticket: Ticket;
@@ -58,8 +67,10 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
       : "—";
 
   return (
-    <div className="w-[min(100%,340px)] mx-auto bg-surface-lowest text-on-surface shadow-[0_12px_40px_rgba(0,0,0,0.35)] overflow-hidden border-x border-outline-variant/30">
-      <ScallopedEdge />
+    <div
+      className="w-[min(100%,340px)] mx-auto bg-surface-lowest text-on-surface shadow-[0_12px_40px_rgba(0,0,0,0.35)] overflow-hidden"
+      style={ticketMask}
+    >
       <div className="bg-[#0a0a0a] text-center py-2.5 px-3">
         <span className="font-display font-bold text-[11px] tracking-[0.35em] text-white uppercase">
           Premium
@@ -121,7 +132,6 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
         </p>
       </div>
 
-      <ScallopedEdge flip />
     </div>
   );
 }
