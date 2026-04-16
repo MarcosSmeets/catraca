@@ -76,21 +76,23 @@ export default function Navbar() {
   }
 
   const headerBar =
-    "border-b border-white/10 bg-gradient-to-r from-brand-teal-deep via-brand-teal to-brand-teal-deep";
+    "border-b border-outline-variant bg-surface-lowest/80 backdrop-blur-[20px]";
 
   const navLinkClass = (active: boolean) =>
     [
-      "whitespace-nowrap border-b-2 border-transparent pb-0.5 text-[11px] sm:text-xs font-display font-semibold tracking-wide uppercase transition-colors duration-150 shrink-0",
-      active ? "border-brand-red text-white" : "text-white/75 hover:text-white",
+      "whitespace-nowrap text-sm font-body transition-colors duration-150 shrink-0",
+      active
+        ? "font-semibold text-accent"
+        : "text-on-surface/50 hover:text-on-surface",
     ].join(" ");
 
   const dropItem =
-    "block px-4 py-2.5 text-sm font-display font-semibold tracking-tight text-white/90 hover:bg-white/10 transition-colors duration-150";
+    "block px-4 py-2.5 text-sm font-display font-semibold tracking-tight text-on-surface transition-colors duration-150 hover:bg-surface-high";
 
   return (
     <>
       <header className={`fixed top-0 left-0 right-0 z-50 ${headerBar}`}>
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-5">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
           <Link
             href="/"
             className="flex min-h-0 min-w-0 shrink-0 items-center py-1 opacity-95 transition-opacity duration-150 hover:opacity-100"
@@ -101,14 +103,14 @@ export default function Navbar() {
           <div className="relative hidden shrink-0 md:block" ref={modulesWrapRef}>
             <button
               type="button"
-              className="flex items-center gap-2 rounded-sm px-2 py-2 text-white/85 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+              className="flex items-center gap-2 rounded-sm px-2 py-2 text-on-surface/60 transition-colors duration-150 hover:bg-surface-high hover:text-on-surface"
               onClick={() => setModulesOpen((v) => !v)}
               aria-expanded={modulesOpen}
               aria-haspopup="menu"
               aria-controls="menu-modulos"
               id="btn-modulos"
             >
-              <HamburgerIcon className="text-white/90" />
+              <HamburgerIcon />
               <span className="text-xs font-display font-semibold uppercase tracking-wide">
                 Módulos
               </span>
@@ -118,7 +120,7 @@ export default function Navbar() {
                 id="menu-modulos"
                 role="menu"
                 aria-labelledby="btn-modulos"
-                className="absolute left-0 top-full z-[60] mt-1 w-56 rounded-sm border border-white/10 bg-brand-teal-deep py-1 shadow-lg"
+                className="absolute left-0 top-full z-[60] mt-1 w-56 rounded-sm border border-outline-variant bg-surface-lowest py-1 shadow-lg"
               >
                 {navLinks.map((link) => (
                   <Link
@@ -154,7 +156,7 @@ export default function Navbar() {
           </div>
 
           <nav
-            className="mx-2 hidden min-w-0 flex-1 items-center justify-center gap-4 overflow-x-auto md:flex lg:gap-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="mx-2 hidden min-w-0 flex-1 items-center justify-center gap-6 overflow-x-auto md:flex lg:gap-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             aria-label="Principal"
           >
             {navLinks.map((link) => {
@@ -167,22 +169,22 @@ export default function Navbar() {
             })}
           </nav>
 
-          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1 md:ml-0">
-            <ThemeToggle className="text-white/70 hover:text-white hover:bg-white/10" />
+          <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-0">
+            <ThemeToggle />
             <Link
               href="/cart"
-              className="relative rounded-sm p-2 text-white/70 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+              className="relative rounded-sm p-2 text-on-surface/50 transition-colors duration-150 hover:bg-surface-high hover:text-on-surface"
               aria-label="Carrinho"
             >
               <CartIcon />
             </Link>
 
-            <div className="ml-1 hidden items-center gap-2 md:flex">
+            <div className="ml-2 hidden items-center gap-2 md:flex">
               {user ? (
                 <>
                   <Link
                     href="/profile"
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-xs font-display font-bold text-white ring-1 ring-white/25 transition-colors duration-150 hover:bg-white/25"
+                    className="flex h-8 w-8 items-center justify-center rounded-sm bg-primary text-xs font-display font-bold text-on-primary"
                     title={user.name}
                   >
                     {getInitials(user.name)}
@@ -190,7 +192,7 @@ export default function Navbar() {
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="text-xs font-body text-white/55 transition-colors duration-150 hover:text-white"
+                    className="text-xs font-body text-on-surface/40 transition-colors duration-150 hover:text-on-surface"
                   >
                     Sair
                   </button>
@@ -199,13 +201,13 @@ export default function Navbar() {
                 <>
                   <Link
                     href="/login"
-                    className="text-sm font-body text-white/75 transition-colors duration-150 hover:text-white"
+                    className="text-sm font-body text-on-surface/50 transition-colors duration-150 hover:text-on-surface"
                   >
                     Entrar
                   </Link>
                   <Link
                     href="/cadastro"
-                    className="rounded-sm bg-gradient-to-br from-brand-red to-brand-red/85 px-4 py-2 text-sm font-display font-semibold tracking-tight text-white transition-opacity duration-150 hover:opacity-90"
+                    className="rounded-sm bg-gradient-to-br from-accent to-accent/85 px-4 py-2 text-sm font-display font-semibold tracking-tight text-on-accent transition-opacity duration-150 hover:opacity-90"
                   >
                     Criar conta
                   </Link>
@@ -215,7 +217,7 @@ export default function Navbar() {
 
             <button
               type="button"
-              className="rounded-sm p-2 text-white/80 transition-colors duration-150 hover:bg-white/10 hover:text-white md:hidden"
+              className="ml-1 rounded-sm p-2 text-on-surface/60 transition-colors duration-150 hover:bg-surface-high hover:text-on-surface md:hidden"
               onClick={() => setMenuOpen((v) => !v)}
               aria-label={menuOpen ? "Fechar menu" : "Abrir menu"}
               aria-expanded={menuOpen}
@@ -228,12 +230,12 @@ export default function Navbar() {
 
       {menuOpen && (
         <div
-          className="fixed inset-0 z-40 flex flex-col bg-brand-teal-deep pt-16 md:hidden"
+          className="fixed inset-0 z-40 flex flex-col bg-surface pt-16 md:hidden"
           aria-modal="true"
           role="dialog"
           aria-label="Menu de navegação"
         >
-          <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-5 py-6">
+          <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-6 py-6">
             {navLinks.map((link) => {
               const active = linkActive(pathname, link.href);
               return (
@@ -243,7 +245,9 @@ export default function Navbar() {
                   onClick={() => setMenuOpen(false)}
                   className={[
                     "rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight transition-colors duration-150",
-                    active ? "bg-brand-red/25 text-white" : "text-white/80 hover:bg-white/10 hover:text-white",
+                    active
+                      ? "bg-accent text-on-accent"
+                      : "text-on-surface/70 hover:bg-surface-low hover:text-on-surface",
                   ].join(" ")}
                 >
                   {link.label}
@@ -253,21 +257,21 @@ export default function Navbar() {
             <Link
               href="/cart"
               onClick={() => setMenuOpen(false)}
-              className="rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight text-white/80 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+              className="rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight text-on-surface/70 transition-colors duration-150 hover:bg-surface-low hover:text-on-surface"
             >
               Carrinho
             </Link>
 
-            <div className="my-4 border-t border-white/15" />
+            <div className="my-4 border-t border-outline-variant" />
 
             {user ? (
               <>
                 <Link
                   href="/profile"
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-4 rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight text-white/85 transition-colors duration-150 hover:bg-white/10"
+                  className="flex items-center gap-4 rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight text-on-surface/70 transition-colors duration-150 hover:bg-surface-low hover:text-on-surface"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-display font-bold text-white ring-1 ring-white/25">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-primary text-xs font-display font-bold text-on-primary">
                     {getInitials(user.name)}
                   </span>
                   {user.name}
@@ -275,7 +279,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="rounded-sm px-4 py-4 text-left text-base font-display font-semibold tracking-tight text-white/50 transition-colors duration-150 hover:bg-brand-red/15 hover:text-white"
+                  className="rounded-sm px-4 py-4 text-left text-base font-display font-semibold tracking-tight text-on-surface/40 transition-colors duration-150 hover:bg-error/10 hover:text-error"
                 >
                   Sair
                 </button>
@@ -285,14 +289,14 @@ export default function Navbar() {
                 <Link
                   href="/login"
                   onClick={() => setMenuOpen(false)}
-                  className="w-full rounded-sm border border-white/25 py-3 text-center text-base font-display font-semibold tracking-tight text-white transition-colors duration-150 hover:bg-white/10"
+                  className="w-full rounded-sm border border-outline-variant py-3 text-center text-base font-display font-semibold tracking-tight text-on-surface transition-colors duration-150 hover:bg-surface-low"
                 >
                   Entrar
                 </Link>
                 <Link
                   href="/cadastro"
                   onClick={() => setMenuOpen(false)}
-                  className="w-full rounded-sm bg-gradient-to-br from-brand-red to-brand-red/85 py-3 text-center text-base font-display font-semibold tracking-tight text-white transition-opacity duration-150 hover:opacity-90"
+                  className="w-full rounded-sm bg-gradient-to-br from-accent to-accent/85 py-3 text-center text-base font-display font-semibold tracking-tight text-on-accent transition-opacity duration-150 hover:opacity-90"
                 >
                   Criar conta
                 </Link>
