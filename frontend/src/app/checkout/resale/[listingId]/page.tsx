@@ -243,7 +243,7 @@ export default function ResaleCheckoutPage() {
               Voltar
             </Button>
             <Button type="submit" fullWidth disabled={formDisabled}>
-              {submitting ? "Redirecionando…" : "Pagar com Stripe"}
+              {submitting ? "Redirecionando…" : "Pagar"}
             </Button>
           </div>
         </form>
