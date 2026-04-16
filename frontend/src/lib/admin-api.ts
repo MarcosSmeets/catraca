@@ -63,6 +63,8 @@ export interface AdminVenuesParams {
   city?: string;
   page?: number;
   limit?: number;
+  /** Scoped listing for `platform_admin` (backend query `organization_id`). */
+  organizationId?: string;
 }
 
 export interface PaginatedAdminVenues {
@@ -81,6 +83,7 @@ export async function adminListVenues(
   if (params.city) qs.set("city", params.city);
   if (params.page) qs.set("page", String(params.page));
   if (params.limit) qs.set("limit", String(params.limit));
+  if (params.organizationId) qs.set("organization_id", params.organizationId);
   const query = qs.toString();
   return apiFetch<PaginatedAdminVenues>(`/admin/venues${query ? `?${query}` : ""}`, {
     accessToken: token(),
@@ -124,6 +127,7 @@ export interface AdminEventsParams {
   dateTo?: string;
   page?: number;
   limit?: number;
+  organizationId?: string;
 }
 
 export interface PaginatedAdminEvents {
@@ -143,6 +147,7 @@ export async function adminListEvents(
   if (params.dateTo) qs.set("date_to", params.dateTo);
   if (params.page) qs.set("page", String(params.page));
   if (params.limit) qs.set("limit", String(params.limit));
+  if (params.organizationId) qs.set("organization_id", params.organizationId);
   const query = qs.toString();
   return apiFetch<PaginatedAdminEvents>(`/admin/events${query ? `?${query}` : ""}`, {
     accessToken: token(),
@@ -322,6 +327,29 @@ export interface OrderStatusMetric {
   amount30dCents: number;
 }
 
+export interface DashboardResale {
+  activeListings: number;
+  cancelledListings: number;
+  soldListingsAll: number;
+  resalePaidOrdersAll: number;
+  resaleRevenueAllCents: number;
+  resalePaidOrders30d: number;
+  resaleRevenue30dCents: number;
+}
+
+export interface DashboardPlatform {
+  organizationCount: number;
+  userCount: number;
+}
+
+export interface OrgRevenueMetric {
+  organizationId: string;
+  name: string;
+  slug: string;
+  revenue30dCents: number;
+  revenueAllCents: number;
+}
+
 export interface DashboardMetrics {
   financial: DashboardFinancial;
   dailyRevenue: DailyRevenuePoint[];
@@ -331,15 +359,113 @@ export interface DashboardMetrics {
   ticketStatuses: TicketStatusCount[];
   stadiums: StadiumMetric[];
   orderStatuses: OrderStatusMetric[];
+  resale: DashboardResale;
+  platform?: DashboardPlatform;
+  organizationsRevenue?: OrgRevenueMetric[];
 }
 
-export async function adminGetMetrics(): Promise<DashboardMetrics> {
-  return apiFetch<DashboardMetrics>("/admin/metrics", { accessToken: token() });
+export async function adminGetMetrics(organizationId?: string): Promise<DashboardMetrics> {
+  const qs = new URLSearchParams();
+  if (organizationId) qs.set("organizationId", organizationId);
+  const suffix = qs.toString();
+  return apiFetch<DashboardMetrics>(`/admin/metrics${suffix ? `?${suffix}` : ""}`, {
+    accessToken: token(),
+  });
 }
 
-export function useAdminMetrics() {
+/** For `platform_admin`, pass a tenant UUID to scope metrics; omit for all tenants. Tenant admins ignore this. */
+export function useAdminMetrics(platformOrganizationId?: string) {
+  const role = useAdminAuthStore((s) => s.adminUser?.role);
+  const hasToken = !!useAdminAuthStore((s) => s.adminToken);
+  const scopedOrg =
+    role === "platform_admin" && platformOrganizationId && platformOrganizationId.length > 0
+      ? platformOrganizationId
+      : undefined;
   return useQuery({
-    queryKey: ["admin-metrics"],
-    queryFn: adminGetMetrics,
+    queryKey: ["admin-metrics", role ?? "none", scopedOrg ?? "__all__"],
+    queryFn: () => adminGetMetrics(scopedOrg),
+    enabled: hasToken,
+  });
+}
+
+export interface AdminOrganizationRow {
+  id: string;
+  name: string;
+  slug: string;
+  subscriptionStatus?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  currentPeriodEnd?: string | null;
+}
+
+export interface AdminOrganizationListResponse {
+  items: AdminOrganizationRow[];
+  total: number;
+}
+
+export async function adminListOrganizations(): Promise<AdminOrganizationListResponse> {
+  return apiFetch<AdminOrganizationListResponse>("/admin/organizations", {
+    accessToken: token(),
+  });
+}
+
+export function useAdminOrganizationsList(enabled: boolean) {
+  const hasToken = useAdminAuthStore((s) => !!s.adminToken);
+  return useQuery({
+    queryKey: ["admin-organizations"],
+    queryFn: adminListOrganizations,
+    enabled: enabled && hasToken,
+  });
+}
+
+export async function adminCreateOrganization(body: {
+  name: string;
+  slug: string;
+}): Promise<AdminOrganizationRow> {
+  return apiFetch<AdminOrganizationRow>("/admin/organizations", {
+    method: "POST",
+    accessToken: token(),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function adminPatchOrganization(
+  id: string,
+  body: { name?: string; slug?: string }
+): Promise<void> {
+  await apiFetch<void>(`/admin/organizations/${id}`, {
+    method: "PATCH",
+    accessToken: token(),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function adminStartOrgSubscriptionCheckout(
+  orgId: string
+): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>(
+    `/admin/organizations/${orgId}/billing/checkout`,
+    {
+      method: "POST",
+      accessToken: token(),
+      body: "{}",
+    }
+  );
+}
+
+export async function adminAddOrgMember(
+  orgId: string,
+  body: { email: string; role: "organizer" | "staff" }
+): Promise<void> {
+  await apiFetch<void>(`/admin/organizations/${orgId}/members`, {
+    method: "POST",
+    accessToken: token(),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function adminListEventSeats(eventId: string): Promise<Seat[]> {
+  return apiFetch<Seat[]>(`/admin/events/${eventId}/seats`, {
+    accessToken: token(),
   });
 }

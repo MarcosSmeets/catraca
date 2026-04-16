@@ -154,6 +154,16 @@ func eventMatchesFilter(e *entity.Event, filter repository.EventFilter) bool {
 	if filter.Status != nil && *filter.Status != "" && e.Status != *filter.Status {
 		return false
 	}
+	if filter.OrganizationID != nil {
+		if e.Venue == nil || e.Venue.OrganizationID != *filter.OrganizationID {
+			return false
+		}
+	}
+	if filter.TenantBuyerCatalog {
+		if e.Status != entity.EventStatusOnSale && e.Status != entity.EventStatusSoldOut {
+			return false
+		}
+	}
 	return true
 }
 

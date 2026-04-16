@@ -21,6 +21,10 @@ type EventFilter struct {
 	Sort     *string
 	Limit    int
 	Offset   int
+	// OrganizationID filters by venues.organization_id when non-nil.
+	OrganizationID *uuid.UUID
+	// TenantBuyerCatalog applies buyer-facing rules (published statuses + subscription) when true.
+	TenantBuyerCatalog bool
 }
 
 type EventRepository interface {

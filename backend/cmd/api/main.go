@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/infra/seed"
 	stripeinfra "github.com/marcos-smeets/catraca/backend/internal/infra/stripe"
 	userevents "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
+	orguc "github.com/marcos-smeets/catraca/backend/internal/usecase/organization"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	reservationuc "github.com/marcos-smeets/catraca/backend/internal/usecase/reservation"
 	ticketuc "github.com/marcos-smeets/catraca/backend/internal/usecase/ticket"
@@ -79,7 +81,7 @@ func main() {
 	// --- Seed demo data (idempotent) ---
 	if cfg.AppSeed {
 		log.Info().Msg("seeding demo data...")
-		if err := seed.LoadDemoData(ctx, eventRepo, venueRepo, seatRepo); err != nil {
+		if err := seed.LoadDemoData(ctx, orgRepo, eventRepo, venueRepo, seatRepo); err != nil {
 			log.Warn().Err(err).Msg("seed completed with warnings (data may already exist)")
 		} else {
 			log.Info().Msg("seed complete")
@@ -128,7 +130,7 @@ func main() {
 	createResaleCheckoutUC := resaleuc.NewCreateResaleCheckoutUseCase(orderRepo, resaleListingRepo, userRepo, paymentGateway)
 
 	// --- Workers ---
-	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, resaleListingRepo, seatLocker, sseHub, paymentGateway)
+	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, resaleListingRepo, orgRepo, seatLocker, sseHub, paymentGateway)
 	stripeInboxWorker := worker.NewStripeInboxWorker(pool, stripeWebhookInboxRepo, paymentGateway, stripePaymentProcessor)
 	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, orderRepo, sseHub)
 
@@ -139,7 +141,17 @@ func main() {
 	webhookHandler := httphandler.NewWebhookHandler(stripeWebhookInboxRepo)
 	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo, orgRepo, userRepo)
 	adminMetricsHandler := httphandler.NewAdminMetricsHandler(adminMetricsRepo)
-	adminOrganizationsHandler := httphandler.NewAdminOrganizationsHandler(orgRepo)
+	var subscriptionCheckoutUC *orguc.CreateSubscriptionCheckoutUseCase
+	if strings.TrimSpace(cfg.StripeSubscriptionPriceID) != "" {
+		subscriptionCheckoutUC = orguc.NewCreateSubscriptionCheckoutUseCase(
+			orgRepo,
+			paymentGateway,
+			cfg.StripeSubscriptionPriceID,
+			cfg.StripeSubscriptionSuccessURL,
+			cfg.StripeSubscriptionCancelURL,
+		)
+	}
+	adminOrganizationsHandler := httphandler.NewAdminOrganizationsHandler(orgRepo, userRepo, subscriptionCheckoutUC)
 	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
 	resaleHandler := httphandler.NewResaleHandler(httphandler.ResaleHandlerDeps{
 		StartConnect:     startConnectUC,
@@ -149,6 +161,8 @@ func main() {
 		ListMine:         listMyResalesUC,
 		ListByEvent:      listEventResalesUC,
 		CreateCheckout:   createResaleCheckoutUC,
+		OrganizationRepo: orgRepo,
+		GetEventUC:       getEventUC,
 		StripeEnabled:    paymentGateway.IsConfigured(),
 		CheckoutSuccess:  cfg.StripeCheckoutSuccessURL,
 		CheckoutCancel:   cfg.StripeCheckoutCancelURL,
@@ -156,6 +170,7 @@ func main() {
 
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
 		UserRepo:                userRepo,
+		OrganizationRepo:        orgRepo,
 		SSEHub:                  sseHub,
 		ReserveSeatUC:           reserveSeatUC,
 		ReleaseSeatUC:           releaseSeatUC,
@@ -204,18 +219,11 @@ func main() {
 	r.Post("/admin/auth/login", authHandler.AdminLogin)
 	r.Post("/admin/auth/logout", authHandler.AdminLogout)
 
-	// Events (public — legacy flat routes)
-	r.Get("/events", eventHandler.List)
-	r.Get("/events/{id}", eventHandler.Get)
-	r.Get("/events/{id}/resale-listings", resaleHandler.ListResaleListingsByEvent)
-	r.Get("/events/{id}/seats", eventHandler.ListSeats)
-	r.Get("/events/{id}/seats/stream", sseHandler.SeatStream)
-
-	// Events scoped by organization slug (tenant buyer catalog)
+	// Public catalog (scoped by organization slug)
 	r.Route("/orgs/{slug}", func(r chi.Router) {
 		r.Get("/events", eventHandler.ListByOrganization)
 		r.Get("/events/{id}", eventHandler.GetByOrganization)
-		r.Get("/events/{id}/resale-listings", resaleHandler.ListResaleListingsByEvent)
+		r.Get("/events/{id}/resale-listings", resaleHandler.ListResaleListingsByEventForOrganization)
 		r.Get("/events/{id}/seats", eventHandler.ListSeatsByOrganization)
 		r.Get("/events/{id}/seats/stream", sseHandler.SeatStreamForOrganization)
 	})
@@ -289,6 +297,10 @@ func main() {
 
 		r.Get("/admin/metrics", adminMetricsHandler.GetDashboard)
 		r.Get("/admin/organizations", adminOrganizationsHandler.List)
+		r.Post("/admin/organizations", adminOrganizationsHandler.Create)
+		r.Patch("/admin/organizations/{id}", adminOrganizationsHandler.Patch)
+		r.Post("/admin/organizations/{id}/billing/checkout", adminOrganizationsHandler.PostSubscriptionCheckout)
+		r.Post("/admin/organizations/{id}/members", adminOrganizationsHandler.PostMember)
 
 		r.Get("/admin/venues", adminHandler.ListVenues)
 		r.Get("/admin/venues/states", adminHandler.ListVenueStates)
@@ -297,6 +309,7 @@ func main() {
 		r.Get("/admin/events", adminHandler.ListEvents)
 		r.Post("/admin/events", adminHandler.CreateEvent)
 		r.Get("/admin/events/{id}", adminHandler.GetEvent)
+		r.Get("/admin/events/{id}/seats", adminHandler.ListEventSeats)
 		r.Patch("/admin/events/{id}", adminHandler.UpdateEvent)
 		r.Post("/admin/events/{id}/publish", adminHandler.PublishEvent)
 

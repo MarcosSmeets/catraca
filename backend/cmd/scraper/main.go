@@ -51,6 +51,7 @@ func main() {
 	eventRepo := pginfra.NewEventRepository(pool)
 	venueRepo := pginfra.NewVenueRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
+	orgRepo := pginfra.NewOrganizationRepository(pool)
 
 	// --- Skip if NBB events already exist (run-once guard) ---
 	var nbbCount int
@@ -91,15 +92,20 @@ func main() {
 		return
 	}
 
+	legadoOrg, err := orgRepo.GetBySlug(ctx, "legado")
+	if err != nil {
+		log.Fatal().Err(err).Msg("resolve default organization (slug legado) for scraper venues")
+	}
+
 	// --- Venues ---
-	venueMap, err := nbb.MapVenues(ctx, games, venueRepo)
+	venueMap, err := nbb.MapVenues(ctx, games, venueRepo, legadoOrg.ID)
 	if err != nil {
 		log.Fatal().Err(err).Msg("venue mapping failed")
 	}
 	log.Info().Int("venues", len(venueMap)).Msg("venues resolved")
 
 	// --- Fallback venue for games with unknown/empty venue name ---
-	fallbackVenueID := resolveFallbackVenue(ctx, venueRepo)
+	fallbackVenueID := resolveFallbackVenue(ctx, venueRepo, legadoOrg.ID)
 
 	// --- Persist events + seats ---
 	league := "NBB"
@@ -354,7 +360,7 @@ func extractSeason(games []nbb.ScrapedGame) string {
 
 // resolveFallbackVenue returns a venue ID to use when a game has no venue name.
 // It creates a stub venue "Arena NBB" if none exists.
-func resolveFallbackVenue(ctx context.Context, venueRepo *pginfra.VenueRepository) uuid.UUID {
+func resolveFallbackVenue(ctx context.Context, venueRepo *pginfra.VenueRepository, organizationID uuid.UUID) uuid.UUID {
 	existing, err := venueRepo.List(ctx, repository.VenueFilter{Limit: 10000})
 	if err == nil {
 		for _, v := range existing {
@@ -364,7 +370,7 @@ func resolveFallbackVenue(ctx context.Context, venueRepo *pginfra.VenueRepositor
 		}
 	}
 
-	stub, err := entity.NewVenue("Arena NBB", "Brasil", "SP", 5000)
+	stub, err := entity.NewVenue(organizationID, "Arena NBB", "Brasil", "SP", 5000)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not create fallback venue entity")
 		return uuid.Nil

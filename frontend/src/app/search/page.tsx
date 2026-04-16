@@ -10,6 +10,7 @@ import FilterSelect from "@/components/ui/FilterSelect";
 import { EventCardSkeleton } from "@/components/ui/Skeleton";
 import { SportType, formatCurrency } from "@/lib/mock-data";
 import { useEvents } from "@/lib/events-api";
+import { DEFAULT_PUBLIC_ORG_SLUG } from "@/lib/default-org-slug";
 
 type SortOption = "date" | "price-asc" | "price-desc";
 
@@ -43,6 +44,7 @@ function endOfMonthStr(): string {
 
 function SearchPageContent() {
   const searchParams = useSearchParams();
+  const orgSlug = searchParams.get("org")?.trim() || DEFAULT_PUBLIC_ORG_SLUG;
 
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [selectedSport, setSelectedSport] = useState<SportType | "">((searchParams.get("sport") as SportType) ?? "");
@@ -64,7 +66,7 @@ function SearchPageContent() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const { data, isLoading } = useEvents({
+  const { data, isLoading } = useEvents(orgSlug, {
     q: query || undefined,
     sport: selectedSport || undefined,
     league: selectedLeague || undefined,
@@ -328,7 +330,7 @@ function SearchPageContent() {
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                   {paginated.map((event) => (
-                    <EventCard key={event.id} event={event} />
+                    <EventCard key={event.id} event={event} orgSlug={orgSlug} />
                   ))}
                 </div>
                 <Pagination

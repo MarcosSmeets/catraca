@@ -20,6 +20,10 @@ type Config struct {
 	// StripeCheckoutEnablePix adds "pix" to Checkout Session payment_method_types when the order total is in BRL Pix limits.
 	// Requires PIX enabled in Stripe Dashboard → Settings → Payment methods; leave false if you only use cards.
 	StripeCheckoutEnablePix bool
+	// StripeSubscriptionPriceID is the Stripe Price id for the recurring BRL platform subscription (Billing).
+	StripeSubscriptionPriceID string
+	StripeSubscriptionSuccessURL string
+	StripeSubscriptionCancelURL  string
 	AppEnv                  string
 	// AuthCookieSecure sets the HttpOnly session cookies' Secure flag. When unset, derived as (AppEnv != "development"). Set AUTH_COOKIE_SECURE=false only for HTTP staging (sessions sent in cleartext).
 	AuthCookieSecure bool
@@ -51,6 +55,9 @@ func Load() (*Config, error) {
 		StripeCheckoutSuccessURL: getEnv("STRIPE_CHECKOUT_SUCCESS_URL", "http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
 		StripeCheckoutCancelURL:  getEnv("STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:3000/checkout?canceled=1"),
 		StripeCheckoutEnablePix:  getEnvBool("STRIPE_CHECKOUT_ENABLE_PIX", false),
+		StripeSubscriptionPriceID:    os.Getenv("STRIPE_SUBSCRIPTION_PRICE_ID"),
+		StripeSubscriptionSuccessURL: getEnv("STRIPE_SUBSCRIPTION_SUCCESS_URL", "http://localhost:3000/admin/organizacoes?session_id={CHECKOUT_SESSION_ID}"),
+		StripeSubscriptionCancelURL:  getEnv("STRIPE_SUBSCRIPTION_CANCEL_URL", "http://localhost:3000/admin/organizacoes?canceled=1"),
 		AppEnv:                   appEnv,
 		AuthCookieSecure:         getEnvBool("AUTH_COOKIE_SECURE", appEnv != "development"),
 		Port:                     port,

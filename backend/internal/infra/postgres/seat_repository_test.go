@@ -20,12 +20,11 @@ func TestSeatRepository_CreateBatchAndListByEventID(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))
 
@@ -53,12 +52,11 @@ func TestSeatRepository_GetByID(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))
 
@@ -93,12 +91,11 @@ func TestSeatRepository_UpdateStatus(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))
 

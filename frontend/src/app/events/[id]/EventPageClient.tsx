@@ -23,10 +23,16 @@ import { useAuthStore } from "@/store/auth";
 import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
 
-export default function EventPageClient({ id }: { id: string }) {
-  const { data: event, isLoading: eventLoading } = useEvent(id);
-  const { data: seats = [], isLoading: seatsLoading } = useEventSeats(id);
-  useSeatAvailability(id);
+export default function EventPageClient({
+  id,
+  orgSlug,
+}: {
+  id: string;
+  orgSlug: string;
+}) {
+  const { data: event, isLoading: eventLoading } = useEvent(orgSlug, id);
+  const { data: seats = [], isLoading: seatsLoading } = useEventSeats(orgSlug, id);
+  useSeatAvailability(orgSlug, id);
 
   if (eventLoading) {
     return (
@@ -40,14 +46,23 @@ export default function EventPageClient({ id }: { id: string }) {
   }
   if (!event) return null;
 
-  return <EventPageInner event={event} seats={seats} seatsLoading={seatsLoading} />;
+  return (
+    <EventPageInner
+      orgSlug={orgSlug}
+      event={event}
+      seats={seats}
+      seatsLoading={seatsLoading}
+    />
+  );
 }
 
 function EventPageInner({
+  orgSlug,
   event,
   seats,
   seatsLoading,
 }: {
+  orgSlug: string;
   event: NonNullable<ReturnType<typeof useEvent>["data"]>;
   seats: Seat[];
   seatsLoading: boolean;
@@ -78,7 +93,10 @@ function EventPageInner({
   const [heroImgSrc, setHeroImgSrc] = useState(eventImage);
   const [gallerySrcs, setGallerySrcs] = useState(gallery);
 
-  const { data: resaleRows = [], isLoading: resaleLoading } = useResaleListingsByEvent(event.id);
+  const { data: resaleRows = [], isLoading: resaleLoading } = useResaleListingsByEvent(
+    orgSlug,
+    event.id
+  );
 
   const isSoldOut = event.status === "SOLD_OUT";
   const subtotalCents = selectedSeats.reduce((sum, s) => sum + s.priceCents, 0);
@@ -87,7 +105,7 @@ function EventPageInner({
 
   async function handleAddToCart() {
     if (selectedSeats.length === 0) return;
-    addSeats(selectedSeats, event);
+    addSeats(selectedSeats, event, orgSlug);
     try {
       const res = await apiFetch<{ reservations: { id: string; expiresAt: string }[]; expiresAt: string }>(
         "/reservations",
@@ -95,6 +113,7 @@ function EventPageInner({
           method: "POST",
           accessToken,
           body: JSON.stringify({
+            orgSlug,
             eventId: event.id,
             seatIds: selectedSeats.map((s) => s.id),
           }),

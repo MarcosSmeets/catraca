@@ -30,11 +30,12 @@ func NewVenueRepository(pool *pgxpool.Pool) *VenueRepository {
 
 func (r *VenueRepository) Create(ctx context.Context, v *entity.Venue) error {
 	_, err := r.queries.CreateVenue(ctx, pgdb.CreateVenueParams{
-		ID:       v.ID,
-		Name:     v.Name,
-		City:     v.City,
-		State:    v.State,
-		Capacity: int32(v.Capacity),
+		ID:             v.ID,
+		Name:           v.Name,
+		City:           v.City,
+		State:          v.State,
+		Capacity:       int32(v.Capacity),
+		OrganizationID: v.OrganizationID,
 	})
 	if err != nil {
 		return fmt.Errorf("VenueRepository.Create: %w", err)
@@ -60,7 +61,7 @@ func (r *VenueRepository) List(ctx context.Context, filter repository.VenueFilte
 	}
 
 	q := `
-SELECT id, name, city, state, capacity, created_at, updated_at, deleted_at
+SELECT id, name, city, state, capacity, organization_id, created_at, updated_at, deleted_at
 FROM venues
 WHERE deleted_at IS NULL
   AND ($1::text IS NULL OR state = $1)
@@ -70,8 +71,9 @@ WHERE deleted_at IS NULL
         city ILIKE '%' || $3 || '%' OR
         state ILIKE '%' || $3 || '%'
   ))
+  AND ($4::uuid IS NULL OR organization_id = $4)
 ORDER BY name
-LIMIT $4 OFFSET $5`
+LIMIT $5 OFFSET $6`
 
 	args := buildVenueFilterArgs(filter)
 	args = append(args, int32(limit), int32(filter.Offset))
@@ -86,7 +88,7 @@ LIMIT $4 OFFSET $5`
 	for rows.Next() {
 		var v pgdb.Venue
 		if err := rows.Scan(
-			&v.ID, &v.Name, &v.City, &v.State, &v.Capacity,
+			&v.ID, &v.Name, &v.City, &v.State, &v.Capacity, &v.OrganizationID,
 			&v.CreatedAt, &v.UpdatedAt, &v.DeletedAt,
 		); err != nil {
 			return nil, fmt.Errorf("VenueRepository.List scan: %w", err)
@@ -110,7 +112,8 @@ WHERE deleted_at IS NULL
         name ILIKE '%' || $3 || '%' OR
         city ILIKE '%' || $3 || '%' OR
         state ILIKE '%' || $3 || '%'
-  ))`
+  ))
+  AND ($4::uuid IS NULL OR organization_id = $4)`
 
 	args := buildVenueFilterArgs(filter)
 	var total int64
@@ -141,9 +144,13 @@ func (r *VenueRepository) ListStates(ctx context.Context) ([]string, error) {
 	return states, nil
 }
 
-// buildVenueFilterArgs returns the 3 positional args ($1–$3) shared by List and Count.
+// buildVenueFilterArgs returns the 4 positional args ($1–$4) shared by List and Count.
 func buildVenueFilterArgs(filter repository.VenueFilter) []interface{} {
 	var state, city, q interface{}
+	var orgID interface{}
+	if filter.OrganizationID != nil {
+		orgID = *filter.OrganizationID
+	}
 	if filter.State != nil && *filter.State != "" {
 		state = *filter.State
 	}
@@ -153,7 +160,7 @@ func buildVenueFilterArgs(filter repository.VenueFilter) []interface{} {
 	if filter.Q != nil && *filter.Q != "" {
 		q = *filter.Q
 	}
-	return []interface{}{state, city, q}
+	return []interface{}{state, city, q, orgID}
 }
 
 func dbVenueToEntity(v pgdb.Venue) *entity.Venue {
@@ -163,13 +170,14 @@ func dbVenueToEntity(v pgdb.Venue) *entity.Venue {
 		deletedAt = &t
 	}
 	return &entity.Venue{
-		ID:        v.ID,
-		Name:      v.Name,
-		City:      v.City,
-		State:     v.State,
-		Capacity:  int(v.Capacity),
-		CreatedAt: v.CreatedAt,
-		UpdatedAt: v.UpdatedAt,
-		DeletedAt: deletedAt,
+		ID:             v.ID,
+		OrganizationID: v.OrganizationID,
+		Name:           v.Name,
+		City:           v.City,
+		State:          v.State,
+		Capacity:       int(v.Capacity),
+		CreatedAt:      v.CreatedAt,
+		UpdatedAt:      v.UpdatedAt,
+		DeletedAt:      deletedAt,
 	}
 }

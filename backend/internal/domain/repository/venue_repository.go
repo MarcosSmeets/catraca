@@ -8,11 +8,12 @@ import (
 )
 
 type VenueFilter struct {
-	Q      *string
-	State  *string
-	City   *string
-	Limit  int
-	Offset int
+	Q              *string
+	State          *string
+	City           *string
+	OrganizationID *uuid.UUID
+	Limit          int
+	Offset         int
 }
 
 type VenueRepository interface {

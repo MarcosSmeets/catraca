@@ -15,13 +15,17 @@ import (
 
 func TestGetEvent_Found(t *testing.T) {
 	repo := mock.NewEventRepository()
-	uc := event.NewGetEventUseCase(repo)
+	orgRepo := mock.NewOrganizationRepository()
+	uc := event.NewGetEventUseCase(repo, orgRepo)
 
-	venue := factory.NewTestVenue()
+	org := factory.NewTestOrganization()
+	orgRepo.Seed(org)
+	venue := factory.NewTestVenue(org.ID)
 	e := factory.NewTestEvent(venue.ID)
+	e.Venue = venue
 	repo.Create(context.Background(), e)
 
-	found, err := uc.Execute(context.Background(), e.ID)
+	found, err := uc.Execute(context.Background(), event.GetEventInput{EventID: e.ID})
 	require.NoError(t, err)
 	assert.Equal(t, e.ID, found.ID)
 	assert.Equal(t, e.Title, found.Title)
@@ -29,8 +33,9 @@ func TestGetEvent_Found(t *testing.T) {
 
 func TestGetEvent_NotFound(t *testing.T) {
 	repo := mock.NewEventRepository()
-	uc := event.NewGetEventUseCase(repo)
+	orgRepo := mock.NewOrganizationRepository()
+	uc := event.NewGetEventUseCase(repo, orgRepo)
 
-	_, err := uc.Execute(context.Background(), uuid.New())
+	_, err := uc.Execute(context.Background(), event.GetEventInput{EventID: uuid.New()})
 	assert.ErrorIs(t, err, repository.ErrNotFound)
 }

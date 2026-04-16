@@ -19,13 +19,14 @@ type AuthResponse struct {
 }
 
 type UserResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	CPF       string `json:"cpf"`
-	Phone     string `json:"phone"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"createdAt"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	Email            string  `json:"email"`
+	CPF              string  `json:"cpf"`
+	Phone            string  `json:"phone"`
+	Role             string  `json:"role"`
+	OrganizationID   *string `json:"organizationId,omitempty"`
+	CreatedAt        string  `json:"createdAt"`
 }
 
 type ErrorResponse struct {

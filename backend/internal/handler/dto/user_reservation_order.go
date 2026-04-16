@@ -9,6 +9,7 @@ type ReservationResponse struct {
 }
 
 type CreateReservationRequest struct {
+	OrgSlug string   `json:"orgSlug"`
 	EventID string   `json:"eventId"`
 	SeatIDs []string `json:"seatIds"`
 }
@@ -27,6 +28,7 @@ type OrderResponse struct {
 }
 
 type CreateOrderRequest struct {
+	OrgSlug           string   `json:"orgSlug"`
 	ReservationIDs    []string `json:"reservationIds"`
 	BuyerName         string   `json:"buyerName"`
 	BuyerEmail        string   `json:"buyerEmail"`

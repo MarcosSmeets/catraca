@@ -4,6 +4,7 @@ import { useAuthStore } from "@/store/auth";
 import type { Order } from "./mock-data";
 
 export interface CreateOrderRequest {
+  orgSlug: string;
   reservationIds: string[];
 }
 

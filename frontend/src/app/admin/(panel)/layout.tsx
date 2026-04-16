@@ -7,12 +7,18 @@ import { useAdminAuthStore } from "@/store/admin-auth";
 import { adminAuthLogout } from "@/lib/admin-auth-api";
 import Logo from "@/components/brand/Logo";
 
-const navItems = [
+const baseNavItems = [
   { href: "/admin", label: "Dashboard", icon: "⬛" },
   { href: "/admin/venues", label: "Estádios", icon: "🏟" },
   { href: "/admin/events", label: "Eventos", icon: "📅" },
   { href: "/admin/tickets/scan", label: "Validar Ingresso", icon: "✓" },
 ];
+
+const platformNavItem = {
+  href: "/admin/organizacoes",
+  label: "Organizações",
+  icon: "🏢",
+};
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -89,7 +95,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {navItems.map((item) => {
+          {(adminUser?.role === "platform_admin"
+            ? [
+                baseNavItems[0],
+                platformNavItem,
+                ...baseNavItems.slice(1),
+              ]
+            : baseNavItems
+          ).map((item) => {
             const isActive =
               item.href === "/admin"
                 ? pathname === "/admin"

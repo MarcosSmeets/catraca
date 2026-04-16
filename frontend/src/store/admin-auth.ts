@@ -5,7 +5,8 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string;
-  role: "admin" | "organizer" | "staff";
+  role: "admin" | "organizer" | "staff" | "platform_admin";
+  organizationId?: string | null;
 }
 
 interface AdminAuthState {

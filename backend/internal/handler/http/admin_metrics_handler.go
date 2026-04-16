@@ -3,6 +3,10 @@ package http
 import (
 	"net/http"
 
+	"github.com/google/uuid"
+
+	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
+	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
 	pginfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
 )
 
@@ -15,25 +19,51 @@ func NewAdminMetricsHandler(metricsRepo *pginfra.AdminMetricsRepository) *AdminM
 }
 
 type metricsResponse struct {
-	Financial      financialDTO       `json:"financial"`
-	DailyRevenue   []dailyRevenueDTO  `json:"dailyRevenue"`
-	TicketSections []sectionCountDTO  `json:"ticketSections"`
-	TicketSports   []sportCountDTO    `json:"ticketSports"`
-	TopEvents      []topEventDTO      `json:"topEvents"`
-	TicketStatuses []statusCountDTO   `json:"ticketStatuses"`
-	Stadiums       []stadiumDTO       `json:"stadiums"`
-	OrderStatuses  []orderStatusDTO   `json:"orderStatuses"`
+	Financial            financialDTO       `json:"financial"`
+	DailyRevenue         []dailyRevenueDTO  `json:"dailyRevenue"`
+	TicketSections       []sectionCountDTO  `json:"ticketSections"`
+	TicketSports         []sportCountDTO    `json:"ticketSports"`
+	TopEvents            []topEventDTO      `json:"topEvents"`
+	TicketStatuses       []statusCountDTO   `json:"ticketStatuses"`
+	Stadiums             []stadiumDTO       `json:"stadiums"`
+	OrderStatuses        []orderStatusDTO   `json:"orderStatuses"`
+	Resale               resaleDTO          `json:"resale"`
+	Platform             *platformCountsDTO `json:"platform,omitempty"`
+	OrganizationsRevenue []orgRevenueDTO    `json:"organizationsRevenue,omitempty"`
+}
+
+type platformCountsDTO struct {
+	OrganizationCount int64 `json:"organizationCount"`
+	UserCount         int64 `json:"userCount"`
+}
+
+type orgRevenueDTO struct {
+	OrganizationID  string `json:"organizationId"`
+	Name            string `json:"name"`
+	Slug            string `json:"slug"`
+	Revenue30dCents int64  `json:"revenue30dCents"`
+	RevenueAllCents int64  `json:"revenueAllCents"`
+}
+
+type resaleDTO struct {
+	ActiveListings        int64 `json:"activeListings"`
+	CancelledListings     int64 `json:"cancelledListings"`
+	SoldListingsAll       int64 `json:"soldListingsAll"`
+	ResalePaidOrdersAll   int64 `json:"resalePaidOrdersAll"`
+	ResaleRevenueAllCents int64 `json:"resaleRevenueAllCents"`
+	ResalePaidOrders30d   int64 `json:"resalePaidOrders30d"`
+	ResaleRevenue30dCents int64 `json:"resaleRevenue30dCents"`
 }
 
 type financialDTO struct {
-	RevenueAllCents   int64 `json:"revenueAllCents"`
-	Revenue30dCents   int64 `json:"revenue30dCents"`
-	PaidOrdersAll     int64 `json:"paidOrdersAll"`
-	PaidOrders30d     int64 `json:"paidOrders30d"`
-	TicketsAll        int64 `json:"ticketsAll"`
-	Tickets30d        int64 `json:"tickets30d"`
-	AvgTicketAllCents int64 `json:"avgTicketAllCents"`
-	AvgTicket30dCents int64 `json:"avgTicket30dCents"`
+	RevenueAllCents     int64 `json:"revenueAllCents"`
+	Revenue30dCents     int64 `json:"revenue30dCents"`
+	PaidOrdersAll       int64 `json:"paidOrdersAll"`
+	PaidOrders30d       int64 `json:"paidOrders30d"`
+	TicketsAll          int64 `json:"ticketsAll"`
+	Tickets30d          int64 `json:"tickets30d"`
+	AvgTicketAllCents   int64 `json:"avgTicketAllCents"`
+	AvgTicket30dCents   int64 `json:"avgTicket30dCents"`
 	ServiceFeesAllCents int64 `json:"serviceFeesAllCents"`
 	ServiceFees30dCents int64 `json:"serviceFees30dCents"`
 }
@@ -91,7 +121,48 @@ type orderStatusDTO struct {
 }
 
 func (h *AdminMetricsHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
-	metrics, err := h.metricsRepo.GetDashboard(r.Context())
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "missing authentication")
+		return
+	}
+
+	qOrg := r.URL.Query().Get("organizationId")
+	var queryOrgID *uuid.UUID
+	if qOrg != "" {
+		id, err := uuid.Parse(qOrg)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid organizationId")
+			return
+		}
+		queryOrgID = &id
+	}
+
+	var filter *uuid.UUID
+	var loadPlatformExtras bool
+
+	switch entity.UserRole(claims.Role) {
+	case entity.UserRolePlatformAdmin:
+		if queryOrgID != nil {
+			filter = queryOrgID
+			loadPlatformExtras = false
+		} else {
+			filter = nil
+			loadPlatformExtras = true
+		}
+	case entity.UserRoleAdmin, entity.UserRoleOrganizer:
+		if claims.OrganizationID == nil {
+			writeError(w, http.StatusForbidden, "organization is required for tenant admin metrics")
+			return
+		}
+		filter = claims.OrganizationID
+		loadPlatformExtras = false
+	default:
+		writeError(w, http.StatusForbidden, "insufficient permissions for admin metrics")
+		return
+	}
+
+	metrics, err := h.metricsRepo.GetDashboard(r.Context(), filter, loadPlatformExtras)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load metrics")
 		return
@@ -109,6 +180,15 @@ func (h *AdminMetricsHandler) GetDashboard(w http.ResponseWriter, r *http.Reques
 			AvgTicket30dCents:   metrics.Financial.AvgTicket30dCents,
 			ServiceFeesAllCents: metrics.Financial.ServiceFeesAll,
 			ServiceFees30dCents: metrics.Financial.ServiceFees30d,
+		},
+		Resale: resaleDTO{
+			ActiveListings:        metrics.Resale.ActiveListings,
+			CancelledListings:     metrics.Resale.CancelledListings,
+			SoldListingsAll:       metrics.Resale.SoldListingsAll,
+			ResalePaidOrdersAll:   metrics.Resale.ResalePaidOrdersAll,
+			ResaleRevenueAllCents: metrics.Resale.ResaleRevenueAllCents,
+			ResalePaidOrders30d:   metrics.Resale.ResalePaidOrders30d,
+			ResaleRevenue30dCents: metrics.Resale.ResaleRevenue30dCents,
 		},
 	}
 
@@ -160,9 +240,6 @@ func (h *AdminMetricsHandler) GetDashboard(w http.ResponseWriter, r *http.Reques
 
 	resp.Stadiums = make([]stadiumDTO, 0, len(metrics.Stadiums))
 	for _, s := range metrics.Stadiums {
-		// Occupancy uses total offered seats (sum per event) when available, falling
-		// back to capacity × event_count to avoid dividing by zero on venues that
-		// exist but haven't defined seats yet.
 		denom := s.TotalSeats
 		if denom == 0 {
 			denom = int64(s.Capacity) * s.EventCount
@@ -195,6 +272,25 @@ func (h *AdminMetricsHandler) GetDashboard(w http.ResponseWriter, r *http.Reques
 			AmountAllCents: s.AmountAllCents,
 			Amount30dCents: s.Amount30dCents,
 		})
+	}
+
+	if metrics.Platform != nil {
+		resp.Platform = &platformCountsDTO{
+			OrganizationCount: metrics.Platform.OrganizationCount,
+			UserCount:         metrics.Platform.UserCount,
+		}
+	}
+	if len(metrics.OrganizationsRevenue) > 0 {
+		resp.OrganizationsRevenue = make([]orgRevenueDTO, 0, len(metrics.OrganizationsRevenue))
+		for _, o := range metrics.OrganizationsRevenue {
+			resp.OrganizationsRevenue = append(resp.OrganizationsRevenue, orgRevenueDTO{
+				OrganizationID:  o.OrganizationID.String(),
+				Name:            o.OrganizationName,
+				Slug:            o.OrganizationSlug,
+				Revenue30dCents: o.Revenue30dCents,
+				RevenueAllCents: o.RevenueAllCents,
+			})
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)

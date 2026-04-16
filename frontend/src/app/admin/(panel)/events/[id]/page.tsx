@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { adminGetEvent, adminPublishEvent, adminListSections } from "@/lib/admin-api";
+import {
+  adminGetEvent,
+  adminPublishEvent,
+  adminListSections,
+  adminListEventSeats,
+} from "@/lib/admin-api";
 import { Button } from "@/components/ui";
 import type { EventStatus } from "@/lib/mock-data";
-import { apiFetch } from "@/lib/api";
-import { useAuthStore } from "@/store/auth";
 import type { Seat } from "@/lib/mock-data";
 
 const STATUS_LABELS: Record<EventStatus, string> = {
@@ -40,7 +43,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 export default function AdminEventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
-  const token = useAuthStore((s) => s.accessToken);
 
   const {
     data: event,
@@ -59,8 +61,8 @@ export default function AdminEventDetailPage() {
   });
 
   const { data: seats } = useQuery({
-    queryKey: ["event-seats", id],
-    queryFn: () => apiFetch<Seat[]>(`/events/${id}/seats`, { accessToken: token }),
+    queryKey: ["admin-event-seats", id],
+    queryFn: () => adminListEventSeats(id!),
     enabled: !!id,
   });
 

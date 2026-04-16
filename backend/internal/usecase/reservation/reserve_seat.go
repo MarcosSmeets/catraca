@@ -15,14 +15,17 @@ var (
 	ErrSeatNotAvailable  = errors.New("one or more seats are not available")
 	ErrSeatAlreadyLocked = errors.New("one or more seats are already locked")
 	ErrMaxSeatsExceeded  = errors.New("cannot reserve more than 6 seats per order")
+	ErrSeatWrongEvent    = errors.New("seat does not belong to the event")
+	ErrOrganizationMismatch = errors.New("event does not belong to this organization")
 )
 
 const maxSeatsPerOrder = 6
 
 type ReserveSeatInput struct {
-	UserID  uuid.UUID
-	EventID uuid.UUID
-	SeatIDs []uuid.UUID
+	UserID                 uuid.UUID
+	EventID                uuid.UUID
+	SeatIDs                []uuid.UUID
+	ExpectedOrganizationID *uuid.UUID
 }
 
 type ReserveSeatOutput struct {
@@ -32,17 +35,20 @@ type ReserveSeatOutput struct {
 type ReserveSeatUseCase struct {
 	seatRepo        repository.SeatRepository
 	reservationRepo repository.ReservationRepository
+	eventRepo       repository.EventRepository
 	seatLocker      service.SeatLockerService
 }
 
 func NewReserveSeatUseCase(
 	seatRepo repository.SeatRepository,
 	reservationRepo repository.ReservationRepository,
+	eventRepo repository.EventRepository,
 	seatLocker service.SeatLockerService,
 ) *ReserveSeatUseCase {
 	return &ReserveSeatUseCase{
 		seatRepo:        seatRepo,
 		reservationRepo: reservationRepo,
+		eventRepo:       eventRepo,
 		seatLocker:      seatLocker,
 	}
 }
@@ -53,6 +59,19 @@ func (uc *ReserveSeatUseCase) Execute(ctx context.Context, input ReserveSeatInpu
 	}
 	if len(input.SeatIDs) > maxSeatsPerOrder {
 		return nil, ErrMaxSeatsExceeded
+	}
+
+	if input.ExpectedOrganizationID != nil {
+		ev, err := uc.eventRepo.GetByID(ctx, input.EventID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return nil, repository.ErrNotFound
+			}
+			return nil, fmt.Errorf("reserve seat: get event: %w", err)
+		}
+		if ev.Venue == nil || ev.Venue.OrganizationID != *input.ExpectedOrganizationID {
+			return nil, ErrOrganizationMismatch
+		}
 	}
 
 	// Validate + lock each seat
@@ -68,6 +87,10 @@ func (uc *ReserveSeatUseCase) Execute(ctx context.Context, input ReserveSeatInpu
 		if err != nil {
 			rollback()
 			return nil, fmt.Errorf("reserve seat: get seat %s: %w", seatID, err)
+		}
+		if seat.EventID != input.EventID {
+			rollback()
+			return nil, ErrSeatWrongEvent
 		}
 		if seat.Status != entity.SeatStatusAvailable {
 			rollback()

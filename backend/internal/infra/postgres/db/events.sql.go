@@ -74,6 +74,7 @@ const getEventByID = `-- name: GetEventByID :one
 SELECT
     e.id, e.title, e.sport, e.league, e.venue_id, e.starts_at, e.status, e.service_fee_percent, e.home_team, e.away_team, e.image_url, e.vibe_chips, e.created_at, e.updated_at, e.deleted_at,
     v.id AS venue_id_2, v.name AS venue_name, v.city AS venue_city, v.state AS venue_state, v.capacity AS venue_capacity,
+    v.organization_id AS venue_organization_id,
     COALESCE((SELECT MIN(s.price_cents) FROM seats s WHERE s.event_id = e.id AND s.status = 'AVAILABLE'), 0) AS min_price_cents,
     COALESCE((SELECT MAX(s.price_cents) FROM seats s WHERE s.event_id = e.id AND s.status = 'AVAILABLE'), 0) AS max_price_cents
 FROM events e
@@ -82,28 +83,29 @@ WHERE e.id = $1 AND e.deleted_at IS NULL
 `
 
 type GetEventByIDRow struct {
-	ID                uuid.UUID          `json:"id"`
-	Title             string             `json:"title"`
-	Sport             string             `json:"sport"`
-	League            string             `json:"league"`
-	VenueID           uuid.UUID          `json:"venue_id"`
-	StartsAt          time.Time          `json:"starts_at"`
-	Status            string             `json:"status"`
-	ServiceFeePercent pgtype.Numeric     `json:"service_fee_percent"`
-	HomeTeam          string             `json:"home_team"`
-	AwayTeam          string             `json:"away_team"`
-	ImageUrl          string             `json:"image_url"`
-	VibeChips         []string           `json:"vibe_chips"`
-	CreatedAt         time.Time          `json:"created_at"`
-	UpdatedAt         time.Time          `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	VenueID2          uuid.UUID          `json:"venue_id_2"`
-	VenueName         string             `json:"venue_name"`
-	VenueCity         string             `json:"venue_city"`
-	VenueState        string             `json:"venue_state"`
-	VenueCapacity     int32              `json:"venue_capacity"`
-	MinPriceCents     interface{}        `json:"min_price_cents"`
-	MaxPriceCents     interface{}        `json:"max_price_cents"`
+	ID                  uuid.UUID          `json:"id"`
+	Title               string             `json:"title"`
+	Sport               string             `json:"sport"`
+	League              string             `json:"league"`
+	VenueID             uuid.UUID          `json:"venue_id"`
+	StartsAt            time.Time          `json:"starts_at"`
+	Status              string             `json:"status"`
+	ServiceFeePercent   pgtype.Numeric     `json:"service_fee_percent"`
+	HomeTeam            string             `json:"home_team"`
+	AwayTeam            string             `json:"away_team"`
+	ImageUrl            string             `json:"image_url"`
+	VibeChips           []string           `json:"vibe_chips"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
+	DeletedAt           pgtype.Timestamptz `json:"deleted_at"`
+	VenueID2            uuid.UUID          `json:"venue_id_2"`
+	VenueName           string             `json:"venue_name"`
+	VenueCity           string             `json:"venue_city"`
+	VenueState          string             `json:"venue_state"`
+	VenueCapacity       int32              `json:"venue_capacity"`
+	VenueOrganizationID uuid.UUID          `json:"venue_organization_id"`
+	MinPriceCents       interface{}        `json:"min_price_cents"`
+	MaxPriceCents       interface{}        `json:"max_price_cents"`
 }
 
 func (q *Queries) GetEventByID(ctx context.Context, id uuid.UUID) (GetEventByIDRow, error) {
@@ -130,6 +132,7 @@ func (q *Queries) GetEventByID(ctx context.Context, id uuid.UUID) (GetEventByIDR
 		&i.VenueCity,
 		&i.VenueState,
 		&i.VenueCapacity,
+		&i.VenueOrganizationID,
 		&i.MinPriceCents,
 		&i.MaxPriceCents,
 	)

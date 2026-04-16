@@ -12,6 +12,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
 	"github.com/marcos-smeets/catraca/backend/internal/handler/dto"
+	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
 )
 
 // AdminHandler handles venue and event management for admin/organizer users.
@@ -20,6 +21,8 @@ type AdminHandler struct {
 	eventRepo   repository.EventRepository
 	seatRepo    repository.SeatRepository
 	sectionRepo repository.SectionRepository
+	orgRepo     repository.OrganizationRepository
+	userRepo    repository.UserRepository
 }
 
 func NewAdminHandler(
@@ -27,22 +30,27 @@ func NewAdminHandler(
 	eventRepo repository.EventRepository,
 	seatRepo repository.SeatRepository,
 	sectionRepo repository.SectionRepository,
+	orgRepo repository.OrganizationRepository,
+	userRepo repository.UserRepository,
 ) *AdminHandler {
 	return &AdminHandler{
 		venueRepo:   venueRepo,
 		eventRepo:   eventRepo,
 		seatRepo:    seatRepo,
 		sectionRepo: sectionRepo,
+		orgRepo:     orgRepo,
+		userRepo:    userRepo,
 	}
 }
 
 // ----- Venue -----
 
 type CreateVenueRequest struct {
-	Name     string `json:"name"`
-	City     string `json:"city"`
-	State    string `json:"state"`
-	Capacity int    `json:"capacity"`
+	Name             string `json:"name"`
+	City             string `json:"city"`
+	State            string `json:"state"`
+	Capacity         int    `json:"capacity"`
+	OrganizationID   string `json:"organizationId,omitempty"`
 }
 
 func (h *AdminHandler) ListVenues(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +69,15 @@ func (h *AdminHandler) ListVenues(w http.ResponseWriter, r *http.Request) {
 	limit, page := parsePagination(r, 20, 100)
 	filter.Limit = limit
 	filter.Offset = (page - 1) * limit
+
+	scoped, allOrgs, err := parseAdminOrganizationScope(r)
+	if err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+	if !allOrgs {
+		filter.OrganizationID = scoped
+	}
 
 	venues, err := h.venueRepo.List(r.Context(), filter)
 	if err != nil {
@@ -101,6 +118,10 @@ func (h *AdminHandler) ListVenueStates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) CreateVenue(w http.ResponseWriter, r *http.Request) {
+	if authmw.GetUserClaims(r.Context()) == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	var req CreateVenueRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -111,14 +132,36 @@ func (h *AdminHandler) CreateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	venue := &entity.Venue{
-		ID:        uuid.New(),
-		Name:      req.Name,
-		City:      req.City,
-		State:     req.State,
-		Capacity:  req.Capacity,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	scoped, allOrgs, err := parseAdminOrganizationScope(r)
+	if err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+
+	var targetOrg uuid.UUID
+	if allOrgs {
+		if req.OrganizationID == "" {
+			writeError(w, http.StatusBadRequest, "organizationId is required")
+			return
+		}
+		targetOrg, err = uuid.Parse(req.OrganizationID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid organizationId")
+			return
+		}
+	} else {
+		targetOrg = *scoped
+	}
+
+	if err := h.ensureOrgSubscriptionForMutation(r, targetOrg); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+
+	venue, err := entity.NewVenue(targetOrg, req.Name, req.City, req.State, req.Capacity)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if err := h.venueRepo.Create(r.Context(), venue); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create venue")
@@ -169,6 +212,16 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	filter.Limit = limit
 	filter.Offset = (page - 1) * limit
 
+	scoped, allOrgs, err := parseAdminOrganizationScope(r)
+	if err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+	if !allOrgs {
+		filter.OrganizationID = scoped
+	}
+	filter.TenantBuyerCatalog = false
+
 	events, err := h.eventRepo.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list events")
@@ -209,7 +262,45 @@ func (h *AdminHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get event")
 		return
 	}
+	if err := h.assertEventInAdminScope(r, event); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, toEventResponse(event))
+}
+
+func (h *AdminHandler) ListEventSeats(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	eventID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	event, err := h.eventRepo.GetByID(r.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get event")
+		return
+	}
+	if err := h.assertEventInAdminScope(r, event); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+
+	seats, err := h.seatRepo.ListByEventID(r.Context(), eventID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list seats")
+		return
+	}
+	resp := make([]dto.SeatResponse, 0, len(seats))
+	for _, s := range seats {
+		resp = append(resp, toSeatResponse(s))
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // parsePagination extracts page and limit from query params with defaults and a cap.
@@ -246,6 +337,24 @@ func (h *AdminHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	startsAt, err := time.Parse(time.RFC3339, req.StartsAt)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid startsAt format (use RFC3339)")
+		return
+	}
+
+	venue, err := h.venueRepo.GetByID(r.Context(), venueID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "venue not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load venue")
+		return
+	}
+	if err := h.assertVenueOrgInAdminScope(r, venue.OrganizationID); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+	if err := h.ensureOrgSubscriptionForMutation(r, venue.OrganizationID); err != nil {
+		writeAdminScopeError(w, err)
 		return
 	}
 
@@ -289,11 +398,21 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get event")
 		return
 	}
+	if err := h.assertEventInAdminScope(r, event); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
 
 	var req CreateEventRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if event.Venue != nil {
+		if err := h.ensureOrgSubscriptionForMutation(r, event.Venue.OrganizationID); err != nil {
+			writeAdminScopeError(w, err)
+			return
+		}
 	}
 	if req.Title != "" {
 		event.Title = req.Title
@@ -336,6 +455,16 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get event")
 		return
 	}
+	if err := h.assertEventInAdminScope(r, event); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+	if event.Venue != nil {
+		if err := h.ensureOrgSubscriptionForMutation(r, event.Venue.OrganizationID); err != nil {
+			writeAdminScopeError(w, err)
+			return
+		}
+	}
 
 	if err := event.Publish(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -370,6 +499,20 @@ func (h *AdminHandler) ListSections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ev, err := h.eventRepo.GetByID(r.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get event")
+		return
+	}
+	if err := h.assertEventInAdminScope(r, ev); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+
 	sections, err := h.sectionRepo.ListByEventID(r.Context(), eventID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list sections")
@@ -394,6 +537,26 @@ func (h *AdminHandler) CreateSection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid event ID")
 		return
+	}
+
+	ev, err := h.eventRepo.GetByID(r.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get event")
+		return
+	}
+	if err := h.assertEventInAdminScope(r, ev); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+	if ev.Venue != nil {
+		if err := h.ensureOrgSubscriptionForMutation(r, ev.Venue.OrganizationID); err != nil {
+			writeAdminScopeError(w, err)
+			return
+		}
 	}
 
 	var req CreateSectionRequest
@@ -456,6 +619,26 @@ func (h *AdminHandler) BatchCreateSeats(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid event ID")
 		return
+	}
+
+	ev, err := h.eventRepo.GetByID(r.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get event")
+		return
+	}
+	if err := h.assertEventInAdminScope(r, ev); err != nil {
+		writeAdminScopeError(w, err)
+		return
+	}
+	if ev.Venue != nil {
+		if err := h.ensureOrgSubscriptionForMutation(r, ev.Venue.OrganizationID); err != nil {
+			writeAdminScopeError(w, err)
+			return
+		}
 	}
 
 	var req BatchCreateSeatsRequest

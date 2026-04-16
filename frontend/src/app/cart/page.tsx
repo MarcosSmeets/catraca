@@ -8,6 +8,7 @@ import MainLayout from "@/components/features/MainLayout";
 import Button from "@/components/ui/Button";
 import { formatCurrency, formatDate } from "@/lib/mock-data";
 import { useCartStore } from "@/store/cart";
+import { DEFAULT_PUBLIC_ORG_SLUG } from "@/lib/default-org-slug";
 
 function useCountdown(initialSeconds: number) {
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
@@ -40,7 +41,9 @@ const RESERVATION_SECONDS = 10 * 60;
 
 export default function CartPage() {
   const router = useRouter();
-  const { items, event, removeSeat, clearCart, secondsRemaining } = useCartStore();
+  const { items, event, organizationSlug, removeSeat, clearCart, secondsRemaining } =
+    useCartStore();
+  const orgForLinks = organizationSlug ?? DEFAULT_PUBLIC_ORG_SLUG;
 
   const initial = secondsRemaining();
   const countdown = useCountdown(initial);
@@ -84,7 +87,7 @@ export default function CartPage() {
             <p className="text-sm text-on-surface/30 font-body mb-6">
               Você ainda não selecionou nenhum ingresso.
             </p>
-            <Link href="/search">
+            <Link href={`/search?org=${DEFAULT_PUBLIC_ORG_SLUG}`}>
               <Button variant="primary">Explorar eventos</Button>
             </Link>
           </div>
@@ -134,7 +137,7 @@ export default function CartPage() {
                   )}
                 </div>
                 {countdown.isExpired ? (
-                  <Link href="/search">
+                  <Link href={`/search?org=${DEFAULT_PUBLIC_ORG_SLUG}`}>
                     <Button variant="secondary" size="sm">
                       Selecionar novamente
                     </Button>
@@ -223,7 +226,7 @@ export default function CartPage() {
 
               {event && (
                 <Link
-                  href={`/events/${event.id}`}
+                  href={`/e/${orgForLinks}/events/${event.id}`}
                   className="text-sm font-body text-on-surface/40 hover:text-on-surface transition-colors duration-150 underline underline-offset-2 self-start"
                 >
                   ← Adicionar mais assentos

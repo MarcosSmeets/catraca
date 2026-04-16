@@ -1,11 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   useAdminVenues,
   useAdminEvents,
   useAdminMetrics,
+  useAdminOrganizationsList,
   type DashboardMetrics,
   type OrderStatusMetric,
   type TicketStatusCount,
@@ -20,6 +22,9 @@ import { TicketStatusDonut } from "@/components/admin/charts/TicketStatusDonut";
 import { OrderStatusDonut } from "@/components/admin/charts/OrderStatusDonut";
 import { StadiumOccupancyTable } from "@/components/admin/StadiumOccupancyTable";
 import { TopEventsTable } from "@/components/admin/TopEventsTable";
+import { OrgRevenueByTenantBar } from "@/components/admin/charts/OrgRevenueByTenantBar";
+import { ResaleListingsBar } from "@/components/admin/charts/ResaleListingsBar";
+import { useAdminAuthStore } from "@/store/admin-auth";
 
 const TICKET_STATUSES: TicketStatusCount["status"][] = ["VALID", "USED", "CANCELLED"];
 
@@ -58,35 +63,77 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 export default function AdminDashboardPage() {
-  const { data: venues } = useAdminVenues({ limit: 1 });
-  const { data: events } = useAdminEvents({ limit: 1 });
-  const { data: drafts } = useAdminEvents({ status: "DRAFT", limit: 1 });
-  const { data: onSale } = useAdminEvents({ status: "ON_SALE", limit: 1 });
-  const { data: metrics, isLoading: metricsLoading, isSuccess: metricsReady } = useAdminMetrics();
+  const adminUser = useAdminAuthStore((s) => s.adminUser);
+  const isPlatformAdmin = adminUser?.role === "platform_admin";
+  const [metricsOrgId, setMetricsOrgId] = useState<string>("");
+  const listOrgId = isPlatformAdmin && metricsOrgId ? metricsOrgId : undefined;
+
+  const { data: orgDirectory } = useAdminOrganizationsList(isPlatformAdmin);
+
+  const { data: venues } = useAdminVenues({ limit: 1, organizationId: listOrgId });
+  const { data: events } = useAdminEvents({ limit: 1, organizationId: listOrgId });
+  const { data: drafts } = useAdminEvents({ status: "DRAFT", limit: 1, organizationId: listOrgId });
+  const { data: onSale } = useAdminEvents({ status: "ON_SALE", limit: 1, organizationId: listOrgId });
+  const { data: metrics, isLoading: metricsLoading, isSuccess: metricsReady } = useAdminMetrics(
+    isPlatformAdmin ? metricsOrgId : undefined
+  );
 
   const draftCount = drafts?.total ?? 0;
   const onSaleCount = onSale?.total ?? 0;
 
   const m: DashboardMetrics | undefined = metricsReady ? metrics : undefined;
   const fin = m?.financial;
+  const resaleRows =
+    m?.resale != null
+      ? [
+          { label: "Anúncios ativos", count: m.resale.activeListings },
+          { label: "Cancelados", count: m.resale.cancelledListings },
+          { label: "Vendidos (anúncio)", count: m.resale.soldListingsAll },
+        ]
+      : [];
 
   return (
     <div className="flex flex-col gap-10">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-display font-black text-3xl text-on-surface tracking-tight">
-            Dashboard
-          </h1>
+          <h1 className="font-display font-black text-3xl text-on-surface tracking-tight">Dashboard</h1>
           <p className="text-on-surface/50 font-body text-sm mt-1">
             Visão geral do painel administrativo.
           </p>
         </div>
-        <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40 shrink-0 sm:pt-1">
-          Últimos 30 dias · Total
-        </p>
+        <div className="flex flex-col gap-3 sm:items-end shrink-0">
+          <p className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40 sm:pt-1">
+            Últimos 30 dias · Total
+          </p>
+          {isPlatformAdmin ? (
+            <label className="flex flex-col gap-1 w-full sm:w-72">
+              <span className="text-xs font-display font-semibold uppercase tracking-tight text-on-surface/40">
+                Métricas por empresa
+              </span>
+              <select
+                value={metricsOrgId}
+                onChange={(e) => setMetricsOrgId(e.target.value)}
+                className="bg-surface-low border border-outline-variant rounded-sm px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-accent/30"
+              >
+                <option value="">Todas as empresas</option>
+                {(orgDirectory?.items ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {m?.platform ? (
+          <>
+            <StatCard label="Empresas" value={m.platform.organizationCount} />
+            <StatCard label="Usuários" value={m.platform.userCount} />
+          </>
+        ) : null}
         <StatCard
           label="Estádios"
           value={venues?.total}
@@ -138,6 +185,21 @@ export default function AdminDashboardPage() {
         </Link>
       </div>
 
+      {m?.organizationsRevenue && m.organizationsRevenue.length > 0 ? (
+        <div className="flex flex-col gap-6">
+          <SectionTitle>Receita por empresa (30 dias)</SectionTitle>
+          <ChartCard
+            title="Comparativo entre tenants"
+            subtitle="Receita de pedidos pagos — últimos 30 dias"
+            isLoading={metricsLoading}
+            isEmpty={false}
+            minHeight={200}
+          >
+            <OrgRevenueByTenantBar data={m.organizationsRevenue} />
+          </ChartCard>
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-6">
         <SectionTitle>Financeiro</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -167,6 +229,35 @@ export default function AdminDashboardPage() {
           isEmpty={false}
         >
           {m ? <RevenueLineChart data={m.dailyRevenue} /> : null}
+        </ChartCard>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <SectionTitle>Revenda</SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <StatCard
+            label="Receita revenda (30 dias)"
+            value={m?.resale ? formatCurrency(m.resale.resaleRevenue30dCents) : undefined}
+            subtitle="Pedidos resale pagos"
+          />
+          <StatCard
+            label="Pedidos revenda pagos (30 dias)"
+            value={m?.resale?.resalePaidOrders30d}
+          />
+          <StatCard
+            label="Receita revenda (total)"
+            value={m?.resale ? formatCurrency(m.resale.resaleRevenueAllCents) : undefined}
+          />
+          <StatCard label="Pedidos revenda pagos (total)" value={m?.resale?.resalePaidOrdersAll} />
+        </div>
+        <ChartCard
+          title="Listagens de revenda"
+          subtitle="Contagem por status do anúncio"
+          isLoading={metricsLoading}
+          isEmpty={!m}
+          minHeight={240}
+        >
+          {m ? <ResaleListingsBar data={resaleRows} /> : null}
         </ChartCard>
       </div>
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -22,6 +23,7 @@ type StripePaymentProcessor struct {
 	seatRepo           repository.SeatRepository
 	ticketRepo         repository.TicketRepository
 	resaleListingRepo  repository.ResaleListingRepository
+	orgRepo            repository.OrganizationRepository
 	seatLocker         service.SeatLockerService
 	sseHub             *sse.Hub
 	paymentGW          service.PaymentGateway
@@ -33,6 +35,7 @@ func NewStripePaymentProcessor(
 	seatRepo repository.SeatRepository,
 	ticketRepo repository.TicketRepository,
 	resaleListingRepo repository.ResaleListingRepository,
+	orgRepo repository.OrganizationRepository,
 	seatLocker service.SeatLockerService,
 	sseHub *sse.Hub,
 	paymentGW service.PaymentGateway,
@@ -43,6 +46,7 @@ func NewStripePaymentProcessor(
 		seatRepo:          seatRepo,
 		ticketRepo:        ticketRepo,
 		resaleListingRepo: resaleListingRepo,
+		orgRepo:           orgRepo,
 		seatLocker:        seatLocker,
 		sseHub:            sseHub,
 		paymentGW:         paymentGW,
@@ -60,6 +64,11 @@ func (p *StripePaymentProcessor) ProcessStripeEvent(ctx context.Context, eventTy
 		return p.handleCheckoutSessionCompleted(ctx, payload)
 	case string(stripelib.EventTypePaymentIntentPaymentFailed):
 		return p.handlePaymentIntentFailed(ctx, payload)
+	case string(stripelib.EventTypeCustomerSubscriptionCreated),
+		string(stripelib.EventTypeCustomerSubscriptionUpdated):
+		return p.handleCustomerSubscriptionUpdated(ctx, payload)
+	case string(stripelib.EventTypeCustomerSubscriptionDeleted):
+		return p.handleCustomerSubscriptionDeleted(ctx, payload)
 	default:
 		log.Warn().Str("type", eventType).Msg("unhandled stripe event type")
 	}
@@ -153,15 +162,22 @@ func parseChargePaymentIntentID(payload []byte) (string, error) {
 	return expanded.ID, nil
 }
 
-// handleCheckoutSessionCompleted fulfills when Checkout completes with a paid session and order_id on session metadata.
+// handleCheckoutSessionCompleted fulfills ticket orders, or syncs organization subscription state for Billing checkout.
 func (p *StripePaymentProcessor) handleCheckoutSessionCompleted(ctx context.Context, payload []byte) error {
 	var sess struct {
 		ID            string            `json:"id"`
+		Mode          string            `json:"mode"`
 		PaymentStatus string            `json:"payment_status"`
 		Metadata      map[string]string `json:"metadata"`
+		Customer      json.RawMessage   `json:"customer"`
+		Subscription  json.RawMessage   `json:"subscription"`
 	}
 	if err := json.Unmarshal(payload, &sess); err != nil {
 		return fmt.Errorf("handleCheckoutSessionCompleted unmarshal: %w", err)
+	}
+	if sess.Metadata != nil && sess.Metadata["checkout_kind"] == "organization_subscription" &&
+		sess.Mode == string(stripelib.CheckoutSessionModeSubscription) {
+		return p.syncOrganizationFromSubscriptionCheckout(ctx, sess.Metadata, sess.Customer, sess.Subscription)
 	}
 	if sess.PaymentStatus != "paid" {
 		log.Debug().Str("session_id", sess.ID).Str("payment_status", sess.PaymentStatus).Msg("checkout.session.completed not paid; skipping fulfillment")
@@ -177,6 +193,145 @@ func (p *StripePaymentProcessor) handleCheckoutSessionCompleted(ctx context.Cont
 		return fmt.Errorf("handleCheckoutSessionCompleted parse order_id: %w", err)
 	}
 	return p.fulfillPaidOrder(ctx, orderID)
+}
+
+func parseStripeExpandableID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+		return s
+	}
+	var obj struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		return obj.ID
+	}
+	return ""
+}
+
+func parseSubscriptionPayload(raw json.RawMessage) (subID, status string, periodEnd *time.Time) {
+	if len(raw) == 0 {
+		return "", "", nil
+	}
+	var sub struct {
+		ID               string `json:"id"`
+		Status           string `json:"status"`
+		CurrentPeriodEnd int64  `json:"current_period_end"`
+	}
+	if err := json.Unmarshal(raw, &sub); err != nil {
+		return "", "", nil
+	}
+	subID = sub.ID
+	status = sub.Status
+	if sub.CurrentPeriodEnd > 0 {
+		t := time.Unix(sub.CurrentPeriodEnd, 0).UTC()
+		periodEnd = &t
+	}
+	return subID, status, periodEnd
+}
+
+func (p *StripePaymentProcessor) syncOrganizationFromSubscriptionCheckout(
+	ctx context.Context,
+	meta map[string]string,
+	customerRaw, subscriptionRaw json.RawMessage,
+) error {
+	if p.orgRepo == nil {
+		return nil
+	}
+	orgIDStr := meta["organization_id"]
+	if orgIDStr == "" {
+		log.Warn().Msg("organization subscription checkout missing organization_id")
+		return nil
+	}
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		return fmt.Errorf("sync org subscription: parse organization_id: %w", err)
+	}
+	customerID := parseStripeExpandableID(customerRaw)
+	subID, status, periodEnd := parseSubscriptionPayload(subscriptionRaw)
+	if subID == "" {
+		subID = parseStripeExpandableID(subscriptionRaw)
+	}
+	if status == "" {
+		status = entity.SubscriptionActive
+	}
+	if err := p.orgRepo.UpdateSubscription(ctx, orgID, customerID, subID, status, periodEnd); err != nil {
+		return fmt.Errorf("sync org subscription from checkout: %w", err)
+	}
+	log.Info().Stringer("organization_id", orgID).Str("subscription_status", status).Msg("organization subscription synced from checkout")
+	return nil
+}
+
+func (p *StripePaymentProcessor) handleCustomerSubscriptionUpdated(ctx context.Context, payload []byte) error {
+	if p.orgRepo == nil {
+		return nil
+	}
+	var sub struct {
+		ID               string            `json:"id"`
+		Status           string            `json:"status"`
+		Customer         json.RawMessage   `json:"customer"`
+		CurrentPeriodEnd int64             `json:"current_period_end"`
+		Metadata         map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal(payload, &sub); err != nil {
+		return fmt.Errorf("handleCustomerSubscriptionUpdated unmarshal: %w", err)
+	}
+	orgIDStr := ""
+	if sub.Metadata != nil {
+		orgIDStr = sub.Metadata["organization_id"]
+	}
+	if orgIDStr == "" {
+		log.Debug().Str("subscription_id", sub.ID).Msg("subscription event without organization_id metadata; skipping org sync")
+		return nil
+	}
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		return fmt.Errorf("handleCustomerSubscriptionUpdated parse organization_id: %w", err)
+	}
+	customerID := parseStripeExpandableID(sub.Customer)
+	var periodEnd *time.Time
+	if sub.CurrentPeriodEnd > 0 {
+		t := time.Unix(sub.CurrentPeriodEnd, 0).UTC()
+		periodEnd = &t
+	}
+	if err := p.orgRepo.UpdateSubscription(ctx, orgID, customerID, sub.ID, sub.Status, periodEnd); err != nil {
+		return fmt.Errorf("handleCustomerSubscriptionUpdated persist: %w", err)
+	}
+	return nil
+}
+
+func (p *StripePaymentProcessor) handleCustomerSubscriptionDeleted(ctx context.Context, payload []byte) error {
+	if p.orgRepo == nil {
+		return nil
+	}
+	var sub struct {
+		ID       string            `json:"id"`
+		Customer json.RawMessage   `json:"customer"`
+		Metadata map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal(payload, &sub); err != nil {
+		return fmt.Errorf("handleCustomerSubscriptionDeleted unmarshal: %w", err)
+	}
+	orgIDStr := ""
+	if sub.Metadata != nil {
+		orgIDStr = sub.Metadata["organization_id"]
+	}
+	if orgIDStr == "" {
+		log.Debug().Str("subscription_id", sub.ID).Msg("subscription deleted without organization_id metadata; skipping org sync")
+		return nil
+	}
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		return fmt.Errorf("handleCustomerSubscriptionDeleted parse organization_id: %w", err)
+	}
+	customerID := parseStripeExpandableID(sub.Customer)
+	if err := p.orgRepo.UpdateSubscription(ctx, orgID, customerID, sub.ID, entity.SubscriptionCanceled, nil); err != nil {
+		return fmt.Errorf("handleCustomerSubscriptionDeleted persist: %w", err)
+	}
+	return nil
 }
 
 func (p *StripePaymentProcessor) fulfillPaidOrder(ctx context.Context, orderID uuid.UUID) error {

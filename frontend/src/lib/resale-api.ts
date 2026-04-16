@@ -31,15 +31,24 @@ export interface ResaleBuyerPayload {
   buyerState: string;
 }
 
-export async function fetchResaleListingsByEvent(eventId: string): Promise<ResaleListing[]> {
-  return apiFetch<ResaleListing[]>(`/events/${eventId}/resale-listings`, { accessToken: null });
+export async function fetchResaleListingsByEvent(
+  orgSlug: string,
+  eventId: string
+): Promise<ResaleListing[]> {
+  return apiFetch<ResaleListing[]>(
+    `/orgs/${encodeURIComponent(orgSlug)}/events/${encodeURIComponent(eventId)}/resale-listings`,
+    { accessToken: null }
+  );
 }
 
-export function useResaleListingsByEvent(eventId: string | undefined) {
+export function useResaleListingsByEvent(
+  orgSlug: string | undefined,
+  eventId: string | undefined
+) {
   return useQuery({
-    queryKey: ["resale-listings", "event", eventId],
-    queryFn: () => fetchResaleListingsByEvent(eventId!),
-    enabled: !!eventId,
+    queryKey: ["resale-listings", "event", orgSlug, eventId],
+    queryFn: () => fetchResaleListingsByEvent(orgSlug!, eventId!),
+    enabled: !!eventId && !!orgSlug,
   });
 }
 

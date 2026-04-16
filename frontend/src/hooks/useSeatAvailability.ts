@@ -22,25 +22,27 @@ type SseMessage = SeatUpdateMessage | ConnectionMessage;
  * When a seat status changes on the server, the query cache for that event's
  * seats is updated optimistically without a full refetch.
  */
-export function useSeatAvailability(eventId: string) {
+export function useSeatAvailability(orgSlug: string, eventId: string) {
   const queryClient = useQueryClient();
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventIdRef = useRef(eventId);
+  const orgSlugRef = useRef(orgSlug);
 
   useEffect(() => {
     eventIdRef.current = eventId;
-  }, [eventId]);
+    orgSlugRef.current = orgSlug;
+  }, [eventId, orgSlug]);
 
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !orgSlug) return;
 
     function connect() {
       if (esRef.current) {
         esRef.current.close();
       }
 
-      const url = `${PUBLIC_API_BASE_URL}/events/${eventIdRef.current}/seats/stream`;
+      const url = `${PUBLIC_API_BASE_URL}/orgs/${encodeURIComponent(orgSlugRef.current)}/events/${eventIdRef.current}/seats/stream`;
       const es = new EventSource(url, { withCredentials: true });
       esRef.current = es;
 
@@ -50,7 +52,7 @@ export function useSeatAvailability(eventId: string) {
 
           if (data.type === "seat_update") {
             queryClient.setQueryData<Seat[]>(
-              ["event-seats", eventIdRef.current],
+              ["event-seats", orgSlugRef.current, eventIdRef.current],
               (prev) => {
                 if (!prev) return prev;
                 return prev.map((seat) =>
@@ -80,5 +82,5 @@ export function useSeatAvailability(eventId: string) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [eventId, queryClient]);
+  }, [eventId, orgSlug, queryClient]);
 }

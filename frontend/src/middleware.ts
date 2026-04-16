@@ -9,7 +9,12 @@ function isAdminToken(token: string): boolean {
   try {
     const payload = decodeJwt(token);
     const role = payload.role as string | undefined;
-    return role === "admin" || role === "organizer";
+    return (
+      role === "admin" ||
+      role === "organizer" ||
+      role === "staff" ||
+      role === "platform_admin"
+    );
   } catch {
     return false;
   }

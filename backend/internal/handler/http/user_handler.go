@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,7 @@ import (
 // UserHandler handles profile, orders, tickets, and reservation routes.
 type UserHandler struct {
 	userRepo                  repository.UserRepository
+	orgRepo                   repository.OrganizationRepository
 	sseHub                    *sse.Hub
 	reserveSeatUC             *reservationuc.ReserveSeatUseCase
 	releaseSeatUC             *reservationuc.ReleaseSeatUseCase
@@ -40,6 +42,7 @@ type UserHandler struct {
 // UserDeps holds all dependencies for UserHandler.
 type UserDeps struct {
 	UserRepo                  repository.UserRepository
+	OrganizationRepo          repository.OrganizationRepository
 	SSEHub                    *sse.Hub
 	ReserveSeatUC             *reservationuc.ReserveSeatUseCase
 	ReleaseSeatUC             *reservationuc.ReleaseSeatUseCase
@@ -58,6 +61,7 @@ type UserDeps struct {
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
 		userRepo:                  deps.UserRepo,
+		orgRepo:                   deps.OrganizationRepo,
 		sseHub:                    deps.SSEHub,
 		reserveSeatUC:             deps.ReserveSeatUC,
 		releaseSeatUC:             deps.ReleaseSeatUC,
@@ -154,6 +158,20 @@ func (h *UserHandler) CreateReservation(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "eventId and at least one seatId are required")
 		return
 	}
+	orgSlug := strings.TrimSpace(strings.ToLower(req.OrgSlug))
+	if orgSlug == "" {
+		writeError(w, http.StatusBadRequest, "orgSlug is required")
+		return
+	}
+	org, err := h.orgRepo.GetBySlug(r.Context(), orgSlug)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "organization not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to resolve organization")
+		}
+		return
+	}
 
 	eventID, err := uuid.Parse(req.EventID)
 	if err != nil {
@@ -172,12 +190,19 @@ func (h *UserHandler) CreateReservation(w http.ResponseWriter, r *http.Request) 
 	}
 
 	output, err := h.reserveSeatUC.Execute(r.Context(), reservationuc.ReserveSeatInput{
-		UserID:  claims.UserID,
-		EventID: eventID,
-		SeatIDs: seatIDs,
+		UserID:                 claims.UserID,
+		EventID:                eventID,
+		SeatIDs:                seatIDs,
+		ExpectedOrganizationID: &org.ID,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, reservationuc.ErrOrganizationMismatch):
+			writeError(w, http.StatusForbidden, "event does not belong to this organization")
+			return
+		case errors.Is(err, reservationuc.ErrSeatWrongEvent):
+			writeError(w, http.StatusBadRequest, "seat does not belong to the event")
+			return
 		case errors.Is(err, reservationuc.ErrSeatNotAvailable):
 			writeError(w, http.StatusConflict, "one or more seats are not available")
 		case errors.Is(err, reservationuc.ErrSeatAlreadyLocked):
@@ -271,6 +296,20 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one reservationId is required")
 		return
 	}
+	orgSlug := strings.TrimSpace(strings.ToLower(req.OrgSlug))
+	if orgSlug == "" {
+		writeError(w, http.StatusBadRequest, "orgSlug is required")
+		return
+	}
+	org, err := h.orgRepo.GetBySlug(r.Context(), orgSlug)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "organization not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to resolve organization")
+		}
+		return
+	}
 
 	resIDs := make([]uuid.UUID, 0, len(req.ReservationIDs))
 	for _, s := range req.ReservationIDs {
@@ -283,8 +322,9 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	output, err := h.createOrderUC.Execute(r.Context(), orderuc.CreateOrderInput{
-		UserID:         claims.UserID,
-		ReservationIDs: resIDs,
+		UserID:                 claims.UserID,
+		ReservationIDs:         resIDs,
+		ExpectedOrganizationID: &org.ID,
 		Buyer: entity.BuyerDetails{
 			Name:         req.BuyerName,
 			Email:        req.BuyerEmail,
@@ -299,6 +339,9 @@ func (h *UserHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, orderuc.ErrOrganizationMismatch):
+			writeError(w, http.StatusForbidden, "reservations do not belong to this organization")
+			return
 		case errors.Is(err, orderuc.ErrReservationNotFound):
 			writeError(w, http.StatusNotFound, "reservation not found")
 		case errors.Is(err, orderuc.ErrReservationExpired):

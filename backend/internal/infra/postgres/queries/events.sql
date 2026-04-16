@@ -7,6 +7,7 @@ RETURNING *;
 SELECT
     e.*,
     v.id AS venue_id_2, v.name AS venue_name, v.city AS venue_city, v.state AS venue_state, v.capacity AS venue_capacity,
+    v.organization_id AS venue_organization_id,
     COALESCE((SELECT MIN(s.price_cents) FROM seats s WHERE s.event_id = e.id AND s.status = 'AVAILABLE'), 0) AS min_price_cents,
     COALESCE((SELECT MAX(s.price_cents) FROM seats s WHERE s.event_id = e.id AND s.status = 'AVAILABLE'), 0) AS max_price_cents
 FROM events e

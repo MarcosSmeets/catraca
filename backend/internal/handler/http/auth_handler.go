@@ -210,8 +210,9 @@ func (h *AuthHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if output.User.Role != entity.UserRoleAdmin && output.User.Role != entity.UserRoleOrganizer && output.User.Role != entity.UserRoleStaff {
-		writeError(w, http.StatusForbidden, "access restricted to admin, organizer and staff accounts")
+	if output.User.Role != entity.UserRoleAdmin && output.User.Role != entity.UserRoleOrganizer &&
+		output.User.Role != entity.UserRoleStaff && output.User.Role != entity.UserRolePlatformAdmin {
+		writeError(w, http.StatusForbidden, "access restricted to admin, organizer, staff and platform_admin accounts")
 		return
 	}
 
@@ -276,7 +277,7 @@ func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
 }
 
 func toUserResponse(u *entity.User) dto.UserResponse {
-	return dto.UserResponse{
+	resp := dto.UserResponse{
 		ID:        u.ID.String(),
 		Name:      u.Name,
 		Email:     u.Email,
@@ -285,6 +286,11 @@ func toUserResponse(u *entity.User) dto.UserResponse {
 		Role:      string(u.Role),
 		CreatedAt: u.CreatedAt.Format(time.RFC3339),
 	}
+	if u.OrganizationID != nil {
+		s := u.OrganizationID.String()
+		resp.OrganizationID = &s
+	}
+	return resp
 }
 
 func maskCPF() string {

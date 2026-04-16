@@ -7,12 +7,17 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
+	pginfra "github.com/marcos-smeets/catraca/backend/internal/infra/postgres"
+	"github.com/marcos-smeets/catraca/backend/test/factory"
 )
 
 // newTestDB starts a PostgreSQL container, runs all migrations, and returns a connected pool.
@@ -46,6 +51,22 @@ func newTestDB(t *testing.T) *pgxpool.Pool {
 	runMigrations(t, connStr)
 
 	return pool
+}
+
+func createTestOrg(t *testing.T, ctx context.Context, pool *pgxpool.Pool) *entity.Organization {
+	t.Helper()
+	orgRepo := pginfra.NewOrganizationRepository(pool)
+	org := factory.NewTestOrganization()
+	require.NoError(t, orgRepo.Create(ctx, org))
+	return org
+}
+
+func createTestVenue(t *testing.T, ctx context.Context, pool *pgxpool.Pool, organizationID uuid.UUID) *entity.Venue {
+	t.Helper()
+	venueRepo := pginfra.NewVenueRepository(pool)
+	venue := factory.NewTestVenue(organizationID)
+	require.NoError(t, venueRepo.Create(ctx, venue))
+	return venue
 }
 
 // migrationsDir returns the absolute path to the migrations directory.

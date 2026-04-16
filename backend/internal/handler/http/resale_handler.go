@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +13,7 @@ import (
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
 	"github.com/marcos-smeets/catraca/backend/internal/handler/dto"
 	authmw "github.com/marcos-smeets/catraca/backend/internal/handler/middleware"
+	eventuc "github.com/marcos-smeets/catraca/backend/internal/usecase/event"
 	orderuc "github.com/marcos-smeets/catraca/backend/internal/usecase/order"
 	resaleuc "github.com/marcos-smeets/catraca/backend/internal/usecase/resale"
 )
@@ -24,6 +26,8 @@ type ResaleHandler struct {
 	listMine         *resaleuc.ListMyResaleListingsUseCase
 	listByEvent      *resaleuc.ListEventResaleListingsUseCase
 	createCheckout   *resaleuc.CreateResaleCheckoutUseCase
+	orgRepo          repository.OrganizationRepository
+	getEventUC       *eventuc.GetEventUseCase
 	stripeEnabled    bool
 	checkoutSuccess  string
 	checkoutCancel   string
@@ -37,6 +41,8 @@ type ResaleHandlerDeps struct {
 	ListMine         *resaleuc.ListMyResaleListingsUseCase
 	ListByEvent      *resaleuc.ListEventResaleListingsUseCase
 	CreateCheckout   *resaleuc.CreateResaleCheckoutUseCase
+	OrganizationRepo repository.OrganizationRepository
+	GetEventUC       *eventuc.GetEventUseCase
 	StripeEnabled    bool
 	CheckoutSuccess  string
 	CheckoutCancel   string
@@ -51,6 +57,8 @@ func NewResaleHandler(d ResaleHandlerDeps) *ResaleHandler {
 		listMine:         d.ListMine,
 		listByEvent:      d.ListByEvent,
 		createCheckout:   d.CreateCheckout,
+		orgRepo:          d.OrganizationRepo,
+		getEventUC:       d.GetEventUC,
 		stripeEnabled:    d.StripeEnabled,
 		checkoutSuccess:  d.CheckoutSuccess,
 		checkoutCancel:   d.CheckoutCancel,
@@ -191,12 +199,47 @@ func (h *ResaleHandler) ListMyResaleListings(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (h *ResaleHandler) ListResaleListingsByEvent(w http.ResponseWriter, r *http.Request) {
+func (h *ResaleHandler) ListResaleListingsByEventForOrganization(w http.ResponseWriter, r *http.Request) {
+	if h.orgRepo == nil || h.getEventUC == nil {
+		writeError(w, http.StatusInternalServerError, "server misconfiguration")
+		return
+	}
+	slug := strings.TrimSpace(strings.ToLower(chi.URLParam(r, "slug")))
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "organization slug is required")
+		return
+	}
+	org, err := h.orgRepo.GetBySlug(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "organization not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to resolve organization")
+		}
+		return
+	}
 	eventID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid event id")
 		return
 	}
+	_, err = h.getEventUC.Execute(r.Context(), eventuc.GetEventInput{
+		EventID:            eventID,
+		OrganizationID:     &org.ID,
+		TenantBuyerCatalog: true,
+	})
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load event")
+		}
+		return
+	}
+	h.writeResaleListingsForEvent(w, r, eventID)
+}
+
+func (h *ResaleHandler) writeResaleListingsForEvent(w http.ResponseWriter, r *http.Request, eventID uuid.UUID) {
 	rows, err := h.listByEvent.Execute(r.Context(), eventID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list resale listings")
@@ -216,6 +259,15 @@ func (h *ResaleHandler) ListResaleListingsByEvent(w http.ResponseWriter, r *http
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *ResaleHandler) ListResaleListingsByEvent(w http.ResponseWriter, r *http.Request) {
+	eventID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+	h.writeResaleListingsForEvent(w, r, eventID)
 }
 
 func (h *ResaleHandler) PostResaleListingCheckout(w http.ResponseWriter, r *http.Request) {

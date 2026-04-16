@@ -192,6 +192,7 @@ function CheckoutFormInner({
   const [canPayWithWallet, setCanPayWithWallet] = useState(false);
 
   const reservationIds = useCartStore((s) => s.reservationIds);
+  const organizationSlug = useCartStore((s) => s.organizationSlug);
   const accessToken = useAuthStore((s) => s.accessToken);
 
   // Apple Pay / Google Pay setup
@@ -223,6 +224,11 @@ function CheckoutFormInner({
 
     const handler = async (ev: { paymentMethod: { id: string }; complete: (status: "success" | "fail") => void }) => {
       try {
+        if (!organizationSlug) {
+          toast.error("Carrinho inválido. Volte ao evento e selecione os assentos novamente.");
+          ev.complete("fail");
+          return;
+        }
         // Create order
         const orderRes = await apiFetch<{
           orderId: string;
@@ -231,7 +237,7 @@ function CheckoutFormInner({
         }>("/orders", {
           method: "POST",
           accessToken,
-          body: JSON.stringify({ reservationIds }),
+          body: JSON.stringify({ orgSlug: organizationSlug, reservationIds }),
         });
 
         sessionStorage.setItem(PENDING_CHECKOUT_ORDER_ID_KEY, orderRes.orderId);
@@ -282,7 +288,7 @@ function CheckoutFormInner({
     return () => {
       paymentRequest.off("paymentmethod", handler);
     };
-  }, [paymentRequest, stripe, accessToken, reservationIds, clearCart, router]);
+  }, [paymentRequest, stripe, accessToken, reservationIds, organizationSlug, clearCart, router]);
 
   useEffect(() => {
     if (!canceled || canceledToastShown.current) return;
@@ -397,6 +403,10 @@ function CheckoutFormInner({
 
       // Create order if needed
       if (!orderId) {
+        if (!organizationSlug) {
+          toast.error("Carrinho inválido. Volte ao evento e selecione os assentos novamente.");
+          return;
+        }
         const orderRes = await apiFetch<{
           orderId: string;
           totalCents: number;
@@ -405,6 +415,7 @@ function CheckoutFormInner({
           method: "POST",
           accessToken,
           body: JSON.stringify({
+            orgSlug: organizationSlug,
             reservationIds,
             buyerName: form.name,
             buyerEmail: form.email,

@@ -21,14 +21,13 @@ func TestReservationRepository_GetActiveBySeatID_ExcludesPastExpiry(t *testing.T
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 	userRepo := pginfra.NewUserRepository(pool, "test-phone-encryption-key-32bytes!!")
 	reservationRepo := pginfra.NewReservationRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))
 	seat := factory.NewTestSeat(event.ID)
@@ -66,14 +65,13 @@ func TestReservationRepository_ListExpiredActive(t *testing.T) {
 	pool := newTestDB(t)
 	ctx := context.Background()
 
-	venueRepo := pginfra.NewVenueRepository(pool)
 	eventRepo := pginfra.NewEventRepository(pool)
 	seatRepo := pginfra.NewSeatRepository(pool)
 	userRepo := pginfra.NewUserRepository(pool, "test-phone-encryption-key-32bytes!!")
 	reservationRepo := pginfra.NewReservationRepository(pool)
 
-	venue := factory.NewTestVenue()
-	require.NoError(t, venueRepo.Create(ctx, venue))
+	org := createTestOrg(t, ctx, pool)
+	venue := createTestVenue(t, ctx, pool, org.ID)
 	event := factory.NewTestEvent(venue.ID)
 	require.NoError(t, eventRepo.Create(ctx, event))
 	seat := factory.NewTestSeat(event.ID)
