@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/entity"
 	"github.com/marcos-smeets/catraca/backend/internal/domain/repository"
@@ -28,6 +29,10 @@ func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
 }
 
 func (r *OrderRepository) Create(ctx context.Context, o *entity.Order) error {
+	var resaleListingPg pgtype.UUID
+	if o.ResaleListingID != nil {
+		resaleListingPg = pgtype.UUID{Bytes: *o.ResaleListingID, Valid: true}
+	}
 	_, err := r.queries.CreateOrder(ctx, pgdb.CreateOrderParams{
 		ID:                o.ID,
 		UserID:            o.UserID,
@@ -43,6 +48,8 @@ func (r *OrderRepository) Create(ctx context.Context, o *entity.Order) error {
 		BuyerNeighborhood: o.BuyerNeighborhood,
 		BuyerCity:         o.BuyerCity,
 		BuyerState:        o.BuyerState,
+		Kind:              string(o.Kind),
+		ResaleListingID:   resaleListingPg,
 	})
 	if err != nil {
 		return fmt.Errorf("OrderRepository.Create: %w", err)
@@ -120,9 +127,10 @@ func (r *OrderRepository) HasPendingOrderForReservation(ctx context.Context, res
 }
 
 func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
-	return &entity.Order{
+	out := &entity.Order{
 		ID:                o.ID,
 		UserID:            o.UserID,
+		Kind:              entity.OrderKind(o.Kind),
 		ReservationIDs:    resIDs,
 		TotalCents:        o.TotalCents,
 		StripePaymentID:   o.StripePaymentID,
@@ -139,4 +147,9 @@ func dbOrderToEntity(o pgdb.Order, resIDs []uuid.UUID) *entity.Order {
 		BuyerCity:         o.BuyerCity,
 		BuyerState:        o.BuyerState,
 	}
+	if o.ResaleListingID.Valid {
+		u := uuid.UUID(o.ResaleListingID.Bytes)
+		out.ResaleListingID = &u
+	}
+	return out
 }

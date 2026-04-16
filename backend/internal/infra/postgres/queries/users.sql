@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (id, name, email, password_hash, cpf_hash, phone, role)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO users (id, name, email, password_hash, cpf_hash, phone, role, organization_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -20,4 +20,16 @@ WHERE id = $1 AND deleted_at IS NULL;
 -- name: UpdateUserPassword :exec
 UPDATE users
 SET password_hash = $2
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: SetUserOrganizationAndRole :exec
+UPDATE users
+SET organization_id = $2, role = $3, updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: UpdateUserStripeConnect :exec
+UPDATE users
+SET stripe_connect_account_id = $2,
+    stripe_connect_charges_enabled = $3,
+    updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL;

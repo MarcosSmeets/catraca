@@ -15,12 +15,14 @@ var (
 	ErrReservationNotFound  = errors.New("reservation not found")
 	ErrReservationExpired   = errors.New("reservation has expired")
 	ErrReservationWrongUser = errors.New("reservation does not belong to this user")
+	ErrOrganizationMismatch = errors.New("order does not belong to this organization")
 )
 
 type CreateOrderInput struct {
-	UserID         uuid.UUID
-	ReservationIDs []uuid.UUID
-	Buyer          entity.BuyerDetails
+	UserID                 uuid.UUID
+	ReservationIDs       []uuid.UUID
+	Buyer                entity.BuyerDetails
+	ExpectedOrganizationID *uuid.UUID
 }
 
 type CreateOrderOutput struct {
@@ -78,6 +80,15 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 		if err != nil {
 			return nil, fmt.Errorf("create order: get seat: %w", err)
 		}
+		if input.ExpectedOrganizationID != nil {
+			event, err := uc.eventRepo.GetByID(ctx, seat.EventID)
+			if err != nil {
+				return nil, fmt.Errorf("create order: get event: %w", err)
+			}
+			if event.Venue == nil || event.Venue.OrganizationID != *input.ExpectedOrganizationID {
+				return nil, ErrOrganizationMismatch
+			}
+		}
 		totalCents += seat.PriceCents
 
 		if serviceFeePercent == 0 {
@@ -91,7 +102,7 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, input CreateOrderInpu
 	fee := int64(math.Round(float64(totalCents) * serviceFeePercent / 100))
 	totalCents += fee
 
-	order, err := entity.NewOrder(input.UserID, input.ReservationIDs, totalCents, "", input.Buyer)
+	order, err := entity.NewOrder(input.UserID, entity.OrderKindPrimary, input.ReservationIDs, nil, totalCents, "", input.Buyer)
 	if err != nil {
 		return nil, fmt.Errorf("create order: new order: %w", err)
 	}

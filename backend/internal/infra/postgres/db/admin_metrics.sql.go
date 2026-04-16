@@ -9,16 +9,45 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const countActiveOrganizations = `-- name: CountActiveOrganizations :one
+SELECT COUNT(*)::bigint FROM organizations WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveOrganizations)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countActiveUsers = `-- name: CountActiveUsers :one
+SELECT COUNT(*)::bigint FROM users WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountActiveUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveUsers)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
 
 const getDailyRevenue = `-- name: GetDailyRevenue :many
 SELECT
-    DATE(created_at AT TIME ZONE 'America/Sao_Paulo')::text AS day,
-    COALESCE(SUM(total_cents), 0)::bigint                   AS revenue_cents,
+    DATE(o.created_at AT TIME ZONE 'America/Sao_Paulo')::text AS day,
+    COALESCE(SUM(o.total_cents), 0)::bigint                   AS revenue_cents,
     COUNT(*)::bigint                                        AS orders_count
-FROM orders
-WHERE status = 'PAID'
-  AND created_at >= NOW() - INTERVAL '30 days'
+FROM orders o
+WHERE o.status = 'PAID'
+  AND o.created_at >= NOW() - INTERVAL '30 days'
+  AND ($1::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM tickets t
+    JOIN events e ON e.id = t.event_id
+    JOIN venues v ON v.id = e.venue_id
+    WHERE t.order_id = o.id AND v.organization_id = $1
+))
 GROUP BY 1
 ORDER BY 1
 `
@@ -29,8 +58,8 @@ type GetDailyRevenueRow struct {
 	OrdersCount  int64  `json:"orders_count"`
 }
 
-func (q *Queries) GetDailyRevenue(ctx context.Context) ([]GetDailyRevenueRow, error) {
-	rows, err := q.db.Query(ctx, getDailyRevenue)
+func (q *Queries) GetDailyRevenue(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetDailyRevenueRow, error) {
+	rows, err := q.db.Query(ctx, getDailyRevenue, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +85,12 @@ SELECT
     COALESCE(SUM(o.total_cents) FILTER (WHERE o.status = 'PAID' AND o.created_at >= NOW() - INTERVAL '30 days'), 0)::bigint AS revenue_30d_cents,
     COUNT(*) FILTER (WHERE o.status = 'PAID' AND o.created_at >= NOW() - INTERVAL '30 days')::bigint                        AS paid_orders_30d
 FROM orders o
+WHERE ($1::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM tickets t
+    JOIN events e ON e.id = t.event_id
+    JOIN venues v ON v.id = e.venue_id
+    WHERE t.order_id = o.id AND v.organization_id = $1
+))
 `
 
 type GetFinancialTotalsRow struct {
@@ -65,8 +100,8 @@ type GetFinancialTotalsRow struct {
 	PaidOrders30d   int64 `json:"paid_orders_30d"`
 }
 
-func (q *Queries) GetFinancialTotals(ctx context.Context) (GetFinancialTotalsRow, error) {
-	row := q.db.QueryRow(ctx, getFinancialTotals)
+func (q *Queries) GetFinancialTotals(ctx context.Context, filterOrganizationID pgtype.UUID) (GetFinancialTotalsRow, error) {
+	row := q.db.QueryRow(ctx, getFinancialTotals, filterOrganizationID)
 	var i GetFinancialTotalsRow
 	err := row.Scan(
 		&i.RevenueAllCents,
@@ -79,13 +114,19 @@ func (q *Queries) GetFinancialTotals(ctx context.Context) (GetFinancialTotalsRow
 
 const getOrderStatusCounts = `-- name: GetOrderStatusCounts :many
 SELECT
-    status,
+    o.status,
     COUNT(*)::bigint                                                                                  AS count_all,
-    COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::bigint                          AS count_30d,
-    COALESCE(SUM(total_cents), 0)::bigint                                                             AS amount_all_cents,
-    COALESCE(SUM(total_cents) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days'), 0)::bigint     AS amount_30d_cents
-FROM orders
-GROUP BY status
+    COUNT(*) FILTER (WHERE o.created_at >= NOW() - INTERVAL '30 days')::bigint                          AS count_30d,
+    COALESCE(SUM(o.total_cents), 0)::bigint                                                             AS amount_all_cents,
+    COALESCE(SUM(o.total_cents) FILTER (WHERE o.created_at >= NOW() - INTERVAL '30 days'), 0)::bigint     AS amount_30d_cents
+FROM orders o
+WHERE ($1::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM tickets t
+    JOIN events e ON e.id = t.event_id
+    JOIN venues v ON v.id = e.venue_id
+    WHERE t.order_id = o.id AND v.organization_id = $1
+))
+GROUP BY o.status
 `
 
 type GetOrderStatusCountsRow struct {
@@ -96,8 +137,8 @@ type GetOrderStatusCountsRow struct {
 	Amount30dCents int64  `json:"amount_30d_cents"`
 }
 
-func (q *Queries) GetOrderStatusCounts(ctx context.Context) ([]GetOrderStatusCountsRow, error) {
-	rows, err := q.db.Query(ctx, getOrderStatusCounts)
+func (q *Queries) GetOrderStatusCounts(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetOrderStatusCountsRow, error) {
+	rows, err := q.db.Query(ctx, getOrderStatusCounts, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +163,118 @@ func (q *Queries) GetOrderStatusCounts(ctx context.Context) ([]GetOrderStatusCou
 	return items, nil
 }
 
+const getOrgRevenueSummary = `-- name: GetOrgRevenueSummary :many
+WITH order_org AS (
+    SELECT o.id AS order_id,
+           o.total_cents,
+           o.status,
+           o.created_at,
+           v.organization_id
+    FROM orders o
+    JOIN tickets t ON t.order_id = o.id
+    JOIN events e ON e.id = t.event_id
+    JOIN venues v ON v.id = e.venue_id
+    GROUP BY o.id, o.total_cents, o.status, o.created_at, v.organization_id
+)
+SELECT
+    org.id AS organization_id,
+    org.name AS organization_name,
+    org.slug AS organization_slug,
+    COALESCE(SUM(oo.total_cents) FILTER (WHERE oo.status = 'PAID' AND oo.created_at >= NOW() - INTERVAL '30 days'), 0)::bigint AS revenue_30d_cents,
+    COALESCE(SUM(oo.total_cents) FILTER (WHERE oo.status = 'PAID'), 0)::bigint AS revenue_all_cents
+FROM organizations org
+LEFT JOIN order_org oo ON oo.organization_id = org.id
+WHERE org.deleted_at IS NULL
+GROUP BY org.id, org.name, org.slug
+ORDER BY revenue_30d_cents DESC, org.name ASC
+`
+
+type GetOrgRevenueSummaryRow struct {
+	OrganizationID   uuid.UUID `json:"organization_id"`
+	OrganizationName string    `json:"organization_name"`
+	OrganizationSlug string    `json:"organization_slug"`
+	Revenue30dCents  int64     `json:"revenue_30d_cents"`
+	RevenueAllCents  int64     `json:"revenue_all_cents"`
+}
+
+func (q *Queries) GetOrgRevenueSummary(ctx context.Context) ([]GetOrgRevenueSummaryRow, error) {
+	rows, err := q.db.Query(ctx, getOrgRevenueSummary)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetOrgRevenueSummaryRow{}
+	for rows.Next() {
+		var i GetOrgRevenueSummaryRow
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.Revenue30dCents,
+			&i.RevenueAllCents,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getResaleMetrics = `-- name: GetResaleMetrics :one
+WITH listing_orders AS (
+    SELECT
+        l.status AS listing_status,
+        o.id AS order_id,
+        o.kind AS order_kind,
+        o.status AS order_status,
+        o.total_cents,
+        o.created_at AS order_created_at
+    FROM ticket_resale_listings l
+    JOIN tickets t ON t.id = l.ticket_id
+    JOIN events e ON e.id = t.event_id
+    JOIN venues v ON v.id = e.venue_id
+    LEFT JOIN orders o ON o.resale_listing_id = l.id
+    WHERE ($1::uuid IS NULL OR v.organization_id = $1)
+)
+SELECT
+    COALESCE(COUNT(*) FILTER (WHERE listing_status = 'active'), 0)::bigint AS active_listings,
+    COALESCE(COUNT(*) FILTER (WHERE listing_status = 'cancelled'), 0)::bigint AS cancelled_listings,
+    COALESCE(COUNT(*) FILTER (WHERE listing_status = 'sold'), 0)::bigint AS sold_listings_all,
+    COALESCE(COUNT(*) FILTER (WHERE order_id IS NOT NULL AND order_kind = 'resale' AND order_status = 'PAID'), 0)::bigint AS resale_paid_orders_all,
+    COALESCE(SUM(total_cents) FILTER (WHERE order_kind = 'resale' AND order_status = 'PAID'), 0)::bigint AS resale_revenue_all_cents,
+    COALESCE(COUNT(*) FILTER (WHERE order_kind = 'resale' AND order_status = 'PAID' AND order_created_at >= NOW() - INTERVAL '30 days'), 0)::bigint AS resale_paid_orders_30d,
+    COALESCE(SUM(total_cents) FILTER (WHERE order_kind = 'resale' AND order_status = 'PAID' AND order_created_at >= NOW() - INTERVAL '30 days'), 0)::bigint AS resale_revenue_30d_cents
+FROM listing_orders
+`
+
+type GetResaleMetricsRow struct {
+	ActiveListings        int64 `json:"active_listings"`
+	CancelledListings     int64 `json:"cancelled_listings"`
+	SoldListingsAll       int64 `json:"sold_listings_all"`
+	ResalePaidOrdersAll   int64 `json:"resale_paid_orders_all"`
+	ResaleRevenueAllCents int64 `json:"resale_revenue_all_cents"`
+	ResalePaidOrders30d   int64 `json:"resale_paid_orders_30d"`
+	ResaleRevenue30dCents int64 `json:"resale_revenue_30d_cents"`
+}
+
+func (q *Queries) GetResaleMetrics(ctx context.Context, filterOrganizationID pgtype.UUID) (GetResaleMetricsRow, error) {
+	row := q.db.QueryRow(ctx, getResaleMetrics, filterOrganizationID)
+	var i GetResaleMetricsRow
+	err := row.Scan(
+		&i.ActiveListings,
+		&i.CancelledListings,
+		&i.SoldListingsAll,
+		&i.ResalePaidOrdersAll,
+		&i.ResaleRevenueAllCents,
+		&i.ResalePaidOrders30d,
+		&i.ResaleRevenue30dCents,
+	)
+	return i, err
+}
+
 const getStadiumSummary = `-- name: GetStadiumSummary :many
 SELECT
     v.id,
@@ -139,6 +292,7 @@ LEFT JOIN seats s ON s.event_id = e.id
 LEFT JOIN tickets t ON t.seat_id = s.id
 LEFT JOIN orders o ON o.id = t.order_id
 WHERE v.deleted_at IS NULL
+  AND ($1::uuid IS NULL OR v.organization_id = $1)
 GROUP BY v.id, v.name, v.city, v.state, v.capacity
 ORDER BY revenue_cents DESC, v.name
 `
@@ -155,8 +309,8 @@ type GetStadiumSummaryRow struct {
 	RevenueCents int64     `json:"revenue_cents"`
 }
 
-func (q *Queries) GetStadiumSummary(ctx context.Context) ([]GetStadiumSummaryRow, error) {
-	rows, err := q.db.Query(ctx, getStadiumSummary)
+func (q *Queries) GetStadiumSummary(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetStadiumSummaryRow, error) {
+	rows, err := q.db.Query(ctx, getStadiumSummary, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +348,9 @@ SELECT
 FROM tickets t
 JOIN orders o ON o.id = t.order_id
 JOIN seats s ON s.id = t.seat_id
+JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
+WHERE ($1::uuid IS NULL OR v.organization_id = $1)
 `
 
 type GetTicketFinancialsRow struct {
@@ -203,8 +360,8 @@ type GetTicketFinancialsRow struct {
 	BaseCents30d int64 `json:"base_cents_30d"`
 }
 
-func (q *Queries) GetTicketFinancials(ctx context.Context) (GetTicketFinancialsRow, error) {
-	row := q.db.QueryRow(ctx, getTicketFinancials)
+func (q *Queries) GetTicketFinancials(ctx context.Context, filterOrganizationID pgtype.UUID) (GetTicketFinancialsRow, error) {
+	row := q.db.QueryRow(ctx, getTicketFinancials, filterOrganizationID)
 	var i GetTicketFinancialsRow
 	err := row.Scan(
 		&i.TicketsAll,
@@ -217,10 +374,13 @@ func (q *Queries) GetTicketFinancials(ctx context.Context) (GetTicketFinancialsR
 
 const getTicketStatusCounts = `-- name: GetTicketStatusCounts :many
 SELECT
-    status,
+    t.status,
     COUNT(*)::bigint AS count
-FROM tickets
-GROUP BY status
+FROM tickets t
+JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
+WHERE ($1::uuid IS NULL OR v.organization_id = $1)
+GROUP BY t.status
 `
 
 type GetTicketStatusCountsRow struct {
@@ -228,8 +388,8 @@ type GetTicketStatusCountsRow struct {
 	Count  int64  `json:"count"`
 }
 
-func (q *Queries) GetTicketStatusCounts(ctx context.Context) ([]GetTicketStatusCountsRow, error) {
-	rows, err := q.db.Query(ctx, getTicketStatusCounts)
+func (q *Queries) GetTicketStatusCounts(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetTicketStatusCountsRow, error) {
+	rows, err := q.db.Query(ctx, getTicketStatusCounts, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +415,10 @@ SELECT
 FROM tickets t
 JOIN orders o ON o.id = t.order_id
 JOIN seats s ON s.id = t.seat_id
+JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
 WHERE o.status = 'PAID'
+  AND ($1::uuid IS NULL OR v.organization_id = $1)
 GROUP BY s.section
 ORDER BY tickets_count DESC
 LIMIT 10
@@ -266,8 +429,8 @@ type GetTicketsBySectionRow struct {
 	TicketsCount int64  `json:"tickets_count"`
 }
 
-func (q *Queries) GetTicketsBySection(ctx context.Context) ([]GetTicketsBySectionRow, error) {
-	rows, err := q.db.Query(ctx, getTicketsBySection)
+func (q *Queries) GetTicketsBySection(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetTicketsBySectionRow, error) {
+	rows, err := q.db.Query(ctx, getTicketsBySection, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +456,9 @@ SELECT
 FROM tickets t
 JOIN orders o ON o.id = t.order_id
 JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
 WHERE o.status = 'PAID'
+  AND ($1::uuid IS NULL OR v.organization_id = $1)
 GROUP BY e.sport
 ORDER BY tickets_count DESC
 `
@@ -303,8 +468,8 @@ type GetTicketsBySportRow struct {
 	TicketsCount int64  `json:"tickets_count"`
 }
 
-func (q *Queries) GetTicketsBySport(ctx context.Context) ([]GetTicketsBySportRow, error) {
-	rows, err := q.db.Query(ctx, getTicketsBySport)
+func (q *Queries) GetTicketsBySport(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetTicketsBySportRow, error) {
+	rows, err := q.db.Query(ctx, getTicketsBySport, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -338,6 +503,7 @@ LEFT JOIN tickets t ON t.event_id = e.id
 LEFT JOIN orders o ON o.id = t.order_id
 LEFT JOIN seats s ON s.id = t.seat_id
 WHERE e.deleted_at IS NULL
+  AND ($1::uuid IS NULL OR v.organization_id = $1)
 GROUP BY e.id, e.title, e.home_team, e.away_team, v.name
 ORDER BY tickets_sold DESC, e.created_at DESC
 LIMIT 5
@@ -353,8 +519,8 @@ type GetTopEventsByTicketsRow struct {
 	RevenueCents int64     `json:"revenue_cents"`
 }
 
-func (q *Queries) GetTopEventsByTickets(ctx context.Context) ([]GetTopEventsByTicketsRow, error) {
-	rows, err := q.db.Query(ctx, getTopEventsByTickets)
+func (q *Queries) GetTopEventsByTickets(ctx context.Context, filterOrganizationID pgtype.UUID) ([]GetTopEventsByTicketsRow, error) {
+	rows, err := q.db.Query(ctx, getTopEventsByTickets, filterOrganizationID)
 	if err != nil {
 		return nil, err
 	}

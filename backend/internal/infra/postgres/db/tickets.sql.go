@@ -13,19 +13,20 @@ import (
 )
 
 const createTicket = `-- name: CreateTicket :one
-INSERT INTO tickets (id, order_id, event_id, seat_id, qr_code, status, purchased_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at
+INSERT INTO tickets (id, order_id, event_id, seat_id, qr_code, status, purchased_at, holder_user_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at, holder_user_id
 `
 
 type CreateTicketParams struct {
-	ID          uuid.UUID `json:"id"`
-	OrderID     uuid.UUID `json:"order_id"`
-	EventID     uuid.UUID `json:"event_id"`
-	SeatID      uuid.UUID `json:"seat_id"`
-	QrCode      string    `json:"qr_code"`
-	Status      string    `json:"status"`
-	PurchasedAt time.Time `json:"purchased_at"`
+	ID           uuid.UUID `json:"id"`
+	OrderID      uuid.UUID `json:"order_id"`
+	EventID      uuid.UUID `json:"event_id"`
+	SeatID       uuid.UUID `json:"seat_id"`
+	QrCode       string    `json:"qr_code"`
+	Status       string    `json:"status"`
+	PurchasedAt  time.Time `json:"purchased_at"`
+	HolderUserID uuid.UUID `json:"holder_user_id"`
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
@@ -37,6 +38,7 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 		arg.QrCode,
 		arg.Status,
 		arg.PurchasedAt,
+		arg.HolderUserID,
 	)
 	var i Ticket
 	err := row.Scan(
@@ -50,12 +52,13 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UsedAt,
+		&i.HolderUserID,
 	)
 	return i, err
 }
 
 const getTicketByID = `-- name: GetTicketByID :one
-SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at FROM tickets WHERE id = $1
+SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at, holder_user_id FROM tickets WHERE id = $1
 `
 
 func (q *Queries) GetTicketByID(ctx context.Context, id uuid.UUID) (Ticket, error) {
@@ -72,12 +75,13 @@ func (q *Queries) GetTicketByID(ctx context.Context, id uuid.UUID) (Ticket, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UsedAt,
+		&i.HolderUserID,
 	)
 	return i, err
 }
 
 const listTicketsByOrderID = `-- name: ListTicketsByOrderID :many
-SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at FROM tickets WHERE order_id = $1 ORDER BY created_at
+SELECT id, order_id, event_id, seat_id, qr_code, status, purchased_at, created_at, updated_at, used_at, holder_user_id FROM tickets WHERE order_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListTicketsByOrderID(ctx context.Context, orderID uuid.UUID) ([]Ticket, error) {
@@ -100,6 +104,7 @@ func (q *Queries) ListTicketsByOrderID(ctx context.Context, orderID uuid.UUID) (
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UsedAt,
+			&i.HolderUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -112,14 +117,13 @@ func (q *Queries) ListTicketsByOrderID(ctx context.Context, orderID uuid.UUID) (
 }
 
 const listTicketsByUserID = `-- name: ListTicketsByUserID :many
-SELECT t.id, t.order_id, t.event_id, t.seat_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at, t.used_at FROM tickets t
-JOIN orders o ON o.id = t.order_id
-WHERE o.user_id = $1
+SELECT t.id, t.order_id, t.event_id, t.seat_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at, t.used_at, t.holder_user_id FROM tickets t
+WHERE t.holder_user_id = $1
 ORDER BY t.purchased_at DESC
 `
 
-func (q *Queries) ListTicketsByUserID(ctx context.Context, userID uuid.UUID) ([]Ticket, error) {
-	rows, err := q.db.Query(ctx, listTicketsByUserID, userID)
+func (q *Queries) ListTicketsByUserID(ctx context.Context, holderUserID uuid.UUID) ([]Ticket, error) {
+	rows, err := q.db.Query(ctx, listTicketsByUserID, holderUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +142,7 @@ func (q *Queries) ListTicketsByUserID(ctx context.Context, userID uuid.UUID) ([]
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UsedAt,
+			&i.HolderUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -147,4 +152,18 @@ func (q *Queries) ListTicketsByUserID(ctx context.Context, userID uuid.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateTicketHolderUserID = `-- name: UpdateTicketHolderUserID :exec
+UPDATE tickets SET holder_user_id = $2, updated_at = NOW() WHERE id = $1
+`
+
+type UpdateTicketHolderUserIDParams struct {
+	ID           uuid.UUID `json:"id"`
+	HolderUserID uuid.UUID `json:"holder_user_id"`
+}
+
+func (q *Queries) UpdateTicketHolderUserID(ctx context.Context, arg UpdateTicketHolderUserIDParams) error {
+	_, err := q.db.Exec(ctx, updateTicketHolderUserID, arg.ID, arg.HolderUserID)
+	return err
 }

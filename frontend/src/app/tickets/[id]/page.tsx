@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
 import { TicketFace } from "@/components/features/tickets/TicketPass";
@@ -9,6 +9,13 @@ import Badge from "@/components/ui/Badge";
 import { TicketSkeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate, type Ticket } from "@/lib/mock-data";
 import { useTicket } from "@/lib/tickets-api";
+import {
+  startStripeConnect,
+  useCancelResaleListingMutation,
+  useCreateResaleListingMutation,
+  useMyResaleListings,
+  useStripeConnectStatus,
+} from "@/lib/resale-api";
 import { toast } from "sonner";
 
 interface Props {
@@ -45,6 +52,16 @@ export default function TicketDetailPage({ params }: Props) {
   const resolvedParams = React.use(params);
   const ticketId = resolvedParams.id;
   const { data: ticket, isLoading } = useTicket(ticketId);
+  const { data: myResales } = useMyResaleListings();
+  const { data: connectStatus, refetch: refetchConnect } = useStripeConnectStatus();
+  const createListing = useCreateResaleListingMutation();
+  const cancelListing = useCancelResaleListingMutation();
+  const [priceReais, setPriceReais] = useState("");
+
+  const activeListing = useMemo(
+    () => myResales?.find((l) => l.ticketId === ticketId && l.status === "active"),
+    [myResales, ticketId]
+  );
 
   const ev = ticket?.event;
   const seat = ticket?.seat;
@@ -54,9 +71,47 @@ export default function TicketDetailPage({ params }: Props) {
     toast.success("Baixando ingresso em PDF…");
   }
 
-  function handleTransfer() {
-    toast.info("Funcionalidade de transferência em breve.");
+  async function handleSetupConnect() {
+    const base = window.location.origin + window.location.pathname;
+    try {
+      const { url } = await startStripeConnect(base + "?stripe=return", base + "?stripe=refresh");
+      window.location.href = url;
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao abrir cadastro Stripe");
+    }
   }
+
+  async function handleCreateListing() {
+    const cents = Math.round(parseFloat(priceReais.replace(",", ".")) * 100);
+    if (!Number.isFinite(cents) || cents <= 0) {
+      toast.error("Informe um preço válido em reais.");
+      return;
+    }
+    try {
+      await createListing.mutateAsync({ ticketId, priceCents: cents });
+      setPriceReais("");
+      toast.success("Ingresso anunciado na revenda.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível anunciar.");
+    }
+  }
+
+  async function handleCancelListing() {
+    if (!activeListing) return;
+    try {
+      await cancelListing.mutateAsync(activeListing.id);
+      toast.success("Anúncio cancelado.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível cancelar.");
+    }
+  }
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined" && window.location.search.includes("stripe=return")) {
+      void refetchConnect();
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [refetchConnect]);
 
   function handleShare() {
     if (!ticket) return;
@@ -153,9 +208,52 @@ export default function TicketDetailPage({ params }: Props) {
               <Button fullWidth onClick={handleDownloadPdf}>
                 Baixar PDF
               </Button>
-              <Button fullWidth variant="secondary" onClick={handleTransfer}>
-                Transferir ingresso
-              </Button>
+              <div className="rounded-sm border border-outline-variant p-4 text-left space-y-3">
+                <p className="text-[10px] font-body uppercase tracking-widest text-on-surface/40">Revenda</p>
+                {activeListing ? (
+                  <>
+                    <p className="text-sm font-body text-on-surface/70">
+                      Anunciado por{" "}
+                      <span className="font-display font-bold text-on-surface">
+                        {formatCurrency(activeListing.priceCents)}
+                      </span>
+                    </p>
+                    <Button fullWidth variant="secondary" size="sm" onClick={handleCancelListing}>
+                      Cancelar anúncio
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {!connectStatus?.chargesEnabled ? (
+                      <Button fullWidth variant="secondary" size="sm" onClick={handleSetupConnect}>
+                        Configurar recebimento (Stripe)
+                      </Button>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-body uppercase tracking-widest text-on-surface/40 block">
+                          Preço (R$)
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="ex: 120,00"
+                          value={priceReais}
+                          onChange={(e) => setPriceReais(e.target.value)}
+                          className="w-full bg-surface px-3 py-2 text-sm font-body rounded-sm border border-outline-variant"
+                        />
+                        <Button
+                          fullWidth
+                          size="sm"
+                          onClick={handleCreateListing}
+                          disabled={createListing.isPending}
+                        >
+                          Anunciar na revenda
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </>
           )}
           <Button fullWidth variant="secondary" onClick={handleShare}>

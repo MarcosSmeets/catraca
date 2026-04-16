@@ -16,6 +16,7 @@ import {
   sportLabel,
 } from "@/lib/mock-data";
 import { useEvent, useEventSeats } from "@/lib/events-api";
+import { useResaleListingsByEvent } from "@/lib/resale-api";
 import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 import { useCartStore } from "@/store/cart";
 import { useAuthStore } from "@/store/auth";
@@ -76,6 +77,8 @@ function EventPageInner({
 
   const [heroImgSrc, setHeroImgSrc] = useState(eventImage);
   const [gallerySrcs, setGallerySrcs] = useState(gallery);
+
+  const { data: resaleRows = [], isLoading: resaleLoading } = useResaleListingsByEvent(event.id);
 
   const isSoldOut = event.status === "SOLD_OUT";
   const subtotalCents = selectedSeats.reduce((sum, s) => sum + s.priceCents, 0);
@@ -380,6 +383,55 @@ function EventPageInner({
                   maxSelectable={6}
                   sport={event.sport}
                 />
+              )}
+            </div>
+
+            <div className="bg-surface-lowest rounded-md border border-outline-variant p-6">
+              <p className="text-xs font-body uppercase tracking-widest text-on-surface/40 mb-1">Torcedores</p>
+              <h3 className="font-display font-bold text-lg text-on-surface uppercase tracking-tight mb-4">
+                Revenda
+              </h3>
+              {resaleLoading ? (
+                <p className="text-sm text-on-surface/40 font-body">Carregando ofertas…</p>
+              ) : resaleRows.length === 0 ? (
+                <p className="text-sm text-on-surface/40 font-body">
+                  Nenhum ingresso anunciado na revenda por enquanto.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {resaleRows.map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/80 pb-3 last:border-0 last:pb-0"
+                    >
+                      <div>
+                        <p className="font-display font-semibold text-on-surface text-sm">
+                          {row.section} · {row.row}
+                          {row.number}
+                        </p>
+                        <p className="text-xs text-on-surface/40 font-body">Revenda entre torcedores</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-display font-bold text-on-surface">
+                          {formatCurrency(row.priceCents)}
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const path = `/checkout/resale/${row.id}`;
+                            if (!accessToken) {
+                              router.push(`/login?redirect=${encodeURIComponent(path)}`);
+                              return;
+                            }
+                            router.push(path);
+                          }}
+                        >
+                          Comprar
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </div>

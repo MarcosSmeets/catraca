@@ -19,7 +19,7 @@ var _ repository.TicketRepository = (*TicketRepository)(nil)
 
 const ticketDetailsQuery = `
 SELECT
-    t.id, t.order_id, t.event_id, t.seat_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at,
+    t.id, t.order_id, t.event_id, t.seat_id, t.holder_user_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at,
     e.title, e.home_team, e.away_team, e.league, e.sport, e.starts_at, e.image_url,
     v.name  AS venue_name, v.city AS venue_city, v.state AS venue_state,
     s.section, s.row, s.number, s.price_cents
@@ -28,13 +28,13 @@ JOIN orders   o ON o.id = t.order_id
 JOIN events   e ON e.id = t.event_id
 JOIN seats    s ON s.id = t.seat_id
 JOIN venues   v ON v.id = e.venue_id
-WHERE o.user_id = $1
+WHERE t.holder_user_id = $1
 ORDER BY t.purchased_at DESC
 `
 
 const ticketDetailsQueryByID = `
 SELECT
-    t.id, t.order_id, t.event_id, t.seat_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at,
+    t.id, t.order_id, t.event_id, t.seat_id, t.holder_user_id, t.qr_code, t.status, t.purchased_at, t.created_at, t.updated_at,
     e.title, e.home_team, e.away_team, e.league, e.sport, e.starts_at, e.image_url,
     v.name  AS venue_name, v.city AS venue_city, v.state AS venue_state,
     s.section, s.row, s.number, s.price_cents
@@ -60,13 +60,14 @@ func NewTicketRepository(pool *pgxpool.Pool) *TicketRepository {
 
 func (r *TicketRepository) Create(ctx context.Context, t *entity.Ticket) error {
 	_, err := r.queries.CreateTicket(ctx, pgdb.CreateTicketParams{
-		ID:          t.ID,
-		OrderID:     t.OrderID,
-		EventID:     t.EventID,
-		SeatID:      t.SeatID,
-		QrCode:      t.QRCode,
-		Status:      t.Status.String(),
-		PurchasedAt: t.PurchasedAt,
+		ID:           t.ID,
+		OrderID:      t.OrderID,
+		EventID:      t.EventID,
+		SeatID:       t.SeatID,
+		QrCode:       t.QRCode,
+		Status:       t.Status.String(),
+		PurchasedAt:  t.PurchasedAt,
+		HolderUserID: t.HolderUserID,
 	})
 	if err != nil {
 		return fmt.Errorf("TicketRepository.Create: %w", err)
@@ -140,7 +141,7 @@ func (r *TicketRepository) ListByOrderID(ctx context.Context, orderID uuid.UUID)
 }
 
 const getTicketByQRCode = `
-SELECT id, order_id, event_id, seat_id, qr_code, status, used_at, purchased_at, created_at, updated_at
+SELECT id, order_id, event_id, seat_id, holder_user_id, qr_code, status, used_at, purchased_at, created_at, updated_at
 FROM tickets
 WHERE LOWER(qr_code) = LOWER($1)
 `
@@ -156,6 +157,7 @@ func (r *TicketRepository) GetByQRCode(ctx context.Context, qrCode string) (*ent
 		&t.OrderID,
 		&t.EventID,
 		&t.SeatID,
+		&t.HolderUserID,
 		&t.QRCode,
 		&t.Status,
 		&usedAt,
@@ -191,6 +193,16 @@ func (r *TicketRepository) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 	return nil
 }
 
+func (r *TicketRepository) UpdateHolderUserID(ctx context.Context, ticketID, holderUserID uuid.UUID) error {
+	if err := r.queries.UpdateTicketHolderUserID(ctx, pgdb.UpdateTicketHolderUserIDParams{
+		ID:           ticketID,
+		HolderUserID: holderUserID,
+	}); err != nil {
+		return fmt.Errorf("TicketRepository.UpdateHolderUserID: %w", err)
+	}
+	return nil
+}
+
 // scanner is implemented by both pgx.Row and pgx.Rows
 type scanner interface {
 	Scan(dest ...any) error
@@ -206,6 +218,7 @@ func scanTicketDetails(row scanner) (*repository.TicketWithDetails, error) {
 		&d.OrderID,
 		&d.EventID,
 		&d.SeatID,
+		&d.HolderUserID,
 		&d.QRCode,
 		&d.Status,
 		&d.PurchasedAt,
@@ -234,15 +247,21 @@ func scanTicketDetails(row scanner) (*repository.TicketWithDetails, error) {
 }
 
 func dbTicketToEntity(t pgdb.Ticket) *entity.Ticket {
-	return &entity.Ticket{
-		ID:          t.ID,
-		OrderID:     t.OrderID,
-		EventID:     t.EventID,
-		SeatID:      t.SeatID,
-		QRCode:      t.QrCode,
-		Status:      entity.TicketStatus(t.Status),
-		PurchasedAt: t.PurchasedAt,
-		CreatedAt:   t.CreatedAt,
-		UpdatedAt:   t.UpdatedAt,
+	out := &entity.Ticket{
+		ID:           t.ID,
+		OrderID:      t.OrderID,
+		EventID:      t.EventID,
+		SeatID:       t.SeatID,
+		HolderUserID: t.HolderUserID,
+		QRCode:       t.QrCode,
+		Status:       entity.TicketStatus(t.Status),
+		PurchasedAt:  t.PurchasedAt,
+		CreatedAt:    t.CreatedAt,
+		UpdatedAt:    t.UpdatedAt,
 	}
+	if t.UsedAt.Valid {
+		ts := t.UsedAt.Time
+		out.UsedAt = &ts
+	}
+	return out
 }

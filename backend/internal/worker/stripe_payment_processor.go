@@ -17,13 +17,14 @@ import (
 
 // StripePaymentProcessor runs domain side-effects for Stripe webhook event payloads.
 type StripePaymentProcessor struct {
-	orderRepo       repository.OrderRepository
-	reservationRepo repository.ReservationRepository
-	seatRepo        repository.SeatRepository
-	ticketRepo      repository.TicketRepository
-	seatLocker      service.SeatLockerService
-	sseHub          *sse.Hub
-	paymentGW       service.PaymentGateway
+	orderRepo          repository.OrderRepository
+	reservationRepo    repository.ReservationRepository
+	seatRepo           repository.SeatRepository
+	ticketRepo         repository.TicketRepository
+	resaleListingRepo  repository.ResaleListingRepository
+	seatLocker         service.SeatLockerService
+	sseHub             *sse.Hub
+	paymentGW          service.PaymentGateway
 }
 
 func NewStripePaymentProcessor(
@@ -31,18 +32,20 @@ func NewStripePaymentProcessor(
 	reservationRepo repository.ReservationRepository,
 	seatRepo repository.SeatRepository,
 	ticketRepo repository.TicketRepository,
+	resaleListingRepo repository.ResaleListingRepository,
 	seatLocker service.SeatLockerService,
 	sseHub *sse.Hub,
 	paymentGW service.PaymentGateway,
 ) *StripePaymentProcessor {
 	return &StripePaymentProcessor{
-		orderRepo:       orderRepo,
-		reservationRepo: reservationRepo,
-		seatRepo:        seatRepo,
-		ticketRepo:      ticketRepo,
-		seatLocker:      seatLocker,
-		sseHub:          sseHub,
-		paymentGW:       paymentGW,
+		orderRepo:         orderRepo,
+		reservationRepo:   reservationRepo,
+		seatRepo:          seatRepo,
+		ticketRepo:        ticketRepo,
+		resaleListingRepo: resaleListingRepo,
+		seatLocker:        seatLocker,
+		sseHub:            sseHub,
+		paymentGW:         paymentGW,
 	}
 }
 
@@ -184,6 +187,9 @@ func (p *StripePaymentProcessor) fulfillPaidOrder(ctx context.Context, orderID u
 	if order.Status == entity.OrderStatusPaid {
 		return nil
 	}
+	if order.Kind == entity.OrderKindResale {
+		return p.fulfillResalePaidOrder(ctx, order)
+	}
 	if err := order.MarkPaid(); err != nil {
 		return fmt.Errorf("fulfillPaidOrder mark paid: %w", err)
 	}
@@ -215,7 +221,7 @@ func (p *StripePaymentProcessor) fulfillPaidOrder(ctx context.Context, orderID u
 		}
 		_ = p.seatRepo.UpdateStatus(ctx, seat.ID, entity.SeatStatusSold)
 
-		ticket, err := entity.NewTicket(order.ID, seat.EventID, seat.ID)
+		ticket, err := entity.NewTicket(order.ID, seat.EventID, seat.ID, order.UserID)
 		if err != nil {
 			log.Error().Err(err).Msg("new ticket failed")
 			continue
@@ -234,6 +240,55 @@ func (p *StripePaymentProcessor) fulfillPaidOrder(ctx context.Context, orderID u
 	}
 
 	log.Info().Stringer("order_id", order.ID).Msg("order fulfilled successfully")
+	return nil
+}
+
+func (p *StripePaymentProcessor) fulfillResalePaidOrder(ctx context.Context, order *entity.Order) error {
+	if order.ResaleListingID == nil {
+		return fmt.Errorf("fulfillResalePaidOrder: missing resale listing id")
+	}
+	listing, err := p.resaleListingRepo.GetByID(ctx, *order.ResaleListingID)
+	if err != nil {
+		return fmt.Errorf("fulfillResalePaidOrder get listing: %w", err)
+	}
+	ticket, err := p.ticketRepo.GetByID(ctx, listing.TicketID)
+	if err != nil {
+		return fmt.Errorf("fulfillResalePaidOrder get ticket: %w", err)
+	}
+
+	// Idempotent replay: listing already sold and buyer holds the ticket — only ensure order is PAID.
+	if listing.Status == string(entity.ResaleListingStatusSold) && ticket.HolderUserID == order.UserID {
+		if order.Status != entity.OrderStatusPaid {
+			o := *order
+			if err := o.MarkPaid(); err != nil {
+				return fmt.Errorf("fulfillResalePaidOrder mark paid: %w", err)
+			}
+			if err := p.orderRepo.UpdateStatus(ctx, o.ID, o.Status); err != nil {
+				return fmt.Errorf("fulfillResalePaidOrder update order: %w", err)
+			}
+		}
+		log.Info().Stringer("order_id", order.ID).Msg("resale order idempotently fulfilled")
+		return nil
+	}
+
+	if listing.Status != string(entity.ResaleListingStatusActive) {
+		return fmt.Errorf("fulfillResalePaidOrder: listing %s not active (status=%s)", listing.ID, listing.Status)
+	}
+
+	if err := p.resaleListingRepo.MarkSold(ctx, listing.ID); err != nil {
+		return fmt.Errorf("fulfillResalePaidOrder mark listing sold: %w", err)
+	}
+	if err := p.ticketRepo.UpdateHolderUserID(ctx, listing.TicketID, order.UserID); err != nil {
+		return fmt.Errorf("fulfillResalePaidOrder transfer holder: %w", err)
+	}
+	o := *order
+	if err := o.MarkPaid(); err != nil {
+		return fmt.Errorf("fulfillResalePaidOrder mark paid: %w", err)
+	}
+	if err := p.orderRepo.UpdateStatus(ctx, o.ID, o.Status); err != nil {
+		return fmt.Errorf("fulfillResalePaidOrder update order: %w", err)
+	}
+	log.Info().Stringer("order_id", order.ID).Msg("resale order fulfilled successfully")
 	return nil
 }
 
@@ -266,6 +321,10 @@ func (p *StripePaymentProcessor) handlePaymentIntentFailed(ctx context.Context, 
 		return err
 	}
 	_ = p.orderRepo.UpdateStatus(ctx, order.ID, order.Status)
+
+	if order.Kind == entity.OrderKindResale {
+		return nil
+	}
 
 	for _, resID := range order.ReservationIDs {
 		res, err := p.reservationRepo.GetByID(ctx, resID)

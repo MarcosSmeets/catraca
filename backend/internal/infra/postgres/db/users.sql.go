@@ -9,22 +9,24 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, name, email, password_hash, cpf_hash, phone, role)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at
+INSERT INTO users (id, name, email, password_hash, cpf_hash, phone, role, organization_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at, organization_id, stripe_connect_account_id, stripe_connect_charges_enabled
 `
 
 type CreateUserParams struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"password_hash"`
-	CpfHash      string    `json:"cpf_hash"`
-	Phone        string    `json:"phone"`
-	Role         string    `json:"role"`
+	ID             uuid.UUID   `json:"id"`
+	Name           string      `json:"name"`
+	Email          string      `json:"email"`
+	PasswordHash   string      `json:"password_hash"`
+	CpfHash        string      `json:"cpf_hash"`
+	Phone          string      `json:"phone"`
+	Role           string      `json:"role"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -36,6 +38,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.CpfHash,
 		arg.Phone,
 		arg.Role,
+		arg.OrganizationID,
 	)
 	var i User
 	err := row.Scan(
@@ -49,6 +52,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OrganizationID,
+		&i.StripeConnectAccountID,
+		&i.StripeConnectChargesEnabled,
 	)
 	return i, err
 }
@@ -65,7 +71,7 @@ func (q *Queries) ExistsByCPFHash(ctx context.Context, cpfHash string) (bool, er
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL
+SELECT id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at, organization_id, stripe_connect_account_id, stripe_connect_charges_enabled FROM users WHERE email = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -82,12 +88,15 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OrganizationID,
+		&i.StripeConnectAccountID,
+		&i.StripeConnectChargesEnabled,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at FROM users WHERE id = $1 AND deleted_at IS NULL
+SELECT id, name, email, password_hash, cpf_hash, phone, role, created_at, updated_at, deleted_at, organization_id, stripe_connect_account_id, stripe_connect_charges_enabled FROM users WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -104,8 +113,28 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.OrganizationID,
+		&i.StripeConnectAccountID,
+		&i.StripeConnectChargesEnabled,
 	)
 	return i, err
+}
+
+const setUserOrganizationAndRole = `-- name: SetUserOrganizationAndRole :exec
+UPDATE users
+SET organization_id = $2, role = $3, updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type SetUserOrganizationAndRoleParams struct {
+	ID             uuid.UUID   `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Role           string      `json:"role"`
+}
+
+func (q *Queries) SetUserOrganizationAndRole(ctx context.Context, arg SetUserOrganizationAndRoleParams) error {
+	_, err := q.db.Exec(ctx, setUserOrganizationAndRole, arg.ID, arg.OrganizationID, arg.Role)
+	return err
 }
 
 const updateUser = `-- name: UpdateUser :exec
@@ -144,5 +173,24 @@ type UpdateUserPasswordParams struct {
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
 	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const updateUserStripeConnect = `-- name: UpdateUserStripeConnect :exec
+UPDATE users
+SET stripe_connect_account_id = $2,
+    stripe_connect_charges_enabled = $3,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type UpdateUserStripeConnectParams struct {
+	ID                          uuid.UUID `json:"id"`
+	StripeConnectAccountID      string    `json:"stripe_connect_account_id"`
+	StripeConnectChargesEnabled bool      `json:"stripe_connect_charges_enabled"`
+}
+
+func (q *Queries) UpdateUserStripeConnect(ctx context.Context, arg UpdateUserStripeConnectParams) error {
+	_, err := q.db.Exec(ctx, updateUserStripeConnect, arg.ID, arg.StripeConnectAccountID, arg.StripeConnectChargesEnabled)
 	return err
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	pgdb "github.com/marcos-smeets/catraca/backend/internal/infra/postgres/db"
@@ -20,14 +21,40 @@ func NewAdminMetricsRepository(pool *pgxpool.Pool) *AdminMetricsRepository {
 
 // DashboardMetrics carries every aggregate the admin dashboard renders.
 type DashboardMetrics struct {
-	Financial      FinancialMetrics
-	DailyRevenue   []DailyRevenuePoint
-	TicketSections []SectionCount
-	TicketSports   []SportCount
-	TopEvents      []TopEvent
-	TicketStatuses []StatusCount
-	Stadiums       []StadiumSummary
-	OrderStatuses  []OrderStatusMetric
+	Financial            FinancialMetrics
+	DailyRevenue         []DailyRevenuePoint
+	TicketSections       []SectionCount
+	TicketSports         []SportCount
+	TopEvents            []TopEvent
+	TicketStatuses       []StatusCount
+	Stadiums             []StadiumSummary
+	OrderStatuses        []OrderStatusMetric
+	Resale               ResaleMetrics
+	OrganizationsRevenue []OrgRevenueSummary
+	Platform             *PlatformCounts
+}
+
+type PlatformCounts struct {
+	OrganizationCount int64
+	UserCount         int64
+}
+
+type OrgRevenueSummary struct {
+	OrganizationID   uuid.UUID
+	OrganizationName string
+	OrganizationSlug string
+	Revenue30dCents  int64
+	RevenueAllCents  int64
+}
+
+type ResaleMetrics struct {
+	ActiveListings        int64
+	CancelledListings     int64
+	SoldListingsAll       int64
+	ResalePaidOrdersAll   int64
+	ResaleRevenueAllCents int64
+	ResalePaidOrders30d   int64
+	ResaleRevenue30dCents int64
 }
 
 type FinancialMetrics struct {
@@ -94,46 +121,57 @@ type OrderStatusMetric struct {
 	Amount30dCents int64
 }
 
-// GetDashboard runs every aggregate query and assembles a single struct.
-// Queries are issued sequentially against the same pool — the payload is
-// small and latency dominated by disk, so parallelizing adds complexity
-// without meaningful gain.
-func (r *AdminMetricsRepository) GetDashboard(ctx context.Context) (*DashboardMetrics, error) {
-	fin, err := r.queries.GetFinancialTotals(ctx)
+func orgFilterUUID(filterOrgID *uuid.UUID) pgtype.UUID {
+	if filterOrgID == nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: *filterOrgID, Valid: true}
+}
+
+// GetDashboard runs aggregate queries. filterOrgID nil means all organizations.
+// When loadPlatformGlobalExtras is true, filterOrgID must be nil; fills OrganizationsRevenue and Platform.
+func (r *AdminMetricsRepository) GetDashboard(ctx context.Context, filterOrgID *uuid.UUID, loadPlatformGlobalExtras bool) (*DashboardMetrics, error) {
+	pgFilter := orgFilterUUID(filterOrgID)
+
+	fin, err := r.queries.GetFinancialTotals(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetFinancialTotals: %w", err)
 	}
-	tix, err := r.queries.GetTicketFinancials(ctx)
+	tix, err := r.queries.GetTicketFinancials(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetTicketFinancials: %w", err)
 	}
-	daily, err := r.queries.GetDailyRevenue(ctx)
+	daily, err := r.queries.GetDailyRevenue(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetDailyRevenue: %w", err)
 	}
-	sections, err := r.queries.GetTicketsBySection(ctx)
+	sections, err := r.queries.GetTicketsBySection(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetTicketsBySection: %w", err)
 	}
-	sports, err := r.queries.GetTicketsBySport(ctx)
+	sports, err := r.queries.GetTicketsBySport(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetTicketsBySport: %w", err)
 	}
-	topEvents, err := r.queries.GetTopEventsByTickets(ctx)
+	topEvents, err := r.queries.GetTopEventsByTickets(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetTopEventsByTickets: %w", err)
 	}
-	ticketStatus, err := r.queries.GetTicketStatusCounts(ctx)
+	ticketStatus, err := r.queries.GetTicketStatusCounts(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetTicketStatusCounts: %w", err)
 	}
-	stadiums, err := r.queries.GetStadiumSummary(ctx)
+	stadiums, err := r.queries.GetStadiumSummary(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetStadiumSummary: %w", err)
 	}
-	orderStatus, err := r.queries.GetOrderStatusCounts(ctx)
+	orderStatus, err := r.queries.GetOrderStatusCounts(ctx, pgFilter)
 	if err != nil {
 		return nil, fmt.Errorf("GetOrderStatusCounts: %w", err)
+	}
+	resaleRow, err := r.queries.GetResaleMetrics(ctx, pgFilter)
+	if err != nil {
+		return nil, fmt.Errorf("GetResaleMetrics: %w", err)
 	}
 
 	metrics := &DashboardMetrics{
@@ -144,10 +182,17 @@ func (r *AdminMetricsRepository) GetDashboard(ctx context.Context) (*DashboardMe
 			PaidOrders30d:   fin.PaidOrders30d,
 			TicketsAll:      tix.TicketsAll,
 			Tickets30d:      tix.Tickets30d,
-			// Service fees = paid revenue minus the sum of seat prices for those tickets.
-			// Total includes service fee (see CreateOrderUseCase); subtracting gives the fee portion.
-			ServiceFeesAll: fin.RevenueAllCents - tix.BaseCentsAll,
-			ServiceFees30d: fin.Revenue30dCents - tix.BaseCents30d,
+			ServiceFeesAll:  fin.RevenueAllCents - tix.BaseCentsAll,
+			ServiceFees30d:  fin.Revenue30dCents - tix.BaseCents30d,
+		},
+		Resale: ResaleMetrics{
+			ActiveListings:        resaleRow.ActiveListings,
+			CancelledListings:     resaleRow.CancelledListings,
+			SoldListingsAll:       resaleRow.SoldListingsAll,
+			ResalePaidOrdersAll:   resaleRow.ResalePaidOrdersAll,
+			ResaleRevenueAllCents: resaleRow.ResaleRevenueAllCents,
+			ResalePaidOrders30d:   resaleRow.ResalePaidOrders30d,
+			ResaleRevenue30dCents: resaleRow.ResaleRevenue30dCents,
 		},
 	}
 
@@ -228,6 +273,38 @@ func (r *AdminMetricsRepository) GetDashboard(ctx context.Context) (*DashboardMe
 			AmountAllCents: s.AmountAllCents,
 			Amount30dCents: s.Amount30dCents,
 		})
+	}
+
+	if loadPlatformGlobalExtras {
+		if filterOrgID != nil {
+			return nil, fmt.Errorf("loadPlatformGlobalExtras requires nil filterOrgID")
+		}
+		orgRows, err := r.queries.GetOrgRevenueSummary(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("GetOrgRevenueSummary: %w", err)
+		}
+		metrics.OrganizationsRevenue = make([]OrgRevenueSummary, 0, len(orgRows))
+		for _, row := range orgRows {
+			metrics.OrganizationsRevenue = append(metrics.OrganizationsRevenue, OrgRevenueSummary{
+				OrganizationID:   row.OrganizationID,
+				OrganizationName: row.OrganizationName,
+				OrganizationSlug: row.OrganizationSlug,
+				Revenue30dCents:  row.Revenue30dCents,
+				RevenueAllCents:  row.RevenueAllCents,
+			})
+		}
+		nOrg, err := r.queries.CountActiveOrganizations(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("CountActiveOrganizations: %w", err)
+		}
+		nUsers, err := r.queries.CountActiveUsers(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("CountActiveUsers: %w", err)
+		}
+		metrics.Platform = &PlatformCounts{
+			OrganizationCount: nOrg,
+			UserCount:         nUsers,
+		}
 	}
 
 	return metrics, nil

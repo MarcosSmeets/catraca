@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,16 +19,24 @@ type EventHandler struct {
 	listEventsUC *eventuc.ListEventsUseCase
 	getEventUC   *eventuc.GetEventUseCase
 	listSeatsUC  *eventuc.ListSeatsUseCase
+	orgRepo      repository.OrganizationRepository
 }
 
-func NewEventHandler(listEventsUC *eventuc.ListEventsUseCase, getEventUC *eventuc.GetEventUseCase, listSeatsUC *eventuc.ListSeatsUseCase) *EventHandler {
+func NewEventHandler(
+	listEventsUC *eventuc.ListEventsUseCase,
+	getEventUC *eventuc.GetEventUseCase,
+	listSeatsUC *eventuc.ListSeatsUseCase,
+	orgRepo repository.OrganizationRepository,
+) *EventHandler {
 	return &EventHandler{
 		listEventsUC: listEventsUC,
 		getEventUC:   getEventUC,
 		listSeatsUC:  listSeatsUC,
+		orgRepo:      orgRepo,
 	}
 }
 
+// List lists published events without organization scoping (legacy public catalog).
 func (h *EventHandler) List(w http.ResponseWriter, r *http.Request) {
 	input := eventuc.ListEventsInput{}
 
@@ -99,6 +108,7 @@ func (h *EventHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Get returns an event without organization scoping (legacy).
 func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -107,7 +117,7 @@ func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	e, err := h.getEventUC.Execute(r.Context(), id)
+	e, err := h.getEventUC.Execute(r.Context(), eventuc.GetEventInput{EventID: id})
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "event not found")
@@ -120,6 +130,7 @@ func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toEventResponse(e))
 }
 
+// ListSeats lists seats for an event without organization scoping (legacy).
 func (h *EventHandler) ListSeats(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	eventID, err := uuid.Parse(idStr)
@@ -128,8 +139,167 @@ func (h *EventHandler) ListSeats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	seats, err := h.listSeatsUC.Execute(r.Context(), eventID)
+	seats, err := h.listSeatsUC.Execute(r.Context(), eventuc.ListSeatsInput{EventID: eventID})
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list seats")
+		return
+	}
+
+	resp := make([]dto.SeatResponse, 0, len(seats))
+	for _, s := range seats {
+		resp = append(resp, toSeatResponse(s))
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *EventHandler) resolveOrgFromSlug(w http.ResponseWriter, r *http.Request) (*entity.Organization, bool) {
+	slug := strings.TrimSpace(strings.ToLower(chi.URLParam(r, "slug")))
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "organization slug is required")
+		return nil, false
+	}
+	o, err := h.orgRepo.GetBySlug(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "organization not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to resolve organization")
+		}
+		return nil, false
+	}
+	return o, true
+}
+
+func (h *EventHandler) ListByOrganization(w http.ResponseWriter, r *http.Request) {
+	org, ok := h.resolveOrgFromSlug(w, r)
+	if !ok {
+		return
+	}
+	input := eventuc.ListEventsInput{
+		OrganizationID:     &org.ID,
+		TenantBuyerCatalog: true,
+	}
+
+	if s := r.URL.Query().Get("sport"); s != "" {
+		sport := entity.SportType(s)
+		input.Sport = &sport
+	}
+	if l := r.URL.Query().Get("league"); l != "" {
+		input.League = &l
+	}
+	if c := r.URL.Query().Get("city"); c != "" {
+		input.City = &c
+	}
+	if q := r.URL.Query().Get("q"); q != "" {
+		input.Q = &q
+	}
+	if df := r.URL.Query().Get("date_from"); df != "" {
+		input.DateFrom = &df
+	}
+	if dt := r.URL.Query().Get("date_to"); dt != "" {
+		input.DateTo = &dt
+	}
+	if s := r.URL.Query().Get("sort"); s != "" {
+		input.Sort = &s
+	}
+	if mp := r.URL.Query().Get("min_price"); mp != "" {
+		if v, err := strconv.ParseInt(mp, 10, 64); err == nil {
+			input.MinPrice = &v
+		}
+	}
+	if mp := r.URL.Query().Get("max_price"); mp != "" {
+		if v, err := strconv.ParseInt(mp, 10, 64); err == nil {
+			input.MaxPrice = &v
+		}
+	}
+
+	limit := 20
+	if lim := r.URL.Query().Get("limit"); lim != "" {
+		if v, err := strconv.Atoi(lim); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	input.Limit = limit
+
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	input.Offset = (page - 1) * limit
+
+	result, err := h.listEventsUC.Execute(r.Context(), input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list events")
+		return
+	}
+
+	resp := make([]dto.EventResponse, 0, len(result.Events))
+	for _, e := range result.Events {
+		resp = append(resp, toEventResponse(e))
+	}
+
+	writeJSON(w, http.StatusOK, dto.EventListResponse{
+		Events: resp,
+		Total:  result.Total,
+		Page:   page,
+		Limit:  limit,
+	})
+}
+
+func (h *EventHandler) GetByOrganization(w http.ResponseWriter, r *http.Request) {
+	org, ok := h.resolveOrgFromSlug(w, r)
+	if !ok {
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	e, err := h.getEventUC.Execute(r.Context(), eventuc.GetEventInput{
+		EventID:            id,
+		OrganizationID:     &org.ID,
+		TenantBuyerCatalog: true,
+	})
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get event")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toEventResponse(e))
+}
+
+func (h *EventHandler) ListSeatsByOrganization(w http.ResponseWriter, r *http.Request) {
+	org, ok := h.resolveOrgFromSlug(w, r)
+	if !ok {
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	eventID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event ID")
+		return
+	}
+
+	seats, err := h.listSeatsUC.Execute(r.Context(), eventuc.ListSeatsInput{
+		EventID:            eventID,
+		OrganizationID:     &org.ID,
+		TenantBuyerCatalog: true,
+	})
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to list seats")
 		return
 	}

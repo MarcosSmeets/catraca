@@ -20,14 +20,13 @@ func (uc *ListTicketsUseCase) Execute(ctx context.Context, userID uuid.UUID) ([]
 	return uc.ticketRepo.ListByUserIDWithDetails(ctx, userID)
 }
 
-// GetTicketUseCase fetches a single ticket with enriched data, enforcing ownership.
+// GetTicketUseCase fetches a single ticket with enriched data, enforcing ownership by current holder.
 type GetTicketUseCase struct {
 	ticketRepo repository.TicketRepository
-	orderRepo  repository.OrderRepository
 }
 
-func NewGetTicketUseCase(ticketRepo repository.TicketRepository, orderRepo repository.OrderRepository) *GetTicketUseCase {
-	return &GetTicketUseCase{ticketRepo: ticketRepo, orderRepo: orderRepo}
+func NewGetTicketUseCase(ticketRepo repository.TicketRepository) *GetTicketUseCase {
+	return &GetTicketUseCase{ticketRepo: ticketRepo}
 }
 
 func (uc *GetTicketUseCase) Execute(ctx context.Context, ticketID, userID uuid.UUID) (*repository.TicketWithDetails, error) {
@@ -35,12 +34,7 @@ func (uc *GetTicketUseCase) Execute(ctx context.Context, ticketID, userID uuid.U
 	if err != nil {
 		return nil, err
 	}
-	// Verify ownership via the order
-	order, err := uc.orderRepo.GetByID(ctx, ticket.OrderID)
-	if err != nil {
-		return nil, err
-	}
-	if order.UserID != userID {
+	if ticket.HolderUserID != userID {
 		return nil, repository.ErrNotFound
 	}
 	return ticket, nil
