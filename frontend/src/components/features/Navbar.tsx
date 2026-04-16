@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/auth";
 import { logout } from "@/lib/auth-api";
 import ThemeToggle from "@/components/ui/ThemeToggle";
@@ -34,12 +34,9 @@ export default function Navbar() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const clear = useAuthStore((s) => s.clear);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [modulesOpen, setModulesOpen] = useState(false);
-  const modulesWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMenuOpen(false);
-    setModulesOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -53,16 +50,6 @@ export default function Navbar() {
     };
   }, [menuOpen]);
 
-  useEffect(() => {
-    if (!modulesOpen) return;
-    const onDown = (e: MouseEvent) => {
-      const el = modulesWrapRef.current;
-      if (el && !el.contains(e.target as Node)) setModulesOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [modulesOpen]);
-
   async function handleLogout() {
     try {
       await logout(accessToken);
@@ -71,7 +58,6 @@ export default function Navbar() {
     }
     clear();
     setMenuOpen(false);
-    setModulesOpen(false);
     router.push("/login");
   }
 
@@ -86,9 +72,6 @@ export default function Navbar() {
         : "text-on-surface/50 hover:text-on-surface",
     ].join(" ");
 
-  const dropItem =
-    "block px-4 py-2.5 text-sm font-display font-semibold tracking-tight text-on-surface transition-colors duration-150 hover:bg-surface-high";
-
   return (
     <>
       <header className={`fixed top-0 left-0 right-0 z-50 ${headerBar}`}>
@@ -99,61 +82,6 @@ export default function Navbar() {
           >
             <CatracaHeaderBrand />
           </Link>
-
-          <div className="relative hidden shrink-0 md:block" ref={modulesWrapRef}>
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-sm px-2 py-2 text-on-surface/60 transition-colors duration-150 hover:bg-surface-high hover:text-on-surface"
-              onClick={() => setModulesOpen((v) => !v)}
-              aria-expanded={modulesOpen}
-              aria-haspopup="menu"
-              aria-controls="menu-modulos"
-              id="btn-modulos"
-            >
-              <HamburgerIcon />
-              <span className="text-xs font-display font-semibold uppercase tracking-wide">
-                Módulos
-              </span>
-            </button>
-            {modulesOpen && (
-              <div
-                id="menu-modulos"
-                role="menu"
-                aria-labelledby="btn-modulos"
-                className="absolute left-0 top-full z-[60] mt-1 w-56 rounded-sm border border-outline-variant bg-surface-lowest py-1 shadow-lg"
-              >
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    role="menuitem"
-                    href={link.href}
-                    onClick={() => setModulesOpen(false)}
-                    className={dropItem}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-                <Link
-                  role="menuitem"
-                  href="/cart"
-                  onClick={() => setModulesOpen(false)}
-                  className={dropItem}
-                >
-                  Carrinho
-                </Link>
-                {user ? (
-                  <Link
-                    role="menuitem"
-                    href="/profile"
-                    onClick={() => setModulesOpen(false)}
-                    className={dropItem}
-                  >
-                    Perfil
-                  </Link>
-                ) : null}
-              </div>
-            )}
-          </div>
 
           <nav
             className="mx-2 hidden min-w-0 flex-1 items-center justify-center gap-6 overflow-x-auto md:flex lg:gap-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
