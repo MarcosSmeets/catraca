@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuthStore } from "@/store/auth";
 import { logout } from "@/lib/auth-api";
 import ThemeToggle from "@/components/ui/ThemeToggle";
-import Logo from "@/components/brand/Logo";
+import CatracaHeaderBrand from "@/components/brand/CatracaHeaderBrand";
 
 const navLinks = [
-  { href: "/", label: "Home" },
-  { href: "/search", label: "Explorar" },
-  { href: "/tickets", label: "Meus Ingressos" },
-];
+  { href: "/", label: "INÍCIO" },
+  { href: "/search", label: "EXPLORAR" },
+  { href: "/tickets", label: "MEUS INGRESSOS" },
+] as const;
 
 function getInitials(name: string) {
   return name
@@ -23,6 +23,10 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
+function linkActive(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -30,13 +34,14 @@ export default function Navbar() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const clear = useAuthStore((s) => s.clear);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [modulesOpen, setModulesOpen] = useState(false);
+  const modulesWrapRef = useRef<HTMLDivElement>(null);
 
-  // Close menu on route change
   useEffect(() => {
     setMenuOpen(false);
+    setModulesOpen(false);
   }, [pathname]);
 
-  // Lock body scroll while menu is open
   useEffect(() => {
     if (menuOpen) {
       document.body.classList.add("overflow-hidden");
@@ -48,6 +53,16 @@ export default function Navbar() {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!modulesOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const el = modulesWrapRef.current;
+      if (el && !el.contains(e.target as Node)) setModulesOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [modulesOpen]);
+
   async function handleLogout() {
     try {
       await logout(accessToken);
@@ -56,75 +71,126 @@ export default function Navbar() {
     }
     clear();
     setMenuOpen(false);
+    setModulesOpen(false);
     router.push("/login");
   }
 
+  const headerBar =
+    "border-b border-white/10 bg-gradient-to-r from-brand-teal-deep via-brand-teal to-brand-teal-deep";
+
+  const navLinkClass = (active: boolean) =>
+    [
+      "whitespace-nowrap border-b-2 border-transparent pb-0.5 text-[11px] sm:text-xs font-display font-semibold tracking-wide uppercase transition-colors duration-150 shrink-0",
+      active ? "border-brand-red text-white" : "text-white/75 hover:text-white",
+    ].join(" ");
+
+  const dropItem =
+    "block px-4 py-2.5 text-sm font-display font-semibold tracking-tight text-white/90 hover:bg-white/10 transition-colors duration-150";
+
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-surface-lowest/80 backdrop-blur-[20px] border-b border-outline-variant">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <header className={`fixed top-0 left-0 right-0 z-50 ${headerBar}`}>
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-5">
           <Link
             href="/"
-            className="flex h-full min-h-0 min-w-0 shrink-0 items-center group py-1"
+            className="flex min-h-0 min-w-0 shrink-0 items-center py-1 opacity-95 transition-opacity duration-150 hover:opacity-100"
           >
-            <Logo
-              variant="wordmark"
-              priority
-              className="!h-[52px] !max-h-[56px] !w-auto max-w-[min(72vw,640px)] sm:max-w-[min(60vw,720px)] object-contain object-left group-hover:opacity-90 transition-opacity duration-150"
-            />
+            <CatracaHeaderBrand />
           </Link>
 
-          {/* Nav links — desktop only */}
-          <nav className="hidden md:flex items-center gap-8">
-            {navLinks.map((link) => {
-              const isActive =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(link.href);
-              return (
+          <div className="relative hidden shrink-0 md:block" ref={modulesWrapRef}>
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-sm px-2 py-2 text-white/85 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+              onClick={() => setModulesOpen((v) => !v)}
+              aria-expanded={modulesOpen}
+              aria-haspopup="menu"
+              aria-controls="menu-modulos"
+              id="btn-modulos"
+            >
+              <HamburgerIcon className="text-white/90" />
+              <span className="text-xs font-display font-semibold uppercase tracking-wide">
+                Módulos
+              </span>
+            </button>
+            {modulesOpen && (
+              <div
+                id="menu-modulos"
+                role="menu"
+                aria-labelledby="btn-modulos"
+                className="absolute left-0 top-full z-[60] mt-1 w-56 rounded-sm border border-white/10 bg-brand-teal-deep py-1 shadow-lg"
+              >
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    role="menuitem"
+                    href={link.href}
+                    onClick={() => setModulesOpen(false)}
+                    className={dropItem}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
                 <Link
-                  key={link.href}
-                  href={link.href}
-                  className={[
-                    "text-sm font-body transition-colors duration-150",
-                    isActive
-                      ? "text-accent font-semibold"
-                      : "text-on-surface/50 hover:text-on-surface",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
+                  role="menuitem"
+                  href="/cart"
+                  onClick={() => setModulesOpen(false)}
+                  className={dropItem}
                 >
+                  Carrinho
+                </Link>
+                {user ? (
+                  <Link
+                    role="menuitem"
+                    href="/profile"
+                    onClick={() => setModulesOpen(false)}
+                    className={dropItem}
+                  >
+                    Perfil
+                  </Link>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <nav
+            className="mx-2 hidden min-w-0 flex-1 items-center justify-center gap-4 overflow-x-auto md:flex lg:gap-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Principal"
+          >
+            {navLinks.map((link) => {
+              const active = linkActive(pathname, link.href);
+              return (
+                <Link key={link.href} href={link.href} className={navLinkClass(active)}>
                   {link.label}
                 </Link>
               );
             })}
           </nav>
 
-          {/* Right actions */}
-          <div className="flex items-center gap-1">
-            <ThemeToggle />
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1 md:ml-0">
+            <ThemeToggle className="text-white/70 hover:text-white hover:bg-white/10" />
             <Link
               href="/cart"
-              className="relative p-2 text-on-surface/50 hover:text-on-surface transition-colors duration-150 rounded-sm hover:bg-surface-high"
+              className="relative rounded-sm p-2 text-white/70 transition-colors duration-150 hover:bg-white/10 hover:text-white"
               aria-label="Carrinho"
             >
               <CartIcon />
             </Link>
 
-            {/* Desktop auth */}
-            <div className="hidden md:flex items-center gap-2 ml-2">
+            <div className="ml-1 hidden items-center gap-2 md:flex">
               {user ? (
                 <>
                   <Link
                     href="/profile"
-                    className="w-8 h-8 rounded-sm bg-primary flex items-center justify-center text-on-primary text-xs font-display font-bold"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-xs font-display font-bold text-white ring-1 ring-white/25 transition-colors duration-150 hover:bg-white/25"
                     title={user.name}
                   >
                     {getInitials(user.name)}
                   </Link>
                   <button
+                    type="button"
                     onClick={handleLogout}
-                    className="text-xs font-body text-on-surface/40 hover:text-on-surface transition-colors duration-150"
+                    className="text-xs font-body text-white/55 transition-colors duration-150 hover:text-white"
                   >
                     Sair
                   </button>
@@ -133,13 +199,13 @@ export default function Navbar() {
                 <>
                   <Link
                     href="/login"
-                    className="text-sm font-body text-on-surface/50 hover:text-on-surface transition-colors duration-150"
+                    className="text-sm font-body text-white/75 transition-colors duration-150 hover:text-white"
                   >
                     Entrar
                   </Link>
                   <Link
                     href="/cadastro"
-                    className="px-4 py-2 text-sm font-display font-semibold tracking-tight bg-gradient-to-br from-accent to-accent/85 text-on-accent rounded-sm hover:opacity-90 transition-opacity duration-150"
+                    className="rounded-sm bg-gradient-to-br from-brand-red to-brand-red/85 px-4 py-2 text-sm font-display font-semibold tracking-tight text-white transition-opacity duration-150 hover:opacity-90"
                   >
                     Criar conta
                   </Link>
@@ -147,9 +213,9 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Hamburger — mobile only */}
             <button
-              className="md:hidden p-2 text-on-surface/60 hover:text-on-surface transition-colors duration-150 rounded-sm hover:bg-surface-high ml-1"
+              type="button"
+              className="rounded-sm p-2 text-white/80 transition-colors duration-150 hover:bg-white/10 hover:text-white md:hidden"
               onClick={() => setMenuOpen((v) => !v)}
               aria-label={menuOpen ? "Fechar menu" : "Abrir menu"}
               aria-expanded={menuOpen}
@@ -160,56 +226,56 @@ export default function Navbar() {
         </div>
       </header>
 
-      {/* Mobile drawer overlay */}
       {menuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-surface pt-16 flex flex-col md:hidden"
+          className="fixed inset-0 z-40 flex flex-col bg-brand-teal-deep pt-16 md:hidden"
           aria-modal="true"
           role="dialog"
           aria-label="Menu de navegação"
         >
-          <nav className="flex flex-col px-6 py-6 gap-1 flex-1 overflow-y-auto">
+          <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-5 py-6">
             {navLinks.map((link) => {
-              const isActive =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(link.href);
+              const active = linkActive(pathname, link.href);
               return (
                 <Link
                   key={link.href}
                   href={link.href}
                   onClick={() => setMenuOpen(false)}
                   className={[
-                    "flex items-center gap-4 px-4 py-4 rounded-sm text-base font-display font-semibold tracking-tight transition-colors duration-150",
-                    isActive
-                      ? "bg-accent text-on-accent"
-                      : "text-on-surface/70 hover:bg-surface-low hover:text-on-surface",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
+                    "rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight transition-colors duration-150",
+                    active ? "bg-brand-red/25 text-white" : "text-white/80 hover:bg-white/10 hover:text-white",
+                  ].join(" ")}
                 >
                   {link.label}
                 </Link>
               );
             })}
+            <Link
+              href="/cart"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight text-white/80 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+            >
+              Carrinho
+            </Link>
 
-            <div className="my-4 border-t border-outline-variant" />
+            <div className="my-4 border-t border-white/15" />
 
             {user ? (
               <>
                 <Link
                   href="/profile"
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-4 px-4 py-4 rounded-sm text-base font-display font-semibold tracking-tight text-on-surface/70 hover:bg-surface-low hover:text-on-surface transition-colors duration-150"
+                  className="flex items-center gap-4 rounded-sm px-4 py-4 text-base font-display font-semibold tracking-tight text-white/85 transition-colors duration-150 hover:bg-white/10"
                 >
-                  <span className="w-8 h-8 rounded-sm bg-primary flex items-center justify-center text-on-primary text-xs font-display font-bold shrink-0">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-display font-bold text-white ring-1 ring-white/25">
                     {getInitials(user.name)}
                   </span>
                   {user.name}
                 </Link>
                 <button
+                  type="button"
                   onClick={handleLogout}
-                  className="flex items-center gap-4 px-4 py-4 rounded-sm text-base font-display font-semibold tracking-tight text-on-surface/40 hover:bg-error/10 hover:text-error transition-colors duration-150 text-left"
+                  className="rounded-sm px-4 py-4 text-left text-base font-display font-semibold tracking-tight text-white/50 transition-colors duration-150 hover:bg-brand-red/15 hover:text-white"
                 >
                   Sair
                 </button>
@@ -219,14 +285,14 @@ export default function Navbar() {
                 <Link
                   href="/login"
                   onClick={() => setMenuOpen(false)}
-                  className="w-full py-3 text-center text-base font-display font-semibold tracking-tight text-on-surface border border-outline-variant rounded-sm hover:bg-surface-low transition-colors duration-150"
+                  className="w-full rounded-sm border border-white/25 py-3 text-center text-base font-display font-semibold tracking-tight text-white transition-colors duration-150 hover:bg-white/10"
                 >
                   Entrar
                 </Link>
                 <Link
                   href="/cadastro"
                   onClick={() => setMenuOpen(false)}
-                  className="w-full py-3 text-center text-base font-display font-semibold tracking-tight bg-gradient-to-br from-accent to-accent/85 text-on-accent rounded-sm hover:opacity-90 transition-opacity duration-150"
+                  className="w-full rounded-sm bg-gradient-to-br from-brand-red to-brand-red/85 py-3 text-center text-base font-display font-semibold tracking-tight text-white transition-opacity duration-150 hover:opacity-90"
                 >
                   Criar conta
                 </Link>
@@ -258,7 +324,7 @@ function CartIcon() {
   );
 }
 
-function HamburgerIcon() {
+function HamburgerIcon({ className = "" }: { className?: string }) {
   return (
     <svg
       width="20"
@@ -269,6 +335,7 @@ function HamburgerIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      className={className}
       aria-hidden="true"
     >
       <line x1="3" y1="6" x2="21" y2="6" />

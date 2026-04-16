@@ -19,6 +19,11 @@
   --color-outline-variant: rgba(26, 28, 28, 0.2);
   --color-error: #ba1a1a;
 
+  /* Catraca brand — header / marketing (independent of light/dark surfaces) */
+  --color-brand-red: #e60039;
+  --color-brand-teal: #2a433d;
+  --color-brand-teal-deep: #1a2c28;
+
   /* Typography */
   --font-display: var(--font-space-grotesk), "Space Grotesk", sans-serif;
   --font-body: var(--font-inter), "Inter", sans-serif;

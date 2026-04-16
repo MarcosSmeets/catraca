@@ -2,7 +2,7 @@
 
 import { useTheme } from "@/hooks/useTheme";
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ className = "" }: { className?: string }) {
   const { theme, toggleTheme, mounted } = useTheme();
 
   // Render nothing until mounted to avoid hydration mismatch
@@ -16,7 +16,12 @@ export default function ThemeToggle() {
     <button
       onClick={toggleTheme}
       aria-label={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
-      className="relative w-9 h-9 flex items-center justify-center text-on-surface/50 hover:text-on-surface transition-colors duration-150 rounded-sm hover:bg-surface-high"
+      className={[
+        "relative w-9 h-9 flex items-center justify-center text-on-surface/50 hover:text-on-surface transition-colors duration-150 rounded-sm hover:bg-surface-high",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {isDark ? <SunIcon /> : <MoonIcon />}
     </button>
