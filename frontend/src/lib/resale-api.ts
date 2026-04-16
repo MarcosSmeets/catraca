@@ -21,6 +21,11 @@ export interface ResaleMarketplaceListing extends ResaleListing {
   eventStartsAt: string;
 }
 
+export interface ResaleHoldResponse {
+  holdId: string;
+  expiresAt: string;
+}
+
 export interface ResaleBuyerPayload {
   buyerName: string;
   buyerEmail: string;
@@ -94,15 +99,32 @@ export async function cancelResaleListing(listingId: string): Promise<void> {
   });
 }
 
+export async function createResaleListingHold(listingId: string): Promise<ResaleHoldResponse> {
+  const token = useAuthStore.getState().accessToken;
+  return apiFetch<ResaleHoldResponse>(`/me/resale-listings/${encodeURIComponent(listingId)}/hold`, {
+    method: "POST",
+    accessToken: token,
+  });
+}
+
+export async function releaseResaleListingHold(holdId: string): Promise<void> {
+  const token = useAuthStore.getState().accessToken;
+  await apiFetch<void>(`/me/resale-listings/holds/${encodeURIComponent(holdId)}`, {
+    method: "DELETE",
+    accessToken: token,
+  });
+}
+
 export async function createResaleCheckoutSession(
   listingId: string,
+  holdId: string,
   buyer: ResaleBuyerPayload
 ): Promise<{ url: string }> {
   const token = useAuthStore.getState().accessToken;
   return apiFetch<{ url: string }>(`/resale-listings/${listingId}/checkout-session`, {
     method: "POST",
     accessToken: token,
-    body: JSON.stringify(buyer),
+    body: JSON.stringify({ holdId, ...buyer }),
   });
 }
 

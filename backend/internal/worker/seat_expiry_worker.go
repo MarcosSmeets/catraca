@@ -17,11 +17,12 @@ import (
 // SeatExpiryWorker subscribes to Redis keyspace notifications for expired seat locks
 // and releases the corresponding DB reservation + seat status.
 type SeatExpiryWorker struct {
-	redisClient     *goredis.Client
-	reservationRepo repository.ReservationRepository
-	seatRepo        repository.SeatRepository
-	orderRepo       repository.OrderRepository
-	sseHub          *sse.Hub
+	redisClient       *goredis.Client
+	reservationRepo   repository.ReservationRepository
+	seatRepo          repository.SeatRepository
+	orderRepo         repository.OrderRepository
+	resaleHoldRepo    repository.ResaleListingHoldRepository
+	sseHub            *sse.Hub
 }
 
 func NewSeatExpiryWorker(
@@ -29,6 +30,7 @@ func NewSeatExpiryWorker(
 	reservationRepo repository.ReservationRepository,
 	seatRepo repository.SeatRepository,
 	orderRepo repository.OrderRepository,
+	resaleHoldRepo repository.ResaleListingHoldRepository,
 	sseHub *sse.Hub,
 ) *SeatExpiryWorker {
 	return &SeatExpiryWorker{
@@ -36,6 +38,7 @@ func NewSeatExpiryWorker(
 		reservationRepo: reservationRepo,
 		seatRepo:        seatRepo,
 		orderRepo:       orderRepo,
+		resaleHoldRepo:  resaleHoldRepo,
 		sseHub:          sseHub,
 	}
 }
@@ -108,6 +111,11 @@ func (w *SeatExpiryWorker) sweepExpiredActive(ctx context.Context) {
 	}
 	for _, row := range rows {
 		w.handleExpiry(ctx, row.EventID, row.SeatID)
+	}
+	if w.resaleHoldRepo != nil {
+		if err := w.resaleHoldRepo.ExpireStale(ctx); err != nil {
+			log.Error().Err(err).Msg("expire stale resale listing holds")
+		}
 	}
 }
 

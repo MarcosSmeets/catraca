@@ -24,6 +24,8 @@ type ResaleHandler struct {
 	listMine        *resaleuc.ListMyResaleListingsUseCase
 	listByEvent     *resaleuc.ListEventResaleListingsUseCase
 	listGlobal      *resaleuc.ListGlobalResaleListingsUseCase
+	reserveHold     *resaleuc.ReserveResaleListingUseCase
+	releaseHold     *resaleuc.ReleaseResaleListingHoldUseCase
 	createCheckout  *resaleuc.CreateResaleCheckoutUseCase
 	orgRepo         repository.OrganizationRepository
 	getEventUC      *eventuc.GetEventUseCase
@@ -38,6 +40,8 @@ type ResaleHandlerDeps struct {
 	ListMine        *resaleuc.ListMyResaleListingsUseCase
 	ListByEvent     *resaleuc.ListEventResaleListingsUseCase
 	ListGlobal      *resaleuc.ListGlobalResaleListingsUseCase
+	ReserveHold     *resaleuc.ReserveResaleListingUseCase
+	ReleaseHold     *resaleuc.ReleaseResaleListingHoldUseCase
 	CreateCheckout  *resaleuc.CreateResaleCheckoutUseCase
 	OrganizationRepo repository.OrganizationRepository
 	GetEventUC       *eventuc.GetEventUseCase
@@ -53,6 +57,8 @@ func NewResaleHandler(d ResaleHandlerDeps) *ResaleHandler {
 		listMine:        d.ListMine,
 		listByEvent:     d.ListByEvent,
 		listGlobal:      d.ListGlobal,
+		reserveHold:     d.ReserveHold,
+		releaseHold:     d.ReleaseHold,
 		createCheckout:  d.CreateCheckout,
 		orgRepo:         d.OrganizationRepo,
 		getEventUC:      d.GetEventUC,
@@ -87,6 +93,68 @@ func (h *ResaleHandler) ListGlobalResaleListings(w http.ResponseWriter, r *http.
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *ResaleHandler) PostResaleListingHold(w http.ResponseWriter, r *http.Request) {
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	listingID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid listing id")
+		return
+	}
+	out, err := h.reserveHold.Execute(r.Context(), resaleuc.ReserveResaleListingInput{
+		UserID:    claims.UserID,
+		ListingID: listingID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			writeError(w, http.StatusNotFound, "listing not found")
+		case errors.Is(err, resaleuc.ErrCannotBuyOwnListing):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, resaleuc.ErrResaleHoldListingNotActive):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, resaleuc.ErrResaleHoldConflict):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to reserve listing")
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, dto.ResaleHoldResponse{
+		HoldID:    out.HoldID.String(),
+		ExpiresAt: out.ExpiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func (h *ResaleHandler) DeleteResaleListingHold(w http.ResponseWriter, r *http.Request) {
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	holdID, err := uuid.Parse(chi.URLParam(r, "holdId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hold id")
+		return
+	}
+	err = h.releaseHold.Execute(r.Context(), resaleuc.ReleaseResaleListingHoldInput{
+		UserID: claims.UserID,
+		HoldID: holdID,
+	})
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "hold not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *ResaleHandler) PostTicketResaleListing(w http.ResponseWriter, r *http.Request) {
@@ -263,6 +331,11 @@ func (h *ResaleHandler) PostResaleListingCheckout(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	holdID, err := uuid.Parse(strings.TrimSpace(body.HoldID))
+	if err != nil || holdID == uuid.Nil {
+		writeError(w, http.StatusBadRequest, "holdId is required")
+		return
+	}
 	buyer := entity.BuyerDetails{
 		Name: body.BuyerName, Email: body.BuyerEmail, CPF: body.BuyerCpf, Phone: body.BuyerPhone,
 		CEP: body.BuyerCep, Street: body.BuyerStreet, Neighborhood: body.BuyerNeighborhood,
@@ -271,6 +344,7 @@ func (h *ResaleHandler) PostResaleListingCheckout(w http.ResponseWriter, r *http
 	out, err := h.createCheckout.Execute(r.Context(), resaleuc.CreateResaleCheckoutInput{
 		BuyerUserID:    claims.UserID,
 		ListingID:      listingID,
+		HoldID:         holdID,
 		Buyer:          buyer,
 		SuccessURLBase: h.checkoutSuccess,
 		CancelURLBase:  h.checkoutCancel,
@@ -280,6 +354,8 @@ func (h *ResaleHandler) PostResaleListingCheckout(w http.ResponseWriter, r *http
 		case errors.Is(err, repository.ErrNotFound):
 			writeError(w, http.StatusNotFound, "listing not found")
 		case errors.Is(err, resaleuc.ErrCannotBuyOwnListing):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, resaleuc.ErrInvalidResaleHold):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, orderuc.ErrStripeCheckoutDisabled):
 			writeError(w, http.StatusServiceUnavailable, "stripe is not configured")

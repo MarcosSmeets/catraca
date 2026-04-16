@@ -31,7 +31,13 @@ type ResaleMarketplaceListingResponse struct {
 	Number           string `json:"number,omitempty"`
 }
 
+type ResaleHoldResponse struct {
+	HoldID    string `json:"holdId"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
 type ResaleCheckoutRequest struct {
+	HoldID            string `json:"holdId"`
 	BuyerName         string `json:"buyerName"`
 	BuyerEmail        string `json:"buyerEmail"`
 	BuyerCpf          string `json:"buyerCpf"`

@@ -69,6 +69,16 @@ type Organization struct {
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type ResaleListingHold struct {
+	ID              uuid.UUID `json:"id"`
+	ResaleListingID uuid.UUID `json:"resale_listing_id"`
+	UserID          uuid.UUID `json:"user_id"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 type Reservation struct {
 	ID        uuid.UUID `json:"id"`
 	SeatID    uuid.UUID `json:"seat_id"`

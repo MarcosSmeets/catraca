@@ -75,6 +75,7 @@ func main() {
 	orderRepo := pginfra.NewOrderRepository(pool)
 	ticketRepo := pginfra.NewTicketRepository(pool)
 	resaleListingRepo := pginfra.NewResaleListingRepository(pool)
+	resaleHoldRepo := pginfra.NewResaleListingHoldRepository(pool)
 	stripeWebhookInboxRepo := pginfra.NewStripeWebhookInboxRepository(pool)
 	adminMetricsRepo := pginfra.NewAdminMetricsRepository(pool)
 
@@ -126,12 +127,14 @@ func main() {
 	listMyResalesUC := resaleuc.NewListMyResaleListingsUseCase(resaleListingRepo)
 	listEventResalesUC := resaleuc.NewListEventResaleListingsUseCase(resaleListingRepo)
 	listGlobalResalesUC := resaleuc.NewListGlobalResaleListingsUseCase(resaleListingRepo)
-	createResaleCheckoutUC := resaleuc.NewCreateResaleCheckoutUseCase(orderRepo, resaleListingRepo, paymentGateway)
+	reserveResaleHoldUC := resaleuc.NewReserveResaleListingUseCase(resaleListingRepo, resaleHoldRepo)
+	releaseResaleHoldUC := resaleuc.NewReleaseResaleListingHoldUseCase(resaleHoldRepo)
+	createResaleCheckoutUC := resaleuc.NewCreateResaleCheckoutUseCase(orderRepo, resaleListingRepo, resaleHoldRepo, paymentGateway)
 
 	// --- Workers ---
 	stripePaymentProcessor := worker.NewStripePaymentProcessor(orderRepo, reservationRepo, seatRepo, ticketRepo, resaleListingRepo, orgRepo, seatLocker, sseHub, paymentGateway)
 	stripeInboxWorker := worker.NewStripeInboxWorker(pool, stripeWebhookInboxRepo, paymentGateway, stripePaymentProcessor)
-	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, orderRepo, sseHub)
+	expiryWorker := worker.NewSeatExpiryWorker(redisClient, reservationRepo, seatRepo, orderRepo, resaleHoldRepo, sseHub)
 
 	// --- Handlers ---
 	authHandler := httphandler.NewAuthHandler(registerUC, loginUC, refreshUC, forgotPasswordUC, resetPasswordUC, cfg.AuthCookieSecure)
@@ -158,6 +161,8 @@ func main() {
 		ListMine:         listMyResalesUC,
 		ListByEvent:      listEventResalesUC,
 		ListGlobal:       listGlobalResalesUC,
+		ReserveHold:      reserveResaleHoldUC,
+		ReleaseHold:      releaseResaleHoldUC,
 		CreateCheckout:   createResaleCheckoutUC,
 		OrganizationRepo: orgRepo,
 		GetEventUC:       getEventUC,
@@ -280,6 +285,8 @@ func main() {
 		r.Post("/me/tickets/{id}/resale-listings", resaleHandler.PostTicketResaleListing)
 		r.Delete("/me/resale-listings/{id}", resaleHandler.DeleteResaleListing)
 		r.Get("/me/resale-listings", resaleHandler.ListMyResaleListings)
+		r.Post("/me/resale-listings/{id}/hold", resaleHandler.PostResaleListingHold)
+		r.Delete("/me/resale-listings/holds/{holdId}", resaleHandler.DeleteResaleListingHold)
 		r.Post("/resale-listings/{id}/checkout-session", resaleHandler.PostResaleListingCheckout)
 
 		// Tickets
