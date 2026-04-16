@@ -71,6 +71,7 @@ func main() {
 	orderRepo := pginfra.NewOrderRepository(pool)
 	ticketRepo := pginfra.NewTicketRepository(pool)
 	stripeWebhookInboxRepo := pginfra.NewStripeWebhookInboxRepository(pool)
+	adminMetricsRepo := pginfra.NewAdminMetricsRepository(pool)
 
 	// --- Seed demo data (idempotent) ---
 	if cfg.AppSeed {
@@ -126,6 +127,7 @@ func main() {
 	sseHandler := httphandler.NewSSEHandler(sseHub)
 	webhookHandler := httphandler.NewWebhookHandler(stripeWebhookInboxRepo)
 	adminHandler := httphandler.NewAdminHandler(venueRepo, eventRepo, seatRepo, sectionRepo)
+	adminMetricsHandler := httphandler.NewAdminMetricsHandler(adminMetricsRepo)
 	adminTicketHandler := httphandler.NewAdminTicketHandler(scanTicketUC)
 	userHandler := httphandler.NewUserHandler(httphandler.UserDeps{
 		UserRepo:                userRepo,
@@ -240,7 +242,10 @@ func main() {
 		r.Use(authmw.Auth(tokenService))
 		r.Use(authmw.RequireRole("admin", "organizer"))
 
+		r.Get("/admin/metrics", adminMetricsHandler.GetDashboard)
+
 		r.Get("/admin/venues", adminHandler.ListVenues)
+		r.Get("/admin/venues/states", adminHandler.ListVenueStates)
 		r.Post("/admin/venues", adminHandler.CreateVenue)
 
 		r.Get("/admin/events", adminHandler.ListEvents)
