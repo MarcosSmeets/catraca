@@ -3,13 +3,12 @@
 import React from "react";
 import Link from "next/link";
 import MainLayout from "@/components/features/MainLayout";
-import { SwipeableTicketPass, TicketFace } from "@/components/features/tickets/TicketPass";
+import { TicketFace } from "@/components/features/tickets/TicketPass";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { TicketSkeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate, type Ticket } from "@/lib/mock-data";
-import { useTicket, useValidateTicket } from "@/lib/tickets-api";
-import { ApiError } from "@/lib/api";
+import { useTicket } from "@/lib/tickets-api";
 import { toast } from "sonner";
 
 interface Props {
@@ -46,7 +45,6 @@ export default function TicketDetailPage({ params }: Props) {
   const resolvedParams = React.use(params);
   const ticketId = resolvedParams.id;
   const { data: ticket, isLoading } = useTicket(ticketId);
-  const validateMutation = useValidateTicket();
 
   const ev = ticket?.event;
   const seat = ticket?.seat;
@@ -74,26 +72,6 @@ export default function TicketDetailPage({ params }: Props) {
     }
   }
 
-  async function handleValidate() {
-    try {
-      await validateMutation.mutateAsync(ticketId);
-      toast.success("Ingresso validado com sucesso.");
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 409) {
-          const body = err.data as { error?: string } | undefined;
-          toast.error(body?.error ?? "Não foi possível validar.");
-        } else if (err.status === 404) {
-          toast.error("Ingresso não encontrado.");
-        } else {
-          toast.error(err.message);
-        }
-      } else {
-        toast.error("Erro ao validar. Tente novamente.");
-      }
-    }
-  }
-
   if (isLoading) {
     return (
       <MainLayout>
@@ -115,7 +93,6 @@ export default function TicketDetailPage({ params }: Props) {
   }
 
   const showQr = ticket.status === "VALID" && effStatus !== "EXPIRED";
-  const canValidate = ticket.status === "VALID" && effStatus !== "EXPIRED";
 
   return (
     <MainLayout>
@@ -151,19 +128,9 @@ export default function TicketDetailPage({ params }: Props) {
           <p className="text-center text-sm text-on-surface/50 font-body mb-4">Ingresso cancelado.</p>
         )}
 
-        {canValidate ? (
-          <SwipeableTicketPass
-            ticket={ticket}
-            showQr={showQr}
-            canValidate
-            validateLoading={validateMutation.isPending}
-            onValidate={handleValidate}
-          />
-        ) : (
-          <div className="w-full max-w-[340px] mx-auto">
-            <TicketFace ticket={ticket} showQr={showQr} />
-          </div>
-        )}
+        <div className="w-full max-w-[340px] mx-auto">
+          <TicketFace ticket={ticket} showQr={showQr} />
+        </div>
 
         {(seat || ticket.purchasedAt) && (
           <div className="mt-8 max-w-[340px] mx-auto grid grid-cols-2 gap-4 text-sm border-t border-outline-variant pt-6">

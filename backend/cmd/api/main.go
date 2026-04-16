@@ -112,7 +112,6 @@ func main() {
 
 	listTicketsUC := ticketuc.NewListTicketsUseCase(ticketRepo)
 	getTicketUC := ticketuc.NewGetTicketUseCase(ticketRepo, orderRepo)
-	useOwnTicketUC := ticketuc.NewUseOwnTicketUseCase(ticketRepo, orderRepo)
 	scanTicketUC := ticketuc.NewScanTicketUseCase(ticketRepo)
 
 	// --- Workers ---
@@ -138,7 +137,6 @@ func main() {
 		ListOrdersUC:            listOrdersUC,
 		ListTicketsUC:           listTicketsUC,
 		GetTicketUC:             getTicketUC,
-		UseOwnTicketUC:          useOwnTicketUC,
 		StripeEnabled:           paymentGateway.IsConfigured(),
 		CheckoutSuccessURL:      cfg.StripeCheckoutSuccessURL,
 		CheckoutCancelURL:       cfg.StripeCheckoutCancelURL,
@@ -232,7 +230,6 @@ func main() {
 		// Tickets
 		r.Get("/me/tickets", userHandler.ListTickets)
 		r.Get("/me/tickets/{id}", userHandler.GetTicket)
-		r.Post("/me/tickets/{id}/validate", userHandler.ValidateOwnTicket)
 	})
 
 	// Admin routes

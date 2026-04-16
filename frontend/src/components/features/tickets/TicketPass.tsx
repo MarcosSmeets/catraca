@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useRef, useState } from "react";
 import type { Ticket } from "@/lib/mock-data";
 import { TicketQr } from "./TicketQr";
 
@@ -123,106 +122,6 @@ export function TicketFace({ ticket, showQr }: TicketFaceProps) {
       </div>
 
       <ZigZagBorder flip />
-    </div>
-  );
-}
-
-type SwipeableTicketPassProps = {
-  ticket: Ticket;
-  showQr: boolean;
-  /** When true, user can drag to reveal validate CTA */
-  canValidate: boolean;
-  validateLoading: boolean;
-  onValidate: () => void;
-};
-
-const MAX_REVEAL_PX = 132;
-
-/**
- * Stacks a green validate panel behind the ticket; dragging the ticket left reveals it.
- */
-export function SwipeableTicketPass({
-  ticket,
-  showQr,
-  canValidate,
-  validateLoading,
-  onValidate,
-}: SwipeableTicketPassProps) {
-  const [offset, setOffset] = useState(0);
-  const dragStartX = useRef(0);
-  const offsetStart = useRef(0);
-  const dragging = useRef(false);
-  const clamp = useCallback((v: number) => Math.max(-MAX_REVEAL_PX, Math.min(0, v)), []);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!canValidate) return;
-    dragging.current = true;
-    dragStartX.current = e.clientX;
-    offsetStart.current = offset;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current || !canValidate) return;
-    const dx = e.clientX - dragStartX.current;
-    setOffset(clamp(offsetStart.current + dx));
-  };
-
-  const onPointerUp = (e: React.PointerEvent) => {
-    if (!canValidate) return;
-    dragging.current = false;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-    setOffset((prev) =>
-      prev < -MAX_REVEAL_PX * 0.45 ? -MAX_REVEAL_PX : 0
-    );
-  };
-
-  if (!canValidate) {
-    return (
-      <div className="w-full max-w-[340px] mx-auto">
-        <TicketFace ticket={ticket} showQr={showQr} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative w-full max-w-[340px] mx-auto select-none">
-      <div
-        className="absolute inset-0 flex justify-end rounded-sm overflow-hidden bg-emerald-950"
-        aria-hidden={false}
-      >
-        <div className="w-[42%] min-w-[120px] flex flex-col items-center justify-center gap-2 px-2 py-6 border-l border-emerald-800/80">
-          <p className="text-[10px] text-emerald-100/90 text-center font-body leading-tight">
-            Confirma entrada no evento?
-          </p>
-          <button
-            type="button"
-            disabled={validateLoading}
-            onClick={onValidate}
-            className="rounded-sm bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-emerald-950 font-display font-bold text-sm uppercase tracking-wide px-4 py-2.5 shadow-md transition-colors"
-          >
-            {validateLoading ? "…" : "Validar"}
-          </button>
-        </div>
-      </div>
-
-      <div
-        className="relative z-10 will-change-transform cursor-grab active:cursor-grabbing"
-        style={{ transform: `translateX(${offset}px)`, touchAction: "pan-x" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      >
-        <TicketFace ticket={ticket} showQr={showQr} />
-        <p className="text-center text-[10px] text-on-surface/35 font-body mt-2 pointer-events-none">
-          ← Arraste para o lado para validar
-        </p>
-      </div>
     </div>
   );
 }

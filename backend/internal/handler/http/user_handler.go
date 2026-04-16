@@ -31,7 +31,6 @@ type UserHandler struct {
 	listOrdersUC            *orderuc.ListOrdersUseCase
 	listTicketsUC           *ticketuc.ListTicketsUseCase
 	getTicketUC             *ticketuc.GetTicketUseCase
-	useOwnTicketUC          *ticketuc.UseOwnTicketUseCase
 	stripeEnabled           bool
 	checkoutSuccessURL      string
 	checkoutCancelURL       string
@@ -49,7 +48,6 @@ type UserDeps struct {
 	ListOrdersUC            *orderuc.ListOrdersUseCase
 	ListTicketsUC           *ticketuc.ListTicketsUseCase
 	GetTicketUC             *ticketuc.GetTicketUseCase
-	UseOwnTicketUC          *ticketuc.UseOwnTicketUseCase
 	StripeEnabled           bool
 	CheckoutSuccessURL      string
 	CheckoutCancelURL       string
@@ -67,7 +65,6 @@ func NewUserHandler(deps UserDeps) *UserHandler {
 		listOrdersUC:            deps.ListOrdersUC,
 		listTicketsUC:           deps.ListTicketsUC,
 		getTicketUC:             deps.GetTicketUC,
-		useOwnTicketUC:          deps.UseOwnTicketUC,
 		stripeEnabled:           deps.StripeEnabled,
 		checkoutSuccessURL:      deps.CheckoutSuccessURL,
 		checkoutCancelURL:       deps.CheckoutCancelURL,
@@ -449,64 +446,6 @@ func (h *UserHandler) GetTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, toTicketResponse(ticket))
-}
-
-func (h *UserHandler) ValidateOwnTicket(w http.ResponseWriter, r *http.Request) {
-	claims := authmw.GetUserClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	idStr := chi.URLParam(r, "id")
-	ticketID, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid ticket ID")
-		return
-	}
-
-	ticket, err := h.useOwnTicketUC.Execute(r.Context(), ticketID, claims.UserID)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "ticket not found")
-			return
-		}
-		if errors.Is(err, ticketuc.ErrTicketAlreadyUsed) {
-			resp := dto.ScanTicketResponse{
-				ID:          ticket.ID.String(),
-				QRCode:      ticket.QRCode,
-				Status:      ticket.Status.String(),
-				PurchasedAt: ticket.PurchasedAt.Format(time.RFC3339),
-			}
-			if ticket.UsedAt != nil {
-				s := ticket.UsedAt.Format(time.RFC3339)
-				resp.UsedAt = &s
-			}
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error":  "ingresso já utilizado",
-				"ticket": resp,
-			})
-			return
-		}
-		if errors.Is(err, ticketuc.ErrTicketCancelled) {
-			writeError(w, http.StatusConflict, "ingresso cancelado")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "failed to validate ticket")
-		return
-	}
-
-	resp := dto.ScanTicketResponse{
-		ID:          ticket.ID.String(),
-		QRCode:      ticket.QRCode,
-		Status:      ticket.Status.String(),
-		PurchasedAt: ticket.PurchasedAt.Format(time.RFC3339),
-	}
-	if ticket.UsedAt != nil {
-		s := ticket.UsedAt.Format(time.RFC3339)
-		resp.UsedAt = &s
-	}
-	writeJSON(w, http.StatusOK, resp)
 }
 
 // ----- Helpers -----
