@@ -11,18 +11,10 @@ import { EventCardSkeleton } from "@/components/ui/Skeleton";
 import { SportType, formatCurrency } from "@/lib/mock-data";
 import { useEvents } from "@/lib/events-api";
 import { DEFAULT_PUBLIC_ORG_SLUG } from "@/lib/default-org-slug";
+import { PUBLIC_LEAGUE_FILTERS, PUBLIC_SPORT_FILTERS } from "@/lib/public-discovery-filters";
 
 type SortOption = "date" | "price-asc" | "price-desc";
 
-const SPORTS: { value: SportType | ""; label: string }[] = [
-  { value: "", label: "Todos os esportes" },
-  { value: "FOOTBALL", label: "Futebol" },
-  { value: "BASKETBALL", label: "Basquete" },
-  { value: "VOLLEYBALL", label: "Vôlei" },
-  { value: "FUTSAL", label: "Futsal" },
-];
-
-const LEAGUES = ["", "Série A", "Série B", "NBB", "Superliga"];
 const CITIES = ["", "São Paulo", "Rio de Janeiro", "Belo Horizonte", "Curitiba", "Fortaleza"];
 
 const PRICE_STEPS = [0, 2000, 5000, 10000, 20000, 50000];
@@ -195,14 +187,14 @@ function SearchPageContent() {
                 label="Esporte"
                 value={selectedSport}
                 onChange={(v) => handleSportChange(v as SportType | "")}
-                options={SPORTS.map((s) => ({ value: s.value, label: s.label }))}
+                options={PUBLIC_SPORT_FILTERS.map((s) => ({ value: s.value, label: s.label }))}
               />
 
               <FilterSelect
                 label="Liga / Campeonato"
                 value={selectedLeague}
                 onChange={(v) => handleFilterChange(() => setSelectedLeague(v))}
-                options={LEAGUES.map((l) => ({ value: l, label: l || "Todas as ligas" }))}
+                options={PUBLIC_LEAGUE_FILTERS.map((l) => ({ value: l, label: l || "Todas as ligas" }))}
               />
 
               <FilterSelect
