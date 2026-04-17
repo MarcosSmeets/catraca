@@ -14,11 +14,26 @@ const baseNavItems = [
   { href: "/admin/tickets/scan", label: "Validar Ingresso", icon: "✓" },
 ];
 
+const equipeNavItem = { href: "/admin/equipe", label: "Equipe", icon: "👥" };
+
 const platformNavItem = {
   href: "/admin/organizacoes",
   label: "Organizações",
   icon: "🏢",
 };
+
+function sidebarNavForRole(role: string | undefined) {
+  if (role === "staff") {
+    return [{ href: "/admin/tickets/scan", label: "Validar Ingresso", icon: "✓" }];
+  }
+  if (role === "platform_admin") {
+    return [baseNavItems[0], platformNavItem, ...baseNavItems.slice(1)];
+  }
+  if (role === "admin" || role === "organizer") {
+    return [baseNavItems[0], equipeNavItem, ...baseNavItems.slice(1)];
+  }
+  return baseNavItems;
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -95,14 +110,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {(adminUser?.role === "platform_admin"
-            ? [
-                baseNavItems[0],
-                platformNavItem,
-                ...baseNavItems.slice(1),
-              ]
-            : baseNavItems
-          ).map((item) => {
+          {sidebarNavForRole(adminUser?.role).map((item) => {
             const isActive =
               item.href === "/admin"
                 ? pathname === "/admin"

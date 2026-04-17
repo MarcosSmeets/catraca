@@ -233,14 +233,18 @@ type addOrgMemberRequest struct {
 }
 
 func (h *AdminOrganizationsHandler) PostMember(w http.ResponseWriter, r *http.Request) {
-	if !h.requirePlatformAdmin(w, r) {
+	claims := authmw.GetUserClaims(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+
 	orgID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid organization id")
 		return
 	}
+
 	var body addOrgMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -254,6 +258,36 @@ func (h *AdminOrganizationsHandler) PostMember(w http.ResponseWriter, r *http.Re
 	role := entity.UserRole(strings.TrimSpace(body.Role))
 	if role != entity.UserRoleOrganizer && role != entity.UserRoleStaff {
 		writeError(w, http.StatusBadRequest, "role must be organizer or staff")
+		return
+	}
+
+	switch claims.Role {
+	case string(entity.UserRolePlatformAdmin):
+		// may assign organizer or staff to any organization
+	case string(entity.UserRoleAdmin), string(entity.UserRoleOrganizer):
+		if claims.OrganizationID == nil || *claims.OrganizationID != orgID {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
+		if role != entity.UserRoleStaff {
+			writeError(w, http.StatusForbidden, "only platform administrators may assign organizer role")
+			return
+		}
+		o, err := h.orgRepo.GetByID(r.Context(), orgID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "organization not found")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to load organization")
+			}
+			return
+		}
+		if !entity.SubscriptionAllowsMutations(o.SubscriptionStatus) {
+			writeError(w, http.StatusPaymentRequired, "active subscription required")
+			return
+		}
+	default:
+		writeError(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}
 	u, err := h.userRepo.GetByEmail(r.Context(), email)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminAuthStore } from "@/store/admin-auth";
@@ -8,9 +8,67 @@ import {
   useAdminOrganizationsList,
   adminStartOrgSubscriptionCheckout,
   adminCreateOrganization,
+  adminAddOrgMember,
 } from "@/lib/admin-api";
 import { Button } from "@/components/ui";
 import { toast } from "sonner";
+
+function OrgInviteRow({ orgId }: { orgId: string }) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"organizer" | "staff">("organizer");
+
+  const mut = useMutation({
+    mutationFn: () =>
+      adminAddOrgMember(orgId, {
+        email: email.trim().toLowerCase(),
+        role,
+      }),
+    onSuccess: () => {
+      toast.success("Membro vinculado à organização.");
+      setEmail("");
+    },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível adicionar."),
+  });
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 py-3 px-4">
+      <p className="text-xs text-on-surface/40 font-body w-full sm:w-auto sm:mr-2">
+        O usuário precisa já estar cadastrado no site. Conta existente com este e-mail.
+      </p>
+      <label className="flex flex-col gap-1 flex-1 min-w-[180px]">
+        <span className="text-xs text-on-surface/40">E-mail</span>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="bg-surface-lowest border border-outline-variant rounded-sm px-3 py-2 text-sm"
+          placeholder="nome@empresa.com"
+          autoComplete="off"
+        />
+      </label>
+      <label className="flex flex-col gap-1 w-full sm:w-48">
+        <span className="text-xs text-on-surface/40">Papel</span>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as "organizer" | "staff")}
+          className="bg-surface-lowest border border-outline-variant rounded-sm px-3 py-2 text-sm"
+        >
+          <option value="organizer">Administrador da org</option>
+          <option value="staff">Validação de ingresso</option>
+        </select>
+      </label>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={!email.trim() || mut.isPending}
+        onClick={() => mut.mutate()}
+      >
+        Adicionar membro
+      </Button>
+    </div>
+  );
+}
 
 export default function AdminOrganizationsPage() {
   const adminUser = useAdminAuthStore((s) => s.adminUser);
@@ -110,32 +168,39 @@ export default function AdminOrganizationsPage() {
           </thead>
           <tbody>
             {(data?.items ?? []).map((o) => (
-              <tr key={o.id} className="border-t border-outline-variant">
-                <td className="px-4 py-3">{o.name}</td>
-                <td className="px-4 py-3 font-mono text-xs">{o.slug}</td>
-                <td className="px-4 py-3">{o.subscriptionStatus ?? "—"}</td>
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/e/${o.slug}/events`}
-                    className="text-accent hover:underline"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Abrir vitrine
-                  </Link>
-                </td>
-                <td className="px-4 py-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={checkoutMut.isPending}
-                    onClick={() => checkoutMut.mutate(o.id)}
-                  >
-                    Assinatura Stripe
-                  </Button>
-                </td>
-              </tr>
+              <Fragment key={o.id}>
+                <tr className="border-t border-outline-variant">
+                  <td className="px-4 py-3">{o.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{o.slug}</td>
+                  <td className="px-4 py-3">{o.subscriptionStatus ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/e/${o.slug}/events`}
+                      className="text-accent hover:underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir vitrine
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={checkoutMut.isPending}
+                      onClick={() => checkoutMut.mutate(o.id)}
+                    >
+                      Assinatura Stripe
+                    </Button>
+                  </td>
+                </tr>
+                <tr className="border-t border-outline-variant bg-surface-lowest/40">
+                  <td colSpan={5} className="p-0">
+                    <OrgInviteRow orgId={o.id} />
+                  </td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
